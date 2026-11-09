@@ -40,7 +40,7 @@ systemctl --user status ascstremio
 journalctl --user -u ascstremio -f
 ```
 
-Edite `service.env` dentro da pasta de dados e reinicie o serviço para mudar a configuração. Veja [manutenção](manutencao.md).
+Para mudar a configuração, use `npm run configurar` (com o serviço parado para alterar; veja [configuração pelo terminal](configuracao.md#configuração-pelo-terminal)) ou edite `service.env` dentro da pasta de dados e reinicie o serviço. Veja [manutenção](manutencao.md).
 
 ### Instalar pelo GitHub com curl
 
@@ -168,7 +168,7 @@ As portas HTTP 7000/7010/7020 ficam em `127.0.0.1` do host. A porta TCP 7030 de 
 
 Execute `AscStremio-Setup-<versão>.exe` de uma distribuição confiável. Ele contém Node e dependências e instala por usuário, sem administrador, em `%LOCALAPPDATA%\Programs\AscStremio`.
 
-O Menu Iniciar recebe atalhos para abrir o painel, parar o processo e abrir a pasta de dados. Um atalho na pasta Inicializar sobe o programa ao entrar no Windows. A máquina precisa continuar ligada e a sessão de usuário precisa permitir sua execução. A desinstalação mantém os dados.
+O Menu Iniciar recebe atalhos para abrir o painel, parar o processo, abrir a pasta de dados e a configuração no terminal (`configurar.cmd`). Um atalho na pasta Inicializar sobe o programa ao entrar no Windows. A máquina precisa continuar ligada e a sessão de usuário precisa permitir sua execução. A desinstalação mantém os dados.
 
 O instalador não é assinado; o SmartScreen pode mostrar um aviso. A porta de peers pode provocar uma solicitação do firewall. Os serviços HTTP permanecem em loopback. O comando de parar encerra o processo à força; o cofre é salvo a cada minuto. A CI possui teste de instalação silenciosa e inicialização em Windows; isso não comprova compatibilidade de reprodução com todos os players e codecs.
 

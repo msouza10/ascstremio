@@ -25,7 +25,7 @@ Ao iniciar, o programa cria o arquivo `.ascstremio.lock` em `DATA_DIR` (e em `AS
 - **Parada limpa ou queda no mesmo computador:** se o processo dono da trava não existe mais, a próxima partida a recupera sozinha. Se o PID continua vivo, a partida é recusada (o sistema pode ter reaproveitado o PID após uma queda).
 - **Outra máquina, contêiner recriado ou arquivo ilegível:** não há como provar que o dono morreu, então a partida é recusada e a mensagem informa o arquivo. Confirme que nenhuma instância usa a pasta e apague o `.ascstremio.lock` indicado. Em contêiner recriado após queda o nome do host muda; reiniciar o mesmo contêiner é reconhecido normalmente.
 - **Limites:** a trava confia em `open` exclusivo e no PID/host do sistema. Em compartilhamento de rede (NFS, SMB) ou volume sincronizado, a exclusividade não é garantida entre máquinas; nunca use a mesma pasta de dados em dois computadores. Uma pasta de armazenamento externa que contém a de outra instalação já em execução (aninhamento inverso) não é detectada.
-- A configuração pelo painel roda no mesmo processo e herda a trava; ferramentas futuras de linha de comando que gravem no `DATA_DIR` devem adquiri-la antes, nunca contorná-la.
+- A configuração pelo painel roda no mesmo processo e herda a trava. A [configuração pelo terminal](configuracao.md#configuração-pelo-terminal) adquire a mesma trava antes de gravar e recusa a alteração se o aplicativo estiver ativo; outras ferramentas que gravem no `DATA_DIR` devem fazer o mesmo.
 
 ## Backup e restauração
 

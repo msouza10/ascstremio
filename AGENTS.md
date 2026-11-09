@@ -27,6 +27,7 @@ commits em português do Brasil, com acentuação.
 | `src/addon.js`, `src/asc-provider.js`, `src/providers/` | addon Stremio (porta 7000): catálogos, fontes sob demanda, nomes e selos |
 | `src/asc-client.js` | cliente HTTP do site do ASC (login, cookies, busca, `.torrent`, atividade) |
 | `src/config-server.js`, `src/ui/` | painel e login (porta 7020); UI em JS puro, sem framework |
+| `src/config-admin.js`, `src/configurar-cli.js` | configuração no terminal (`npm run configurar`): lógica (trava da instância + `settings.update`) e CLI/menu |
 | `src/seedvault.js`, `src/hnr-guard.js` | cofre de seed e conciliação com o tracker (o tracker sempre vence) |
 | `src/safety.js` | loopback, `Host` anti-rebinding, modo contêiner, aviso de inatividade |
 | `src/passkey.js` | passkey fora dos `.torrent` (injetada em memória) |
