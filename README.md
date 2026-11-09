@@ -524,6 +524,17 @@ Os passos vivem em `scripts/` e rodam igual localmente: `scripts/build-release.s
 - Rode `npm test` (`npm run check`) antes de contribuir; os testes ficam em `test/` e não usam
   dados reais.
 
+## Contribuir e licença
+
+Guia de contribuição em [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) e padrão de commits e
+changelog em [`.github/COMMIT_CONVENTION.md`](.github/COMMIT_CONVENTION.md). Detalhes técnicos para
+agentes e mantenedores em [`AGENTS.md`](AGENTS.md).
+
+Licença **MIT** ([`LICENSE`](LICENSE)), Copyright (c) 2026 msouza10. A fonte Inter (`src/ui/assets`) é
+distribuída sob a SIL Open Font License 1.1 e as dependências mantêm as próprias licenças. Projeto
+independente: não é afiliado ao Stremio nem ao Amigos Share; usá-lo é por sua conta, respeitando as
+regras do tracker.
+
 ## Referências oficiais
 
 - https://github.com/Stremio/stremio-addon-sdk

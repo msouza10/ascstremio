@@ -31,7 +31,7 @@ NAME="ascstremio-$VERSION"
 rm -rf dist/stage; mkdir -p dist/stage/"$NAME"
 sha() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 
-cp -R src scripts windows package.json package-lock.json README.md Dockerfile docker-compose.yml .dockerignore dist/stage/"$NAME"/
+cp -R src scripts windows package.json package-lock.json README.md LICENSE Dockerfile docker-compose.yml .dockerignore dist/stage/"$NAME"/
 cp -R test dist/stage/"$NAME"/
 find dist/stage -name '__pycache__' -prune -exec rm -rf {} +
 

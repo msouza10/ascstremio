@@ -28,6 +28,7 @@ tools/
 !README.md
 !CHANGELOG.md
 !AGENTS.md
+!.github/*.md
 !CLAUDE.md
 *.png
 *.jpg

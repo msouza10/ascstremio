@@ -24,7 +24,7 @@ if echo "$files" | tr '\n' '\0' | xargs -0 grep -IlE 'announce/[A-Za-z0-9]{16,}|
 fi
 # só o README é documentação publicada; docs/ e tools/ ficam locais
 echo "$files" | grep -E '^(docs|tools)/' | grep -q . && report "docs/ ou tools/ no pacote (só README, CHANGELOG, AGENTS e CLAUDE são publicados)"
-echo "$files" | grep -E '\.md$' | grep -vE '^(README|CHANGELOG|AGENTS|CLAUDE)\.md$' | grep -q . && report "documento .md além de README, CHANGELOG, AGENTS e CLAUDE"
+echo "$files" | grep -E '\.md$' | grep -vE '^(README|CHANGELOG|AGENTS|CLAUDE)\.md$|^\.github/[A-Za-z_-]+\.md$' | grep -q . && report "documento .md além de README, CHANGELOG, AGENTS, CLAUDE e .github/"
 # a passkey real desta máquina (se existir) não pode aparecer em lugar nenhum
 for pk in "$OLDPWD/private/passkey.txt" "$HOME/.local/share/ascstremio/data/passkey.txt"; do
   if [ -s "$pk" ] && echo "$files" | tr '\n' '\0' | xargs -0 grep -IlF -- "$(tr -d '\n' < "$pk")" 2>/dev/null | grep -q .; then

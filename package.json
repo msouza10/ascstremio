@@ -2,6 +2,7 @@
   "name": "ascstremio",
   "version": "0.1.1",
   "private": true,
+  "license": "MIT",
   "description": "Base de addon Stremio para integração futura com Amigos Share",
   "main": "src/index.js",
   "scripts": {

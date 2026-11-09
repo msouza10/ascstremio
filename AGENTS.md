@@ -104,6 +104,8 @@ tem de ser igual à de dentro (ele confere `Host: 127.0.0.1:<CONFIG_PORT>`).
 
 ## Commits, versão e release
 
+Detalhes e exemplos: [`.github/COMMIT_CONVENTION.md`](.github/COMMIT_CONVENTION.md); fluxo de contribuição: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
+
 Os **títulos dos commits seguem [Conventional Commits](https://www.conventionalcommits.org/pt-br/)**
 e *decidem a versão e o changelog*. Formato: `tipo(escopo opcional): descrição no imperativo, em português`.
 
@@ -162,7 +164,7 @@ dependências, actions e imagem base (não suba a imagem base além do Node 22 s
 ## Onde ler mais
 
 - Uso, instalação, variáveis de ambiente, segurança: [`README.md`](README.md)
-- Histórico de versões: [`CHANGELOG.md`](CHANGELOG.md)
+- Histórico de versões: [`CHANGELOG.md`](CHANGELOG.md) · Contribuir: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) · Padrão de commits e changelog: [`.github/COMMIT_CONVENTION.md`](.github/COMMIT_CONVENTION.md) · Licença: [`LICENSE`](LICENSE)
 - Stremio: [SDK de addons](https://github.com/Stremio/stremio-addon-sdk) ·
   [protocolo](https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/api/README.md) ·
   [defineStreamHandler](https://stremio.github.io/stremio-addon-sdk/api/requests/defineStreamHandler.html)
