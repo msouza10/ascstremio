@@ -39,6 +39,7 @@ class SettingsError extends Error {
 
 const GROUPS = {
   modo: 'Modo de uso',
+  conta: 'Conta e catálogo',
   caminhos: 'Credenciais e caminhos',
   rede: 'Rede e Stremio',
   administracao: 'Administração pela LAN',
@@ -58,6 +59,10 @@ const SCHEMA = Object.freeze([
     key: 'ASCSTREMIO_MODE', type: 'enum', values: ['local', 'lan'], default: 'local', group: 'modo',
     access: 'editable', restart: true,
     description: 'local: tudo neste computador (padrão, escuta só em loopback). lan: este computador é o host pessoal dos seus outros aparelhos; não abre o painel, não vira serviço compartilhado.',
+  },
+  {
+    key: 'ASC_ONLY_FREELEECH', type: 'bool', default: true, group: 'conta', access: 'editable', restart: false,
+    description: 'true (padrão) lista e baixa só releases freeleech: o download deles não conta no ratio (regra 2.7 do ASC). false mostra todos os releases e o download dos que não são freeleech gasta ratio. Vale na hora, sem novo login.',
   },
   {
     key: 'DATA_DIR', type: 'path', default: null, group: 'caminhos', access: 'readonly', envOnly: true, restart: true, risky: true,

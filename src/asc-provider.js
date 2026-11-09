@@ -57,6 +57,10 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return rows;
   }
 
+  // Trocou o filtro "somente freeleech": as linhas lembradas vieram do filtro anterior. Esquecê-las
+  // faz o catálogo e as fontes serem buscados de novo e o play revalidar a regra 2.7 (fail-closed).
+  asc.onFreeleechChange?.(() => records.clear());
+
   const isDisc = (row) => DISC.test(`${row.name} ${(row.badges ?? []).map((b) => b?.label).join(' ')}`);
 
   // Selos da busca separados por assunto. Resolução e fonte vão no título da fonte

@@ -26,7 +26,12 @@ class AscClient {
     this.fetch = fetchImpl;
     this.delay = delay;
     this.jar = new CookieJar();
+    // Filtro "somente freeleech" (regra 2.7): vem da configuração ASC_ONLY_FREELEECH (index.js
+    // injeta e o painel atualiza na hora). Fail-closed: sem configuração, ligado.
     this.onlyFreeleech = true;
+    this.freeleechListeners = [];
+    // Valor antigo de asc-session.json (versões anteriores o guardavam ali): só para a migração.
+    this.legacyOnlyFreeleech = null;
     // Último login explícito: base do aviso de inatividade (regra 2.6, 90 dias).
     this.lastLoginAt = null;
     this.saved = false; // há sessão salva em disco (ainda não confirmada)
@@ -41,7 +46,7 @@ class AscClient {
     try {
       const state = JSON.parse(await fs.readFile(this.stateFile, 'utf8'));
       this.jar = await CookieJar.deserialize(state.cookies);
-      this.onlyFreeleech = state.onlyFreeleech !== false;
+      this.legacyOnlyFreeleech = state.onlyFreeleech === false ? false : null;
       this.lastLoginAt = typeof state.lastLoginAt === 'string' ? state.lastLoginAt : null;
       this.saved = Boolean(state.cookies);
       this.message = 'Sessão salva. Use Verificar sessão para confirmar.';
@@ -51,10 +56,24 @@ class AscClient {
   async save() {
     await fs.mkdir(path.dirname(this.stateFile), { recursive: true, mode: 0o700 });
     const temp = this.stateFile + '.tmp';
-    await fs.writeFile(temp, JSON.stringify({ cookies: await this.jar.serialize(), onlyFreeleech: this.onlyFreeleech, lastLoginAt: this.lastLoginAt }), { mode: 0o600 });
+    await fs.writeFile(temp, JSON.stringify({ cookies: await this.jar.serialize(), lastLoginAt: this.lastLoginAt }), { mode: 0o600 });
     await fs.chmod(temp, 0o600);
     await fs.rename(temp, this.stateFile);
   }
+
+  // Só booleano de verdade muda o filtro; qualquer outra coisa é recusada e o valor segue como estava.
+  // Avisa quem guarda resultados do filtro anterior (ex.: o provedor de fontes do addon).
+  setOnlyFreeleech(value) {
+    if (typeof value !== 'boolean') return false;
+    if (value === this.onlyFreeleech) return true;
+    this.onlyFreeleech = value;
+    for (const listener of this.freeleechListeners) {
+      try { listener(value); } catch (error) { log.warn(`ouvinte do filtro freeleech falhou: ${error?.message ?? error}`); }
+    }
+    return true;
+  }
+
+  onFreeleechChange(listener) { this.freeleechListeners.push(listener); }
 
   exclusive(task) {
     const pending = this.queue.then(task);
@@ -147,7 +166,7 @@ class AscClient {
     return this.status();
   }
 
-  login(username, password, onlyFreeleech) {
+  login(username, password) {
     return this.exclusive(async () => {
       const oldJar = this.jar;
       const oldLoginAt = this.lastLoginAt;
@@ -162,7 +181,6 @@ class AscClient {
           'X-XSRF-TOKEN': decodeURIComponent(token.value), 'X-Requested-With': 'XMLHttpRequest',
           Origin: 'https://amigos-share.club', Referer: 'https://amigos-share.club/login',
         }, body: JSON.stringify({ username, password, remember: true }) });
-        this.onlyFreeleech = onlyFreeleech;
         this.lastLoginAt = new Date().toISOString();
         return await this.verifyInternal();
       } catch (error) { this.jar = oldJar; this.lastLoginAt = oldLoginAt; throw error; }
