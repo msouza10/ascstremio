@@ -1,0 +1,29 @@
+# docker compose up -d --build     (ou: scripts/docker.sh run)
+# Painel: http://127.0.0.1:7020/   Addon: http://127.0.0.1:7000/manifest.json
+# As portas ficam presas ao 127.0.0.1 da máquina (conta pessoal, regra 2.2 do ASC).
+# Para TV/celular na rede local troque "127.0.0.1:" por o IP da máquina, por sua conta e risco.
+services:
+  brazuka-asc:
+    build: .
+    image: brazuka-asc:latest
+    container_name: brazuka-asc
+    restart: unless-stopped
+    stop_signal: SIGINT
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:7000:7000"   # addon (Stremio)
+      - "127.0.0.1:7010:7010"   # ponte de streaming
+      - "127.0.0.1:7020:7020"   # painel e login (a porta de fora TEM de ser 7020)
+      - "7030:7030"             # peers do torrent (entrada); remova se não quiser receber conexões
+    volumes:
+      - brazuka-data:/data       # passkey, sessão, cofre de seed, .torrent, cache e logs
+    environment:
+      # AFTER_SEED: delete | stop | keep    LOG_LEVEL: debug | info | warn | error
+      AFTER_SEED: delete
+      BACKGROUND_COMPLETE: "off"
+volumes:
+  brazuka-data:

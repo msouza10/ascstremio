@@ -1,0 +1,47 @@
+# --- dados da conta: NUNCA versionar ---------------------------------------
+private/
+data/
+*.torrent
+passkey*
+bridge-key*
+asc-session*
+seed-vault*
+service.env
+service.log
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.log
+logs/
+*.ndjson
+*.bak
+*.bak-*
+*.removido-*
+
+# --- só o README é documentação publicada; notas, capturas e sondas ficam locais
+docs/
+tools/
+*.md
+!README.md
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.har
+
+# --- build e ambiente -------------------------------------------------------
+node_modules/
+dist/
+coverage/
+__pycache__/
+*.pyc
+.cache/
+.claude/
+.codex/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
