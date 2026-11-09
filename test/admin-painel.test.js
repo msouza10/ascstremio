@@ -8,7 +8,7 @@ const access = require('../src/admin-access');
 const auth = require('../src/admin-auth');
 const cli = require('../src/admin-cli');
 const settings = require('../src/settings');
-const { startConfig } = require('../src/config-server');
+const { startConfig, resolveChannel } = require('../src/config-server');
 const { Logger } = require('../src/logger');
 const { tmpdir } = require('./tmp-helper');
 
@@ -461,4 +461,34 @@ test('terminal: ativar confere as pré-condições, mostra o que muda e só grav
   await cli.run(['status', '--json'], { env, io: a.io, interfaces: NET });
   assert.equal(JSON.parse(a.lines[0]).enabled, false);
   assert.equal(await cli.run(['ativar', '--http-claro', '--sim'], { env: { DATA_DIR: dir }, io: ioOf().io, interfaces: NET }), 1, 'modo local não ativa');
+});
+
+test('canal: com o plano presente, "Host: 127.0.0.1" vindo de socket fora do loopback nunca é local (mesmo sem senha)', () => {
+  const plan = planOf();
+  const host = '127.0.0.1:7020';
+  for (const guard of [true, false]) {
+    assert.equal(resolveChannel({ hostHeader: host, port: 7020, plan, guard, loopback: false }), null, `guard=${guard}`);
+    assert.equal(resolveChannel({ hostHeader: host, port: 7020, plan, guard, loopback: true }).kind, 'local');
+  }
+  assert.equal(resolveChannel({ hostHeader: '192.168.1.20:7020', port: 7020, plan, guard: false, loopback: false }), null, 'sem senha o Host da LAN fecha');
+  assert.equal(resolveChannel({ hostHeader: '192.168.1.20:7020', port: 7020, plan, guard: true, loopback: false }).kind, 'remote');
+  assert.equal(resolveChannel({ hostHeader: host, port: 7020, plan: null, guard: false, loopback: false }).kind, 'local', 'padrão sem plano: comportamento antigo');
+});
+
+test('login: corpos atrasados não furam o limite nem o teto de verificações simultâneas', async () => {
+  const t = await setup();
+  try {
+    const payload = JSON.stringify({ password: 'errada-errada-1234' });
+    const reqs = Array.from({ length: 10 }, () => {
+      const r = http.request({ host: '127.0.0.1', port: t.port, method: 'POST', path: '/api/admin/session',
+        headers: { Host: t.lanHost, Origin: `http://${t.lanHost}`, 'X-CSRF-Token': t.loginToken, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } });
+      r.done = new Promise((resolve) => { r.on('response', (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)); }); r.on('error', () => resolve(0)); });
+      r.write(payload.slice(0, 5));
+      return r;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    for (const r of reqs) r.end(payload.slice(5)); // todos os corpos terminam juntos
+    const codes = await Promise.all(reqs.map((r) => r.done));
+    assert.ok(codes.filter((c) => c === 429).length >= 5, `esperava 429 para o excesso: ${codes}`);
+  } finally { await t.close(); }
 });

@@ -7,13 +7,15 @@
   const $ = (id) => document.getElementById(id);
 
   const store = { status: null, snap: null, admin: null };
+  window.ASC_LOGIN_CSRF = window.ASC_CSRF; // token de pré-login, preservado para entrar de novo após sair/expirar
   let view = null; let viewKey = ''; let timer = null; let loading = false; let autoVerified = false;
 
   // ---------------------------------------------------------------- API
   async function call(method, route, body) {
     const opts = { method, headers: {} };
     if (method === 'POST') {
-      opts.headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': window.ASC_CSRF };
+      // O login de administração usa o token de pré-login (de /config.js), nunca o da sessão anterior.
+      opts.headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': route === 'admin/session' ? window.ASC_LOGIN_CSRF : window.ASC_CSRF };
       opts.body = JSON.stringify(body ?? {});
     }
     let res;

@@ -38,6 +38,20 @@ function readCookie(header, name) {
   return null;
 }
 
+// Canal da requisição: 'local' (127.0.0.1:porta) ou 'remote' (Host exatamente igual ao do plano).
+// Com o plano de administração presente, o canal local exige socket de loopback MESMO que a senha
+// tenha sido removida (o listener da LAN continua aberto): sem isso, um aparelho da LAN diria
+// "Host: 127.0.0.1" e cairia no modo local sem sessão. O canal remoto só existe com a senha (guard).
+function resolveChannel({ hostHeader, port, plan, guard, loopback }) {
+  const origin = `http://127.0.0.1:${port}`;
+  if (hostHeader === `127.0.0.1:${port}` && (!plan || loopback)) return { kind: 'local', host: hostHeader, origin };
+  const host = hostHeader.toLowerCase();
+  if (guard && plan.hosts.includes(host) && (plan.transport !== 'https-proxy' || loopback)) {
+    return { kind: 'remote', host, origin: `${plan.transport === 'https-proxy' ? 'https' : 'http'}://${host}` };
+  }
+  return null;
+}
+
 function staticFile(pathname) {
   if (!/^\/[A-Za-z0-9._/-]+$/.test(pathname) || pathname.includes('..')) return null;
   const ext = path.extname(pathname);
@@ -115,11 +129,7 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
     // esperado = esquema + o próprio Host já validado. Nada de curinga nem de cabeçalho encaminhado.
     const hostHeader = String(req.headers.host ?? '');
     const guard = guarded();
-    let channel = null;
-    if (hostHeader === `127.0.0.1:${port}` && (!guard || isLoopbackRequest(req))) channel = { kind: 'local', host: hostHeader, origin };
-    else if (guard && plan.hosts.includes(hostHeader.toLowerCase()) && (plan.transport !== 'https-proxy' || isLoopbackRequest(req))) {
-      channel = { kind: 'remote', host: hostHeader.toLowerCase(), origin: `${plan.transport === 'https-proxy' ? 'https' : 'http'}://${hostHeader.toLowerCase()}` };
-    }
+    const channel = resolveChannel({ hostHeader, port, plan, guard, loopback: isLoopbackRequest(req) });
     if (!channel) {
       log.warn(`requisição recusada: Host inesperado (${hostHeader.slice(0, 60)})`);
       return send(403, { error: 'Abra pelo endereço 127.0.0.1.' });
@@ -164,16 +174,22 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
           log.warn('login de administração recusado: origem ou token CSRF inválido');
           return send(403, { error: 'Requisição não autorizada.' });
         }
-        const wait = limiter.check(source);
-        if (!wait.ok || verifying >= 2) {
+        // O teto é conferido antes de ler o corpo (barato) e DE NOVO, sem await no meio, logo antes
+        // de reservar a vaga de verificação: um corpo atrasado não escapa do limite nem do teto de scrypt.
+        const busy = () => {
+          const wait = limiter.check(source);
+          if (wait.ok && verifying < 2) return null;
           const retry = wait.ok ? 1 : wait.retryAfter;
           res.setHeader('Retry-After', String(retry));
           log.warn(`login de administração adiado: excesso de tentativas (origem ${source})`);
-          return send(429, { error: `Muitas tentativas. Aguarde ${retry} s.`, code: 'rate_limited' });
-        }
+          send(429, { error: `Muitas tentativas. Aguarde ${retry} s.`, code: 'rate_limited' });
+          return true;
+        };
+        if (busy()) return;
         const parsed = await readBody();
         if (parsed.tooBig) return send(413, { error: 'Dados muito grandes.' });
         if (parsed.invalid || typeof parsed.body.password !== 'string') return send(400, { error: 'Dados inválidos.' });
+        if (busy()) return;
         verifying += 1;
         let ok = false;
         try { ok = await credential.verify(parsed.body.password); } finally { verifying -= 1; }
@@ -328,4 +344,4 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
   return server;
 }
 
-module.exports = { startConfig };
+module.exports = { startConfig, resolveChannel };
