@@ -15,7 +15,8 @@ const { randomBytes } = require('node:crypto');
 
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
 const LEVEL_NAMES = Object.keys(LEVELS);
-const FILE_RE = /^brazuka-(\d{4})-(\d{2})-(\d{2})(?:\.(\d+))?\.log$/;
+// Aceita o prefixo antigo (brazuka-) para não perder o histórico de quem já tinha logs.
+const FILE_RE = /^(?:asc-stremio|brazuka)-(\d{4})-(\d{2})-(\d{2})(?:\.(\d+))?\.log$/;
 const MAX_MSG = 4000;
 const MAX_DATA = 8000;
 
@@ -137,7 +138,7 @@ class Logger {
       const key = this.dayName(entry.t);
       if (key !== this.dayKey) {
         this.dayKey = key;
-        this.dayFile = path.join(this.dir, `brazuka-${key}.log`);
+        this.dayFile = path.join(this.dir, `asc-stremio-${key}.log`);
         this.dayBytes = fs.existsSync(this.dayFile) ? fs.statSync(this.dayFile).size : 0;
         this.prune();
       }

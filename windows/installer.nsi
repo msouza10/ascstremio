@@ -5,7 +5,7 @@ Unicode true
 
 Name "Amigos Share · Stremio"
 OutFile "${OUTFILE}"
-InstallDir "$LOCALAPPDATA\Programs\BrazukaASC"
+InstallDir "$LOCALAPPDATA\Programs\AscStremio"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
@@ -27,15 +27,15 @@ Section "Instalar"
   CreateDirectory "$SMPROGRAMS\Amigos Share Stremio"
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Abrir painel.lnk" "$INSTDIR\open-panel.cmd" "" "$INSTDIR\node\node.exe"
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Parar servico.lnk" "$INSTDIR\stop.cmd"
-  CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Pasta de dados.lnk" "$LOCALAPPDATA\BrazukaASC\data"
+  CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Pasta de dados.lnk" "$LOCALAPPDATA\AscStremio\data"
   ; Inicia sozinho ao entrar no Windows (precisa semear por 72 h).
   CreateShortcut "$SMSTARTUP\Amigos Share Stremio.lnk" "wscript.exe" '"$INSTDIR\launcher.vbs"'
-  CreateDirectory "$LOCALAPPDATA\BrazukaASC\data"
+  CreateDirectory "$LOCALAPPDATA\AscStremio\data"
   WriteUninstaller "$INSTDIR\desinstalar.exe"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BrazukaASC" "DisplayName" "Amigos Share · Stremio"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BrazukaASC" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BrazukaASC" "UninstallString" '"$INSTDIR\desinstalar.exe"'
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BrazukaASC" "NoModify" 1
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AscStremio" "DisplayName" "Amigos Share · Stremio"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AscStremio" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AscStremio" "UninstallString" '"$INSTDIR\desinstalar.exe"'
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AscStremio" "NoModify" 1
 SectionEnd
 
 Section "Uninstall"
@@ -43,7 +43,7 @@ Section "Uninstall"
   Delete "$SMSTARTUP\Amigos Share Stremio.lnk"
   RMDir /r "$SMPROGRAMS\Amigos Share Stremio"
   RMDir /r "$INSTDIR"
-  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BrazukaASC"
-  ; Passkey, sessão e cofre de seed em %LOCALAPPDATA%\BrazukaASC ficam de propósito.
-  MessageBox MB_OK "Seus dados (passkey, sessão e cofre de seed) foram mantidos em $LOCALAPPDATA\BrazukaASC. Apague essa pasta se quiser removê-los." /SD IDOK
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AscStremio"
+  ; Passkey, sessão e cofre de seed em %LOCALAPPDATA%\AscStremio ficam de propósito.
+  MessageBox MB_OK "Seus dados (passkey, sessão e cofre de seed) foram mantidos em $LOCALAPPDATA\AscStremio. Apague essa pasta se quiser removê-los." /SD IDOK
 SectionEnd

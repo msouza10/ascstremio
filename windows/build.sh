@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Monta o instalador do Windows (dist/BrazukaASC-Setup-<versão>.exe) a partir do Linux
+# Monta o instalador do Windows (dist/AscStremio-Setup-<versão>.exe) a partir do Linux
 # (ou macOS/WSL/Git Bash). O .exe contém Node 22 oficial + o app + node_modules; as
 # bibliotecas nativas (utp-native, bufferutil) já trazem os binários win32-x64.
 #
@@ -46,7 +46,7 @@ cp README.md "$STAGE/LEIA-ME.md"
 echo "Pasta montada em $STAGE"
 
 [ "$STAGE_ONLY" -eq 1 ] || {
-  makensis -V2 -DVERSION="$VERSION" -DSTAGE="$(pwd)/$STAGE" -DOUTFILE="$(pwd)/dist/BrazukaASC-Setup-$VERSION.exe" windows/installer.nsi
-  ( cd dist && (sha256sum "BrazukaASC-Setup-$VERSION.exe" 2>/dev/null || shasum -a 256 "BrazukaASC-Setup-$VERSION.exe") > "BrazukaASC-Setup-$VERSION.exe.sha256" )
-  echo "Instalador: dist/BrazukaASC-Setup-$VERSION.exe"
+  makensis -V2 -DVERSION="$VERSION" -DSTAGE="$(pwd)/$STAGE" -DOUTFILE="$(pwd)/dist/AscStremio-Setup-$VERSION.exe" windows/installer.nsi
+  ( cd dist && (sha256sum "AscStremio-Setup-$VERSION.exe" 2>/dev/null || shasum -a 256 "AscStremio-Setup-$VERSION.exe") > "AscStremio-Setup-$VERSION.exe.sha256" )
+  echo "Instalador: dist/AscStremio-Setup-$VERSION.exe"
 }

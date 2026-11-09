@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # Cria e roda a imagem Docker (ou Podman) do Amigos Share · Stremio.
 #
-#   scripts/docker.sh build            constrói a imagem brazuka-asc:<versão> e :latest
+#   scripts/docker.sh build            constrói a imagem asc-stremio:<versão> e :latest
 #   scripts/docker.sh run              constrói (se faltar) e sobe o contêiner, portas só em 127.0.0.1
 #   scripts/docker.sh stop|logs|shell  para, mostra logs, abre um shell
 #   scripts/docker.sh passkey          grava a passkey no volume (lê do teclado, sem eco)
-#   scripts/docker.sh save [arquivo]   exporta a imagem (padrão dist/brazuka-asc-<versão>-image.tar.gz)
+#   scripts/docker.sh save [arquivo]   exporta a imagem (padrão dist/asc-stremio-<versão>-image.tar.gz)
 #
-# Dados no volume nomeado "brazuka-data" (/data no contêiner). Usa docker ou podman.
+# Dados no volume nomeado "asc-stremio-data" (/data no contêiner). Usa docker ou podman.
 
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-NAME=brazuka-asc
-VOLUME=brazuka-data
+NAME=asc-stremio
+VOLUME=asc-stremio-data
 VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' package.json | head -1)"
 ENGINE="${CONTAINER_ENGINE:-$(command -v docker || command -v podman || true)}"
 [ -n "$ENGINE" ] || { echo "Instale docker ou podman (ou defina CONTAINER_ENGINE)." >&2; exit 1; }

@@ -151,7 +151,7 @@ Falhas fatais também entram, com a pilha, antes do serviço reiniciar.
 - **Níveis:** `debug`, `info`, `warn` (aviso) e `error` (erro). `LOG_LEVEL` define o mínimo
   gravado (padrão `debug`); dá para trocar em tempo de execução na própria página.
 - **Onde ficam:** memória (últimas 5000 linhas, consulta instantânea) e `private/logs/`,
-  um arquivo NDJSON por dia (`brazuka-AAAA-MM-DD.log`, permissão 0600). Ao subir, o painel já
+  um arquivo NDJSON por dia (`asc-stremio-AAAA-MM-DD.log`, permissão 0600). Ao subir, o painel já
   mostra o que veio antes do restart. `LOG_RETENTION_DAYS` (padrão 14) apaga os antigos;
   passado 20 MB num dia só aviso e erro continuam sendo gravados.
 - **Segredos:** a passkey, cookies, senhas, tokens CSRF e URLs de announce são removidos
@@ -166,7 +166,7 @@ Falhas fatais também entram, com a pilha, antes do serviço reiniciar.
 - **Baixar:** `.txt` ou `.ndjson` do filtro atual, ou cada arquivo diário como está.
   Pela linha de comando: `GET /api/logs?nivel=warn,error&fonte=hnr&q=texto&limit=500` e
   `GET /api/logs/download?formato=ndjson&nivel=error`.
-- No terminal: `journalctl --user -u brazuka-asc -f` mostra as linhas de info para cima.
+- No terminal: `journalctl --user -u asc-stremio -f` mostra as linhas de info para cima.
 
 ## Teste dos dois torrents no aplicativo
 
@@ -207,7 +207,7 @@ A conta do ASC é pessoal e intransferível (regras 2.1 e 2.2). Por isso:
 - `/cleanup`, `/seed-status` e `/status` respondem 403 a qualquer origem que não seja
   esta máquina e a pedidos vindos de páginas web (cabeçalho `Origin`).
 - Cada `.torrent` carrega a sua chave de acesso (regra 2.9): não compartilhe a pasta de
-  dados (`private/` ou `DATA_DIR`; no Docker, o volume `brazuka-data`).
+  dados (`private/` ou `DATA_DIR`; no Docker, o volume `asc-stremio-data`).
 - **Docker:** publique as portas só em `127.0.0.1` (já é o padrão do `docker-compose.yml` e do
   `scripts/docker.sh`). Rodar no seu PC/NAS de casa é uso pessoal; hospedar em servidor para
   outras pessoas não é.
@@ -234,9 +234,9 @@ em uma **pasta de dados** (`DATA_DIR`), separada do código, que sobrevive a atu
 
 | Onde | Como | Pasta de dados |
 |---|---|---|
-| Linux (qualquer distro glibc) | `curl -fsSL <URL>/install.sh \| bash` ou `scripts/install.sh` | `~/.local/share/brazuka-asc/data` (curl) ou `private/` (a partir do código) |
-| Docker / Podman | `scripts/docker.sh run` ou `docker compose up -d --build` | volume `brazuka-data` (`/data`) |
-| Windows 10/11 | `BrazukaASC-Setup-<versão>.exe` (por usuário, sem administrador) | `%LOCALAPPDATA%\BrazukaASC\data` |
+| Linux (qualquer distro glibc) | `curl -fsSL <URL>/install.sh \| bash` ou `scripts/install.sh` | `~/.local/share/asc-stremio/data` (curl) ou `private/` (a partir do código) |
+| Docker / Podman | `scripts/docker.sh run` ou `docker compose up -d --build` | volume `asc-stremio-data` (`/data`) |
+| Windows 10/11 | `AscStremio-Setup-<versão>.exe` (por usuário, sem administrador) | `%LOCALAPPDATA%\AscStremio\data` |
 | macOS | à mão: Node 22+, `npm ci && npm start` (ou Docker) | `private/` |
 
 Testes, build e releases automáticos: ver "Esteira de CI/CD" abaixo.
@@ -252,12 +252,12 @@ scripts/install.sh --uninstall
 Funciona em qualquer Linux **glibc** (x64, arm64, armv7) sem pedir root: se o sistema não tem
 Node 22+, baixa o Node oficial do nodejs.org (tar.gz, **SHA-256 conferido** contra o
 `SHASUMS256.txt`; download que não confere é descartado) para
-`~/.local/share/brazuka-asc/node`. Precisa só de `curl` ou `wget`, `tar` e `sha256sum`.
+`~/.local/share/asc-stremio/node`. Precisa só de `curl` ou `wget`, `tar` e `sha256sum`.
 `--system-node` proíbe o download. Alpine/musl não é suportado pelo Node oficial: use
 `apk add nodejs npm` ou o Docker.
 
 Depois roda `npm ci`, `npm run check` (sintaxe + testes) e **só então**, havendo
-`systemd --user`, cria e inicia `~/.config/systemd/user/brazuka-asc.service` com reinício
+`systemd --user`, cria e inicia `~/.config/systemd/user/asc-stremio.service` com reinício
 automático e liga o *linger* (sobe no boot sem login). Sem systemd de usuário (WSL, Alpine,
 contêiner), instala e testa e mostra o comando para rodar à mão. Como serviço de usuário não
 enxerga o `network-online.target`, a unidade espera a rede com
@@ -268,8 +268,8 @@ enxerga o `network-online.target`, a unidade espera a rede com
 7000/7010/7020 estiverem ocupadas, para e avisa quem as ocupa; para um `npm start` **deste
 mesmo projeto**, `--replace-manual` o encerra com SIGINT (cofre preservado) e segue.
 
-- Estado: `systemctl --user status brazuka-asc` · Logs: `journalctl --user -u brazuka-asc -f`
-- Configuração: `service.env` na pasta de dados (modelo comentado), depois `systemctl --user restart brazuka-asc`.
+- Estado: `systemctl --user status asc-stremio` · Logs: `journalctl --user -u asc-stremio -f`
+- Configuração: `service.env` na pasta de dados (modelo comentado), depois `systemctl --user restart asc-stremio`.
 - **Energia:** enquanto houver seed pendente ou download em andamento, o addon bloqueia a
   suspensão do PC (`KEEP_AWAKE=auto`) e solta quando não há mais nada pendente. O bloqueio
   morre junto com o processo. Linux: `systemd-inhibit`; macOS: `caffeinate`; Windows:
@@ -287,9 +287,9 @@ curl -fsSL <URL-base>/install.sh | bash -s -- --no-service   # sem serviço
 ```
 
 `<URL-base>` é onde você hospedou os arquivos gerados por `scripts/build-release.sh`
-(`install.sh`, `brazuka-asc-latest.tar.gz` e o `.sha256`). O instalador baixa o pacote,
+(`install.sh`, `asc-stremio-latest.tar.gz` e o `.sha256`). O instalador baixa o pacote,
 **recusa instalar se o SHA-256 não conferir**, rejeita caminhos suspeitos no `.tar.gz`, instala
-o código em `~/.local/share/brazuka-asc/app` e chama `scripts/install.sh`. Atualizar é rodar de
+o código em `~/.local/share/asc-stremio/app` e chama `scripts/install.sh`. Atualizar é rodar de
 novo: o código é trocado e os dados em `.../data` ficam (a versão anterior fica em
 `app.anterior` se a instalação falhar). O SHA-256 vem do mesmo servidor do pacote, então ele
 protege de download corrompido, **não** de um servidor comprometido: hospede em um lugar seu.
@@ -305,7 +305,7 @@ docker compose up -d --build # alternativa com o docker-compose.yml
 
 Painel em http://127.0.0.1:7020/ e addon em http://127.0.0.1:7000/manifest.json, como no Linux.
 O `docker.sh` usa `docker` ou `podman` (ou `CONTAINER_ENGINE=`). A imagem é `node:22-bookworm-slim`,
-roda como usuário `node`, sem root, com `BRAZUKA_CONTAINER=1` (escuta em `0.0.0.0` **dentro** do
+roda como usuário `node`, sem root, com `ASC_STREMIO_CONTAINER=1` (escuta em `0.0.0.0` **dentro** do
 contêiner, e trata o gateway do Docker como "esta máquina" nas rotas administrativas).
 
 - **As portas 7000/7010/7020 são publicadas só em `127.0.0.1`.** Não troque isso por `0.0.0.0`:
@@ -319,12 +319,12 @@ contêiner, e trata o gateway do Docker como "esta máquina" nas rotas administr
 
 ### Windows
 
-O instalador `BrazukaASC-Setup-<versão>.exe` traz o Node 22 oficial, o app e as dependências
+O instalador `AscStremio-Setup-<versão>.exe` traz o Node 22 oficial, o app e as dependências
 (as bibliotecas nativas já incluem binários win32-x64). Instala **por usuário, sem administrador**
-em `%LOCALAPPDATA%\Programs\BrazukaASC`, cria atalhos no Menu Iniciar ("Abrir painel", "Parar
+em `%LOCALAPPDATA%\Programs\AscStremio`, cria atalhos no Menu Iniciar ("Abrir painel", "Parar
 serviço", "Pasta de dados") e um atalho na pasta Inicializar para subir ao entrar no Windows
 (necessário para semear as 72 h). O fim do assistente abre o painel de login. Logs do processo:
-`%LOCALAPPDATA%\BrazukaASC\data\service.log`. Desinstalar mantém a pasta de dados.
+`%LOCALAPPDATA%\AscStremio\data\service.log`. Desinstalar mantém a pasta de dados.
 
 Limites do Windows: não há desligamento "limpo" (Parar encerra o processo; o cofre grava a cada
 minuto, então perde-se no máximo ~1 min de contagem); na primeira execução o Firewall do Windows
@@ -341,7 +341,7 @@ O instalador não é assinado: o SmartScreen avisa na primeira vez.
 | `PORT` / `BRIDGE_PORT` / `CONFIG_PORT` | 7000 / 7010 / 7020 | addon, ponte, painel |
 | `TORRENT_PORT` | aleatória | porta de entrada dos peers (fixe-a no Docker) |
 | `BRIDGE_ALLOW_LAN` | desligado | `1` escuta na rede local (sem autenticação) |
-| `BRAZUKA_CONTAINER` | desligado | `1` escuta em `0.0.0.0` dentro do contêiner (a imagem já define) |
+| `ASC_STREMIO_CONTAINER` | desligado | `1` escuta em `0.0.0.0` dentro do contêiner (a imagem já define) |
 | `BRIDGE_PUBLIC_URL` / `ADDON_PUBLIC_URL` | automática | endereço que o Stremio usa, se não for `127.0.0.1` (o host entra na lista permitida) |
 | `ALLOWED_HOSTS` | vazio | nomes DNS extras aceitos no cabeçalho `Host`, separados por vírgula |
 | `AFTER_SEED` | `delete` | `delete`, `stop` ou `keep` ao cumprir o limite |

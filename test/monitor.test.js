@@ -321,7 +321,7 @@ test('API de logs: consulta com filtros, cursor, download, arquivos e nível', a
 
     // download filtrado: anexo, formato e conteúdo
     const txt = await fetch(`${base}/api/logs/download?nivel=warn,error`);
-    assert.match(txt.headers.get('content-disposition'), /^attachment; filename="brazuka-logs-\d{8}-\d{6}\.txt"$/);
+    assert.match(txt.headers.get('content-disposition'), /^attachment; filename="asc-logs-\d{8}-\d{6}\.txt"$/);
     assert.match(txt.headers.get('content-type'), /^text\/plain/);
     const linhas = (await txt.text()).trim().split('\n');
     assert.equal(linhas.length, 2);

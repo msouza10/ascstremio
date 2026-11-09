@@ -19,9 +19,9 @@ const WINDOWS_SCRIPT = (pid) => [
 ].join('; ');
 
 function defaultCommand(reason, pid, platform = process.platform, exists = fs.existsSync) {
-  if (process.env.BRAZUKA_CONTAINER === '1') return null;
+  if (process.env.ASC_STREMIO_CONTAINER === '1') return null;
   if (platform === 'linux' && exists(INHIBIT)) {
-    return [INHIBIT, ['--what=sleep', '--who=brazuka-asc', `--why=${reason}`, '--mode=block', 'sh', '-c', WATCH, String(pid)]];
+    return [INHIBIT, ['--what=sleep', '--who=asc-stremio', `--why=${reason}`, '--mode=block', 'sh', '-c', WATCH, String(pid)]];
   }
   if (platform === 'darwin' && exists(CAFFEINATE)) return [CAFFEINATE, ['-i', '-w', String(pid)]];
   if (platform === 'win32') {

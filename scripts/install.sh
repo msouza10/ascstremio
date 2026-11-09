@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Instala e valida o Amigos Share · Stremio em qualquer Linux (x64, arm64, armv7;
 # glibc). Não precisa de root: se o Node 22+ não existir, baixa o oficial (com
-# conferência de SHA-256) para ~/.local/share/brazuka-asc/node.
+# conferência de SHA-256) para ~/.local/share/asc-stremio/node.
 #
 #   scripts/install.sh              confere tudo, instala o que faltar, roda os testes
 #                                   e cria/inicia o serviço (systemd --user)
@@ -20,10 +20,10 @@
 set -Eeuo pipefail
 
 NEED_NODE_MAJOR=22
-UNIT_NAME="brazuka-asc.service"
+UNIT_NAME="asc-stremio.service"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 UNIT_FILE="$UNIT_DIR/$UNIT_NAME"
-NODE_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/brazuka-asc/node"
+NODE_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/asc-stremio/node"
 PORTS=(7000 7010 7020)
 
 MODE=install
@@ -104,7 +104,7 @@ fetch() { # fetch URL DESTINO
 }
 sha256_of() { if have_cmd sha256sum; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
-# Node oficial (tar.gz) em ~/.local/share/brazuka-asc/node, sem root. O checksum vem
+# Node oficial (tar.gz) em ~/.local/share/asc-stremio/node, sem root. O checksum vem
 # do SHASUMS256.txt do próprio nodejs.org; arquivo que não confere é descartado.
 install_portable_node() {
   local arch tmp base file want got
@@ -201,7 +201,7 @@ if [ ! -f "$ENV_FILE" ] && [ "$MODE" != check ]; then
   umask 077
   cat > "$ENV_FILE" <<'EOF'
 # Variáveis do serviço (lidas por systemd; uma por linha, sem aspas nem "export").
-# Depois de editar:  systemctl --user restart brazuka-asc
+# Depois de editar:  systemctl --user restart asc-stremio
 
 # Conclui sozinho, em segundo plano, os freeleech parados há alguns minutos (off|auto)
 #BACKGROUND_COMPLETE=off
@@ -254,6 +254,17 @@ is_manual_instance() {
   [ "$(readlink "/proc/$pid/cwd" 2>/dev/null)" = "$PROJECT" ] \
     && tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'src/index\.js'
 }
+
+# Migração do nome antigo (brazuka-asc): para e remove a unidade antiga, guardando uma cópia.
+LEGACY_UNIT="$UNIT_DIR/brazuka-asc.service"
+if [ -f "$LEGACY_UNIT" ] && [ "$MODE" != check ]; then
+  systemctl --user disable --now brazuka-asc.service 2>/dev/null || true
+  mv "$LEGACY_UNIT" "$LEGACY_UNIT.removido-$(date +%Y%m%d-%H%M%S)"
+  systemctl --user daemon-reload
+  ok "serviço antigo brazuka-asc parado e removido (cópia guardada ao lado); o novo é $UNIT_NAME"
+elif [ -f "$LEGACY_UNIT" ]; then
+  warn "existe o serviço antigo brazuka-asc; rode sem --check para migrar para $UNIT_NAME"
+fi
 
 # Portas ocupadas impedem a subida do serviço.
 if ! service_active; then

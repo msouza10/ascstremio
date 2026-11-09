@@ -61,7 +61,7 @@ jobs:
         with:
           node-version: 22
       - run: scripts/build-release.sh --base-url "https://example.invalid"
-      - run: scripts/check-no-secrets.sh dist/brazuka-asc-latest.tar.gz
+      - run: scripts/check-no-secrets.sh dist/asc-stremio-latest.tar.gz
       - name: Instalação como usuário novo (sem Node no PATH)
         run: |
           # Esconde o Node do runner para exercitar o download com SHA-256.
@@ -85,10 +85,10 @@ jobs:
         with:
           context: .
           load: true
-          tags: brazuka-asc:ci
+          tags: asc-stremio:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - run: scripts/smoke-container.sh brazuka-asc:ci
+      - run: scripts/smoke-container.sh asc-stremio:ci
       - name: docker compose valida
         run: docker compose config -q
 
@@ -106,7 +106,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: instalador-windows
-          path: dist/BrazukaASC-Setup-*.exe*
+          path: dist/AscStremio-Setup-*.exe*
           retention-days: 7
 
   windows-smoke:
@@ -120,32 +120,32 @@ jobs:
       - name: Instala (/S) e confere o SHA-256
         shell: pwsh
         run: |
-          $exe = Get-ChildItem BrazukaASC-Setup-*.exe | Select-Object -First 1
+          $exe = Get-ChildItem AscStremio-Setup-*.exe | Select-Object -First 1
           $want = (Get-Content "$($exe.FullName).sha256").Split(' ')[0]
           if ((Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower() -ne $want.ToLower()) { throw 'SHA-256 do instalador não confere' }
           Start-Process $exe.FullName -ArgumentList '/S' -Wait
-          $dir = Join-Path $env:LOCALAPPDATA 'Programs\BrazukaASC'
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\AscStremio'
           foreach ($f in 'node\node.exe','app\src\index.js','start.cmd','stop.cmd','desinstalar.exe') {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "faltou $f na instalação" }
           }
       - name: Sobe o serviço e consulta a ponte
         shell: pwsh
         run: |
-          $dir = Join-Path $env:LOCALAPPDATA 'Programs\BrazukaASC'
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\AscStremio'
           Start-Process wscript.exe -ArgumentList "`"$dir\launcher.vbs`""
           $ok = $false
           foreach ($i in 1..60) {
             try { if ((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7010/health -TimeoutSec 2).StatusCode -eq 200) { $ok = $true; break } } catch { Start-Sleep 1 }
           }
-          if (-not $ok) { Get-Content "$env:LOCALAPPDATA\BrazukaASC\data\service.log" -ErrorAction SilentlyContinue | Select-Object -Last 40; throw 'a ponte não respondeu' }
+          if (-not $ok) { Get-Content "$env:LOCALAPPDATA\AscStremio\data\service.log" -ErrorAction SilentlyContinue | Select-Object -Last 40; throw 'a ponte não respondeu' }
           (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7020/).StatusCode
           (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7000/manifest.json).StatusCode
       - name: Para e desinstala
         shell: pwsh
         run: |
-          $dir = Join-Path $env:LOCALAPPDATA 'Programs\BrazukaASC'
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\AscStremio'
           & "$dir\stop.cmd"
           Start-Process "$dir\desinstalar.exe" -ArgumentList '/S' -Wait
           Start-Sleep 3
           if (Test-Path "$dir\node") { throw 'desinstalação não removeu o programa' }
-          if (-not (Test-Path "$env:LOCALAPPDATA\BrazukaASC\data")) { throw 'a pasta de dados deveria ter sido mantida' }
+          if (-not (Test-Path "$env:LOCALAPPDATA\AscStremio\data")) { throw 'a pasta de dados deveria ter sido mantida' }

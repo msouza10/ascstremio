@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { bridgeHost, configHost, isLoopbackAddress, inContainer } = require('../src/safety');
 const { defaultCommand } = require('../src/keepawake');
 
-const CT = { BRAZUKA_CONTAINER: '1' };
+const CT = { ASC_STREMIO_CONTAINER: '1' };
 
 test('fora do contêiner tudo escuta só em loopback e só loopback é local', () => {
   assert.equal(inContainer({}), false);
@@ -27,8 +27,8 @@ test('KeepAwake escolhe o inibidor de cada sistema e nada no contêiner', () => 
   assert.match(win[1].join(' '), /SetThreadExecutionState/);
   assert.match(win[1].join(' '), /-Id 99/);
   assert.equal(defaultCommand('x', 99, 'freebsd'), null);
-  process.env.BRAZUKA_CONTAINER = '1';
-  try { assert.equal(defaultCommand('x', 99, 'win32'), null); } finally { delete process.env.BRAZUKA_CONTAINER; }
+  process.env.ASC_STREMIO_CONTAINER = '1';
+  try { assert.equal(defaultCommand('x', 99, 'win32'), null); } finally { delete process.env.ASC_STREMIO_CONTAINER; }
 });
 
 const { hostAllowed } = require('../src/safety');

@@ -7,7 +7,7 @@ RUN npm ci --omit=dev --no-audit --no-fund
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production \
-    BRAZUKA_CONTAINER=1 \
+    ASC_STREMIO_CONTAINER=1 \
     DATA_DIR=/data \
     PORT=7000 BRIDGE_PORT=7010 CONFIG_PORT=7020 TORRENT_PORT=7030
 WORKDIR /app

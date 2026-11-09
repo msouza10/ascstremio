@@ -4,11 +4,11 @@ const DAY_MS = 86_400_000;
 const INACTIVITY_LIMIT_DAYS = 90; // regra 2.6: sem acesso por 90 dias, banimento
 const INACTIVITY_WARN_DAYS = 60;
 
-// Dentro de um contêiner (BRAZUKA_CONTAINER=1) o processo precisa escutar em
+// Dentro de um contêiner (ASC_STREMIO_CONTAINER=1) o processo precisa escutar em
 // 0.0.0.0 para a porta publicada chegar nele; quem restringe ao 127.0.0.1 da
 // máquina é a publicação da porta (`-p 127.0.0.1:7000:7000`), ver docker-compose.yml.
 function inContainer(env = process.env) {
-  return env.BRAZUKA_CONTAINER === '1';
+  return env.ASC_STREMIO_CONTAINER === '1';
 }
 
 const PRIVATE_V4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;

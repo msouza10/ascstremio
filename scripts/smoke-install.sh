@@ -8,8 +8,8 @@ DIST="$(cd "${1:-dist}" && pwd)"
 FAKE_HOME="$(mktemp -d)"; APP_PID=""
 trap '[ -n "$APP_PID" ] && kill -INT "$APP_PID" 2>/dev/null; rm -rf "$FAKE_HOME"' EXIT
 
-env HOME="$FAKE_HOME" PATH="$PATH" BRAZUKA_BASE_URL="file://$DIST" bash "$DIST/install.sh" --no-service
-APPDIR="$FAKE_HOME/.local/share/brazuka-asc"
+env HOME="$FAKE_HOME" PATH="$PATH" ASC_STREMIO_BASE_URL="file://$DIST" bash "$DIST/install.sh" --no-service
+APPDIR="$FAKE_HOME/.local/share/asc-stremio"
 export PATH="$APPDIR/node/bin:$PATH"
 cd "$APPDIR/app"
 DATA_DIR="$APPDIR/data" PORT=17000 BRIDGE_PORT=17010 CONFIG_PORT=17020 \

@@ -89,7 +89,7 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
         res.writeHead(200, {
           'Content-Type': nd ? 'application/x-ndjson; charset=utf-8' : 'text/plain; charset=utf-8',
-          'Content-Disposition': `attachment; filename="brazuka-logs-${stamp}.${nd ? 'ndjson' : 'txt'}"`,
+          'Content-Disposition': `attachment; filename="asc-logs-${stamp}.${nd ? 'ndjson' : 'txt'}"`,
         });
         log.info(`download de logs (${nd ? 'ndjson' : 'txt'}): ${entries.length} linha(s)`);
         return res.end(entries.map((e) => (nd ? JSON.stringify(e) : logs.format(e))).join('\n') + (entries.length ? '\n' : ''));

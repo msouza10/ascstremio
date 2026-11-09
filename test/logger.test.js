@@ -87,7 +87,7 @@ test('arquivos: NDJSON 0600, recarrega o histórico e respeita o teto por dia', 
   a.write('error', 'app', 'falha');
   const files = a.listFiles();
   assert.equal(files.length, 1);
-  assert.match(files[0].name, /^brazuka-\d{4}-\d{2}-\d{2}\.log$/);
+  assert.match(files[0].name, /^asc-stremio-\d{4}-\d{2}-\d{2}\.log$/);
   // No Windows o acesso é por ACL (a pasta já é do usuário); chmod não existe.
   if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(dir, files[0].name)).mode & 0o777, 0o600);
   const lines = fs.readFileSync(path.join(dir, files[0].name), 'utf8').trim().split('\n').map((x) => JSON.parse(x));

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Teste de fumaça da imagem: sobe o contêiner em portas alternativas (só 127.0.0.1),
 # confere ponte, addon, painel e rota administrativa, e remove tudo.
-#   scripts/smoke-container.sh [imagem]      (padrão brazuka-asc:latest; docker ou podman)
+#   scripts/smoke-container.sh [imagem]      (padrão asc-stremio:latest; docker ou podman)
 set -Eeuo pipefail
-IMAGE="${1:-brazuka-asc:latest}"
+IMAGE="${1:-asc-stremio:latest}"
 ENGINE="${CONTAINER_ENGINE:-$(command -v docker || command -v podman)}"
-NAME="brazuka-smoke-$$"
+NAME="asc-smoke-$$"
 P_ADDON=17000; P_BRIDGE=17010; P_PANEL=17020
 cleanup() { "$ENGINE" logs "$NAME" 2>&1 | tail -n 30 || true; "$ENGINE" rm -f "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
