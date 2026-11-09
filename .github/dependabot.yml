@@ -1,15 +1,24 @@
 version: 2
+# Os títulos seguem Conventional Commits (scripts/check-commits.sh): "chore(deps)" e "ci(deps)"
+# não sobem versão; dependência de produção que corrige falha deve ser mergeada como fix à mão.
 updates:
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
     open-pull-requests-limit: 5
+    commit-message: { prefix: "chore(deps)" }
     groups:
       minor-and-patch:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: monthly }
+    commit-message: { prefix: "ci(deps)" }
   - package-ecosystem: docker
     directory: /
     schedule: { interval: monthly }
+    commit-message: { prefix: "build(deps)" }
+    # A imagem acompanha o "engines" do package.json (Node 22 LTS); major novo é decisão manual.
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
