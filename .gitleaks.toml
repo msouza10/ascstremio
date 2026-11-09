@@ -1,0 +1,20 @@
+# Exceções pontuais ao gitleaks: só fixtures de teste, comparadas pela linha inteira.
+# Nada de exclusões por pasta: um segredo real em test/ ainda seria encontrado.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Passkey FALSA (32 caracteres sintéticos) usada para testar a redação de logs"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^test/logger\.test\.js$''']
+regexTarget = "line"
+regexes = ['''(?m)^const PASSKEY = '[a-z0-9]{32}';$''']
+
+[[allowlists]]
+description = "Nome de arquivo de log com path traversal, usado para testar filePath()"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^test/logger\.test\.js$''']
+regexTarget = "line"
+regexes = ['''brazuka-2026-11-07\.log/\.\./\.\./etc/passwd''']

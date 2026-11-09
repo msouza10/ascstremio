@@ -56,6 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # a auditoria de segredos percorre todo o histórico
       - name: shellcheck
         run: shellcheck -S warning scripts/*.sh windows/build.sh
       - name: actionlint
@@ -64,6 +66,8 @@ jobs:
           ./actionlint -color
       - name: Nenhum dado de conta no repositório
         run: scripts/check-no-secrets.sh .
+      - name: Nenhum segredo no histórico (gitleaks, local)
+        run: scripts/audit-secrets.sh
       - uses: actions/setup-node@v4
         with:
           node-version: 22
