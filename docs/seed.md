@@ -19,6 +19,25 @@ Por padrão o upload não muda quando você assiste. Se definir `BRIDGE_STREAM_U
 
 O cofre `DATA_DIR/seed-vault.json` sobrevive a reinícios e é salvo periodicamente. A contagem local avança com o torrent ativo e semeando; não é um comprovante de tempo aceito pelo tracker. Pendências são retomadas na inicialização quando os arquivos necessários estão disponíveis.
 
+### Ordem da retomada
+
+Na partida e depois de cada conciliação com o tracker, os seeds pendentes são abertos por **risco de hit-and-run** (regra 13.3), do mais urgente ao menos:
+
+1. obrigação **confirmada pelo tracker** (ainda não cumprida), pelo prazo mais próximo;
+2. obrigação só **local** (o cofre diz que concluiu, o tracker ainda não confirmou);
+3. conclusão em segundo plano pedida, sem obrigação correndo;
+4. concluído e sem obrigação (cumprido) vem por último. Hoje esses não são reabertos na partida, como antes.
+
+Dentro de cada grupo: prazo mais próximo (prazo vencido vem antes de qualquer futuro), depois mais horas ainda devidas, depois conclusão mais antiga e, por fim, o `infoHash`, para a ordem ser sempre a mesma. O que o tracker informa (prazo, horas restantes, cumprimento) prevalece sobre o cofre. **Dado ausente conta como iminente**: um prazo desconhecido nunca empurra uma obrigação para o fim da fila. Todos os pendentes são abertos; a ordem só decide quem sai primeiro, então ninguém fica sem retomada por causa de outro.
+
+A retomada não pula nenhuma regra: cada torrent passa pela admissão de disco, e obrigação concluída sem o arquivo completo continua sem ser aberta (aparece como "Sem arquivo para semear"; nenhum download novo é criado para completá-la). A falha ou recusa de um não impede os demais. Se a conciliação pedir uma nova retomada enquanto outra ainda roda, ela se junta à em andamento e, ao final, faz uma passada extra com a ordem refeita; nenhum torrent é adicionado duas vezes ao motor.
+
+### Medição do custo da retomada
+
+Abrir um torrent no motor inclui verificar os arquivos em disco; para dezenas de GB isso demora. O snapshot do painel (`resume`) mostra, para a última retomada: pendências na fila, abertos, adiados por disco, falhas, sem arquivo, tempo total, tempo até o primeiro aberto, o mais lento, bytes (tamanho dos torrents abertos, um limite superior do que foi lido), memória residente inicial e de pico, o maior atraso do laço de eventos (indica se a interface travou) e, por torrent, grupo, horas até o prazo, bytes e duração. As passadas extras de uma mesma retomada somam na mesma medição, e uma passada em que tudo já está aberto (como a conciliação horária) não apaga a medição anterior. O mesmo resumo vai ao log (`retomada: …`). Só aparecem hash curto e números: nenhum caminho, nome ou segredo. Não há contador de leitura de disco por processo; para I/O use as ferramentas do sistema durante a retomada.
+
+A verificação continua completa: não há `skipVerify` nem confiança em bitfield salvo, porque anunciar partes inválidas após uma queda é pior que esperar. Um "fast-resume" só deve ser considerado em desenho separado, com invalidação por tamanho, mtime e conteúdo.
+
 ## Metas e prazos
 
 | Condição acompanhada | Comportamento |

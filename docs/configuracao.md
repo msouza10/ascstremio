@@ -182,6 +182,7 @@ A senha fica só como verificador scrypt com sal em `DATA_DIR/panel-admin.json` 
 | `BRIDGE_UPLOAD_LIMIT` | `-1` (sem limite) | Limite de upload em bytes/s. `0` desliga o envio e é respeitado como está: afeta o ratio da regra 13.1 |
 | `BRIDGE_STREAM_UPLOAD_LIMIT` | `-1` (não reduz) | Teto de upload enquanto há reprodução ativa, em bytes/s; `-1` ou 16384 ou mais (não aceita `0`) |
 | `BRIDGE_UPLOAD_RESTORE_SECONDS` | `15` | Espera sem reprodução, depois da carência da sessão, antes de voltar ao teto normal (0 a 300) |
+| `RESUME_CONCURRENCY` | `1` | Seeds pendentes abertos (e verificados em disco) ao mesmo tempo na partida, de 1 a 8. `1` mantém um por vez, em ordem de risco de seed. Suba só depois de medir no painel (`resume`) que o disco aguenta: com HDD, mais verificações em paralelo costumam piorar |
 
 Não reduza a meta local como forma de contornar as regras do ASC. A conciliação continua subordinada ao tracker. Veja [seed](seed.md) para os efeitos de assistir só parte de um filme e de concluir o download.
 

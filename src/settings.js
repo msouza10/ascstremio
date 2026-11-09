@@ -194,6 +194,10 @@ const SCHEMA = Object.freeze([
     description: 'Espera sem reprodução (depois da carência da sessão) antes de voltar ao teto normal de upload. Só vale com BRIDGE_STREAM_UPLOAD_LIMIT.',
   },
   {
+    key: 'RESUME_CONCURRENCY', type: 'int', min: 1, max: 8, default: 1, unit: 'torrents', group: 'seed', access: 'advanced', restart: true,
+    description: 'Quantos seeds pendentes são abertos (e verificados em disco) ao mesmo tempo na partida. 1 = um por vez, na ordem de risco de seed (padrão). Mais paralelismo só ajuda se o disco aguenta: meça pelo tempo de retomada no painel antes de subir.',
+  },
+  {
     key: 'DISK_RESERVE_GIB', type: 'number', min: 0, max: 1048576, default: 2, unit: 'GiB', group: 'disco', access: 'editable', restart: true,
     description: 'Reserva de espaço livre no volume de BRIDGE_STORE que nenhum novo download pode consumir (streaming, conclusão e retomada). 0 desliga a parte absoluta. Vale a maior entre esta e DISK_RESERVE_PERCENT.',
   },
