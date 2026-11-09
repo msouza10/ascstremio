@@ -129,6 +129,16 @@ test('armazenamento externo compartilhado entre DATA_DIR diferentes é recusado'
   acquireInstance({ dataDir: path.join(raiz, 'b'), torrentDir: path.join(raiz, 'b', 't'), storeDir: compartilhado }).release();
 });
 
+test('trava ilegível em pasta ancestral recusa a instalação aninhada', () => {
+  const raiz = tmpdir('lock-k-');
+  fs.writeFileSync(path.join(raiz, LOCK_NAME), '{incompleta');
+  assert.throws(
+    () => acquireInstance({ dataDir: path.join(raiz, 'd'), torrentDir: path.join(raiz, 'd', 't'), storeDir: path.join(raiz, 'loja') }),
+    /ilegível ou incompleta/,
+  );
+  assert.ok(!fs.existsSync(path.join(raiz, 'd', LOCK_NAME)));
+});
+
 test('symlink para a mesma pasta de dados é reconhecido como a mesma instalação', (t) => {
   const raiz = tmpdir('lock-h-');
   const real = path.join(raiz, 'real');

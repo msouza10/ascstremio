@@ -185,7 +185,15 @@ function assertNoAncestorLock(dir) {
     if (held.has(file)) {
       throw new LockError(`"${dir}" fica dentro de uma pasta já travada por este mesmo processo ("${cur}").`);
     } else {
-      const lock = readLock(file);
+      let lock = readLock(file);
+      // Incompleta pode ser escrita em andamento: espera um pouco; se persistir, recusa.
+      for (let i = 0; i < 5 && lock.invalid; i++) {
+        sleepSync(100);
+        lock = readLock(file);
+      }
+      if (lock.invalid || lock.unreadable) {
+        throw new LockError(`"${dir}" fica dentro de uma pasta com trava ilegível ou incompleta ("${file}"). ${recoveryHint(file)}`);
+      }
       if (lock.data) {
         try { assertStale(file, lock.data, cur); } catch (err) {
           throw new LockError(`"${dir}" fica dentro de uma pasta já usada por outra instalação. ${err.message}`);
