@@ -70,6 +70,7 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 | Chave única antiga | `bridge-key` | Obsoleta e ignorada; pode ser apagada |
 | Token administrativo | `admin-key` | Dá acesso às rotas administrativas da ponte; nunca em URL, log ou captura |
 | Obrigações de seed | `seed-vault.json` | Histórico local e referências a torrents |
+| Metadados de fontes | `meta-cache.json` | Só nome, tamanho e selos de releases por filme; sem cookie, passkey, credencial, URL, seeders ou freeleech. Modo restrito, até 90 dias. Pode ser apagado |
 | Biblioteca | `torrents/` | Metadados dos torrents; manter privados mesmo sanitizados |
 | Arquivos recebidos | `cache/` | Conteúdo baixado e partes de vídeos |
 | Logs | `logs/` | Eventos e identificadores podem revelar hábitos de uso |
