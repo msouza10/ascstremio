@@ -350,7 +350,14 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
   return {
     sizeOf,
     async catalog(query) { return (await search(query)).map(meta); },
-    meta(id) { const record = records.get(String(id)); return record ? meta(record.row) : null; },
+    // As linhas lembradas descrevem o release (não dependem do filtro) e a query de cada uma
+    // permite rebuscar depois de uma troca; por isso não são apagadas. Com o filtro ligado, só a
+    // apresentação de release que não é freeleech é recusada (regra 2.7).
+    meta(id) {
+      const record = records.get(String(id));
+      if (!record || (asc.onlyFreeleech && record.row.freeleech !== true)) return null;
+      return meta(record.row);
+    },
     streamsFor,
     resolve,
     lookup,

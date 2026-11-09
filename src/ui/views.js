@@ -601,7 +601,11 @@
     const bLogout = el('button', 'btn btn-danger'); bLogout.type = 'button';
     bLogout.append(icon('log-out'), document.createTextNode('Remover sessão local'));
     acts.append(bVerify, bRelogin, bLogout);
-    cSess.append(cardHead('Sessão'), sessRows, sessNotice, acts, el('p', 'foot', 'Remover a sessão local apaga os cookies salvos neste computador. Não encerra outras sessões no ASC nem torrents ativos.'));
+    const filterNote = el('p', 'foot');
+    filterNote.append(document.createTextNode('O filtro de releases (somente freeleech, regra 2.7) é uma preferência: altere em '));
+    const filterLink = el('a', '', 'Configurações'); filterLink.href = '/configuracoes'; filterLink.setAttribute('data-link', '');
+    filterNote.append(filterLink, document.createTextNode('.'));
+    cSess.append(cardHead('Sessão'), sessRows, filterNote, sessNotice, acts, el('p', 'foot', 'Remover a sessão local apaga os cookies salvos neste computador. Não encerra outras sessões no ASC nem torrents ativos.'));
     bVerify.addEventListener('click', () => app().session('verify'));
     bRelogin.addEventListener('click', () => app().nav('/entrar?de-novo=1'));
     bLogout.addEventListener('click', () => app().session('logout'));
@@ -713,16 +717,13 @@
     };
     const u = mk('Usuário', 'username', 'text', { maxLength: 100, autocomplete: 'username' });
     const p = mk('Senha', 'password', 'password', { maxLength: 512, autocomplete: 'current-password' });
-    const chk = el('label', 'check'); chk.htmlFor = 'freeleech';
-    const cb = el('input'); cb.type = 'checkbox'; cb.id = 'freeleech'; cb.checked = true;
-    const ctxt = el('span'); ctxt.append(document.createTextNode('Somente freeleech'), el('small', '', 'Evita gastar ratio ao assistir (regra 2.7).'));
-    chk.append(cb, ctxt);
     const row = el('div', 'item-badges');
     const submit = el('button', 'btn btn-primary', 'Conectar');
     const cancel = el('button', 'btn btn-ghost', 'Cancelar'); cancel.type = 'button';
     row.append(submit, cancel);
     const status = el('p', 'status'); status.setAttribute('role', 'status');
-    form.append(u.f, p.f, chk, row);
+    form.append(u.f, p.f, row);
+    form.append(el('p', 'foot', 'As preferências, inclusive o filtro "somente freeleech" (regra 2.7), ficam em Configurações, no menu, depois de entrar.'));
     c.append(form, status);
     wrap.append(c);
     root.append(wrap);
@@ -731,7 +732,7 @@
       e.preventDefault();
       submit.disabled = true; setText(status, 'Entrando…'); status.classList.remove('error');
       try {
-        await app().session('login', { username: u.i.value, password: p.i.value, onlyFreeleech: cb.checked });
+        await app().session('login', { username: u.i.value, password: p.i.value });
       } catch (err) { setText(status, err.message); status.classList.add('error'); }
       p.i.value = ''; submit.disabled = false;
     });

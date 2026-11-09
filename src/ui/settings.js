@@ -566,11 +566,11 @@
     }
 
     function drawSeed(c) {
-      c.append(cardHead('Seed e disco'));
+      c.append(cardHead('Seed, disco e filtro de releases'));
       c.append(el('p', 'muted', mode === 'lan' ? 'Confira os padrões. O seed e a conta ficam neste host.' : 'Os valores seguros já estão preenchidos: pode continuar sem mexer em nada.'));
       const effect = alertBox('primary', 'O que esta escolha faz', M.AFTER_SEED_EFFECT[draft('AFTER_SEED')]);
       const effectText = effect.querySelector('.alert-body');
-      for (const key of ['AFTER_SEED', 'DISK_RESERVE_GIB', 'DISK_RESERVE_PERCENT']) {
+      for (const key of ['AFTER_SEED', 'DISK_RESERVE_GIB', 'DISK_RESERVE_PERCENT', 'ASC_ONLY_FREELEECH']) {
         const o = opt(key);
         const f = optionField(o, drafts, (v) => {
           if (v === null || v === M.textOf(o.value)) delete drafts[key]; else drafts[key] = v;

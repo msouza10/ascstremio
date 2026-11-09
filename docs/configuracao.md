@@ -17,7 +17,7 @@ Regras que valem para qualquer origem:
 - Segredos (`PASSKEY`, `ANNOUNCE_BASE`) e `DATA_DIR`, `PASSKEY_FILE`, `BRIDGE_ALLOW_LAN` e `ASCSTREMIO_CONTAINER` existem **só no ambiente**; o arquivo não os aceita e nenhuma leitura sanitizada os devolve. Senhas do ASC não são persistidas.
 - Alterar uma opção que o ambiente define é recusado (a origem exibida é `env`); edite o `service.env`/Compose.
 - Alterações exigem a revisão lida (`expectedRevision`); se outro processo gravou antes, a alteração é recusada e nada muda. Uma alteração inválida não toca o disco.
-- Quase todas as opções só valem após reiniciar; `LOG_LEVEL` é a exceção. `ASC_TORRENT_DIR` e `BRIDGE_STORE` não movem arquivos já baixados.
+- Quase todas as opções só valem após reiniciar; `LOG_LEVEL`, `ASC_ONLY_FREELEECH` e as opções de alertas valem na hora. `ASC_TORRENT_DIR` e `BRIDGE_STORE` não movem arquivos já baixados.
 
 ### Modos local e LAN
 
@@ -31,7 +31,7 @@ Regras que valem para qualquer origem:
 
 ## Configuração pelo painel
 
-O painel (`http://127.0.0.1:<CONFIG_PORT>/configuracoes`, depois de entrar no ASC) lista todas as opções do esquema por assunto, com o valor em uso, a origem (ambiente, arquivo ou padrão) e se vale na hora ou só após reiniciar. Como o painel roda no mesmo processo que detém a trava da instância, ele grava em `settings.json` por esse processo, com `expectedRevision` (conflito de revisão preserva o arquivo e o que foi digitado); a CLI continua recusando escrever com o aplicativo ativo. Antes de gravar há uma prévia (mesma validação da gravação, sem escrever). `LOG_LEVEL` vale na hora; as demais opções aguardam reinício e o painel mostra "reinício pendente" enquanto o valor em uso difere do salvo. Opções do ambiente, segredos e as pastas de dados (`ASC_TORRENT_DIR`, `BRIDGE_STORE`) não são editáveis ali. Mudanças de modo, portas ou endereço trazem instruções de recuperação pelo terminal. A conclusão do assistente fica em `DATA_DIR/wizard.json` (independente de `settings.json` e da sessão do ASC).
+O painel (`http://127.0.0.1:<CONFIG_PORT>/configuracoes`, depois de entrar no ASC) lista todas as opções do esquema por assunto, com o valor em uso, a origem (ambiente, arquivo ou padrão) e se vale na hora ou só após reiniciar. Como o painel roda no mesmo processo que detém a trava da instância, ele grava em `settings.json` por esse processo, com `expectedRevision` (conflito de revisão preserva o arquivo e o que foi digitado); a CLI continua recusando escrever com o aplicativo ativo. Antes de gravar há uma prévia (mesma validação da gravação, sem escrever). `LOG_LEVEL`, `ASC_ONLY_FREELEECH` e as de alertas valem na hora; as demais aguardam reinício e o painel mostra "reinício pendente" enquanto o valor em uso difere do salvo. Opções do ambiente, segredos e as pastas de dados (`ASC_TORRENT_DIR`, `BRIDGE_STORE`) não são editáveis ali. Mudanças de modo, portas ou endereço trazem instruções de recuperação pelo terminal. A conclusão do assistente fica em `DATA_DIR/wizard.json` (independente de `settings.json` e da sessão do ASC).
 
 ## Configuração pelo terminal
 
@@ -270,6 +270,14 @@ Sem variável de ambiente, o destino pode ser salvo pelo painel (Configurações
 Eventos (um por tipo, sem título nem hash): `hnr_deadline` (obrigação de seed perto do prazo ou vencida, prazo confirmado pelo tracker), `disk_low`, `account_inactivity` (perto de 90 dias sem login, regra 2.6), `tracker_unavailable` e `download_no_peers`. Cada um envia "aberto", depois um lembrete após o cooldown enquanto continuar aberto, e "resolvido" uma vez. O estado de deduplicação fica em `DATA_DIR/alerts-state.json` (sem segredos): reiniciar não repete avisos já entregues.
 
 Campos do JSON: `schemaVersion`, `eventId` (aleatório, não deriva de nada), `type`, `severity` (`info`, `warning`, `critical`), `state` (`open`, `resolved`, `test`), `occurredAt`, `message` e, quando faz sentido, `count`. Nada além disso.
+
+## Conta e catálogo
+
+| Variável | Padrão | Comportamento |
+|---|---|---|
+| `ASC_ONLY_FREELEECH` | `true` | `true` lista e baixa só releases freeleech (o download deles não conta no ratio, regra 2.7); `false` mostra todos e os que não são freeleech gastam ratio. Vale na hora, sem novo login |
+
+Precedência normal: ambiente, depois `settings.json`, depois o padrão. Valor diferente de `true`/`false` é recusado (na partida, a partida falha; no painel e na CLI, a alteração é rejeitada). Versões anteriores guardavam a escolha no `asc-session.json`: se ele tinha `onlyFreeleech: false` e não há configuração própria, o valor é migrado uma vez para `settings.json` na primeira partida; se já existe configuração (ambiente ou arquivo), ela prevalece e o valor antigo é descartado.
 
 ## Logs
 

@@ -315,12 +315,13 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         return send(202, await monitor.complete(body.infoHash));
       }
       if (url.pathname === '/api/login') {
-        if (typeof body.username !== 'string' || !body.username.trim() || body.username.length > 100 || typeof body.password !== 'string' || !body.password || body.password.length > 512 || typeof body.onlyFreeleech !== 'boolean') return send(400, { error: 'Preencha usuário e senha.' });
+        if (typeof body.username !== 'string' || !body.username.trim() || body.username.length > 100 || typeof body.password !== 'string' || !body.password || body.password.length > 512) return send(400, { error: 'Preencha usuário e senha.' });
         if (Date.now() - lastLogin < 15000) { log.warn('login adiado: tentativa em menos de 15 s da anterior'); return send(429, { error: 'Aguarde 15 segundos antes de tentar novamente.' }); }
         lastLogin = Date.now();
         log.info('login: tentativa pelo painel');
-        const status = await asc.login(body.username.trim(), body.password, body.onlyFreeleech);
-        log.info(`login: sessão confirmada (filtro freeleech ${body.onlyFreeleech ? 'ligado' : 'desligado'})`);
+        const status = await asc.login(body.username.trim(), body.password);
+        // `onlyFreeleech` (corpo antigo) é ignorado: o filtro agora é a configuração ASC_ONLY_FREELEECH.
+        log.info('login: sessão confirmada');
         return send(200, status);
       }
       if (url.pathname === '/api/verify') {

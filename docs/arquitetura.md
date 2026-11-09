@@ -70,7 +70,7 @@ Rotas relativas a `http://127.0.0.1:7020`. Todas exigem Host exato; as ações P
 |---|---|
 | `GET /api/status` | Situação da sessão |
 | `GET /api/monitor` | Snapshot da ponte/conta; exige sessão ASC confirmada |
-| `POST /api/login` | Login com `username`, `password` e `onlyFreeleech` |
+| `POST /api/login` | Login com `username` e `password` (`onlyFreeleech`, se vier, é ignorado: o filtro é a configuração `ASC_ONLY_FREELEECH`) |
 | `POST /api/verify` | Confirma sessão existente |
 | `POST /api/logout` | Remove sessão local |
 | `POST /api/complete` | Conclusão com `infoHash`; exige sessão confirmada |

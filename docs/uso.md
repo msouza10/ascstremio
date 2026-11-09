@@ -4,11 +4,11 @@ Com a instalação concluída, faça login no painel **http://127.0.0.1:7020/** 
 
 ## Login e busca
 
-O login salva cookies da sessão e a escolha do filtro freeleech, sem persistir a senha do formulário. Se a sessão expirar, conecte novamente. Desafios do site e autenticação adicional podem exigir ação no navegador; o programa não tenta contorná-los. Sair pelo painel remove a sessão local, mas não encerra outras sessões no site nem torrents ativos.
+O login salva só os cookies da sessão e a data do login, sem persistir a senha do formulário. Se a sessão expirar, conecte novamente. Desafios do site e autenticação adicional podem exigir ação no navegador; o programa não tenta contorná-los. Sair pelo painel remove a sessão local, mas não encerra outras sessões no site nem torrents ativos.
 
 Em Descobrir → Filmes, **ASC — filmes** permite buscar no tracker. Abrir filmes de catálogos com ID IMDb também consulta fontes ASC. A busca considera até 96 releases por consulta e oferece até doze fontes em buscas IMDb. Não há paginação online nem seleção de episódios de packs.
 
-O filtro **somente freeleech** começa ativado; para mudar, faça login novamente com a opção desejada. O filtro é conferido também no momento do play, inclusive para URLs antigas. Um release sem confirmação de freeleech não é baixado com o filtro ligado.
+O filtro **somente freeleech** é a opção `ASC_ONLY_FREELEECH` (regra 2.7), ligada por padrão, e não faz mais parte do login. Para mudar, abra **Configurações** (menu do painel, grupo "Conta e catálogo"; também no assistente e em `npm run configurar`): vale na hora, sem novo login nem reinício, e o catálogo e as fontes passam a refletir a troca. Quem tinha escolhido "todos os releases" no login de uma versão anterior tem essa escolha migrada uma única vez para o `settings.json` na primeira partida (nunca sobrescreve uma configuração já existente). O filtro é conferido também no momento do play, inclusive para URLs antigas. Um release sem confirmação de freeleech não é baixado com o filtro ligado.
 
 ## Como ler as fontes
 

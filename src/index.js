@@ -8,6 +8,7 @@ const { loadLibrary, describeEntry } = require('./library');
 const { MetaCache } = require('./meta-cache');
 const { Bridge } = require('./bridge');
 const { AscClient } = require('./asc-client');
+const { migrateLegacyFreeleech } = require('./freeleech-migration');
 const { startConfig } = require('./config-server');
 const { createAscProvider } = require('./asc-provider');
 const { readPasskey, DEFAULT_ANNOUNCE_BASE } = require('./passkey');
@@ -119,6 +120,11 @@ async function main() {
 
   const asc = new AscClient({ stateFile: path.join(DATA_DIR, 'asc-session.json') });
   await asc.load();
+  // Filtro "somente freeleech": fonte única é a configuração (issue #54). Quem tinha escolhido
+  // "todos os releases" no login antigo é migrado uma vez para o settings.json.
+  const freeleechMigration = await migrateLegacyFreeleech({ client: asc, dataDir: DATA_DIR, env: bootEnv, log });
+  if (freeleechMigration.migrated) v.ASC_ONLY_FREELEECH = freeleechMigration.value;
+  asc.setOnlyFreeleech(v.ASC_ONLY_FREELEECH);
 
   const backgroundMode = v.BACKGROUND_COMPLETE;
   const afterSeed = v.AFTER_SEED;
@@ -206,6 +212,7 @@ async function main() {
     addSecret: (secret) => logger.addSecret(secret),
     applyLive: (key, value) => {
       if (key === 'LOG_LEVEL') return logger.setLevel(value);
+      if (key === 'ASC_ONLY_FREELEECH') return asc.setOnlyFreeleech(value);
       if (alertKeys.has(key)) { alerts.setConfig({ [key]: value }); return true; }
       return false;
     },
