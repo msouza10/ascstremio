@@ -11,20 +11,17 @@ function inContainer(env = process.env) {
   return env.ASCSTREMIO_CONTAINER === '1';
 }
 
-const PRIVATE_V4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
-
-function isLoopbackAddress(address, env = process.env) {
+// Só loopback de verdade. Endereço privado (RFC1918) não prova identidade: no
+// contêiner, o gateway do Docker e qualquer outro contêiner da rede têm um.
+function isLoopbackAddress(address) {
   if (!address) return false;
   const value = String(address).replace(/^::ffff:/i, '');
-  if (value === '::1' || /^127\.\d+\.\d+\.\d+$/.test(value)) return true;
-  // No contêiner, quem chega pela porta publicada vem do gateway da rede do Docker.
-  return inContainer(env) && PRIVATE_V4.test(value);
+  return value === '::1' || /^127\.\d+\.\d+\.\d+$/.test(value);
 }
 
-// Rotas administrativas da ponte (/cleanup, /seed-status, /status) só atendem
-// quem está nesta máquina. Falha fechada se o socket não puder ser lido.
-function isLoopbackRequest(req, env = process.env) {
-  return isLoopbackAddress(req?.socket?.remoteAddress, env);
+// Falha fechada se o socket não puder ser lido.
+function isLoopbackRequest(req) {
+  return isLoopbackAddress(req?.socket?.remoteAddress);
 }
 
 // Interface de escuta da ponte. Sem opt-in explícito, só loopback: expor a

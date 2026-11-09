@@ -129,9 +129,11 @@ async function main() {
 
   const accessKey = loadAccessKey(path.join(DATA_DIR, 'bridge-key'));
   logger.addSecret(accessKey);
+  const adminKey = loadAccessKey(path.join(DATA_DIR, 'admin-key'));
+  logger.addSecret(adminKey);
   const bridge = new Bridge({
     torrentDir, storeDir, port: bridgePort, host, publicUrl, passkey, strictHost: true,
-    accessKey, uploadLimit, announceBase, vault,
+    accessKey, adminKey, uploadLimit, announceBase, vault,
     backgroundMode, idleMs: idleMinutes * 60 * 1000, afterSeed,
     resumeOnStart: false, // painel e addon sobem primeiro; os torrents retomam em seguida
     keepAwake: new KeepAwake({ mode: (process.env.KEEP_AWAKE || 'auto').toLowerCase() }),
