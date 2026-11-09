@@ -22,6 +22,7 @@ const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { Retention } = require('./retention-service');
 const { logger } = require('./logger');
 const { rankPending, runLimited } = require('./resume-policy');
+const { StreamMetrics } = require('./stream-metrics');
 const { monitorEventLoopDelay, performance } = require('perf_hooks');
 const log = logger.child('ponte');
 const tlog = logger.child('torrent');
@@ -105,6 +106,7 @@ class Bridge {
     resumeOnStart = true,
     resumeConcurrency = 1, // retomadas abertas ao mesmo tempo (RESUME_CONCURRENCY); 1 = uma por vez, como sempre foi
     monotonic = () => performance.now(), // relógio monotônico da medição de retomada (injetável nos testes)
+    streamMetrics = {}, // ajustes da medição de stalls/seeks (stallMs, seekBytes; injetável nos testes)
     ascResolver = null,
     ascSizeHint = null, // (ascId) => bytes da listagem, para reservar espaço antes de baixar o .torrent
   }) {
@@ -140,6 +142,8 @@ class Bridge {
     this.resumeOnStart = resumeOnStart;
     this.resumeConcurrency = Math.max(1, Math.floor(resumeConcurrency) || 1);
     this.monotonic = monotonic;
+    // Só observa a reprodução (issue #33): não altera leitura antecipada, buffer nem timeouts.
+    this.metrics = new StreamMetrics({ now: monotonic, log, ...streamMetrics });
     this.clock = clock;
     this.resumeRun = null; // retomada em andamento: chamadas concorrentes se juntam a ela
     this.resumeAgain = false;
@@ -852,6 +856,7 @@ class Bridge {
       },
       playback: this.playbackSnapshot(),
       resume: this.resumeSnapshot(),
+      streaming: this.metrics.snapshot(),
       account: this.account
         ? {
           hitAndRuns: this.account.hitAndRuns,
@@ -1474,12 +1479,15 @@ class Bridge {
 
     // Espera o primeiro pedaço antes de responder: se não houver peer, o player
     // recebe 504 em vez de um 206 pendurado para sempre.
+    const trace = this.metrics.begin(`${infoHash}:${fileIdx}`, { start });
+    res.once('close', () => trace.finish(res.writableFinished ? 'ok' : 'fechado'));
     const stream = file.createReadStream({ start, end });
     const iterator = stream[Symbol.asyncIterator]();
 
     let first;
     try {
       let timer;
+      trace.waiting();
       first = await Promise.race([
         iterator.next(),
         new Promise((_, reject) => {
@@ -1490,12 +1498,14 @@ class Bridge {
         }),
       ]).finally(() => clearTimeout(timer));
     } catch (err) {
+      trace.timeout(); // conta o timeout já, antes de esperar o iterador fechar
       await iterator.return?.().catch(() => {});
       res.writeHead(504, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: err.message, peers: torrent.numPeers }));
       return;
     }
 
+    trace.received(first.value?.length ?? 0);
     res.writeHead(range ? 206 : 200, headers);
 
     // Player fez seek ou fechou: cancela a seleção de peças desse intervalo.
@@ -1508,8 +1518,10 @@ class Bridge {
       if (first.value) res.write(first.value);
       if (!first.done) {
         for (;;) {
+          trace.waiting();
           const { value, done } = await iterator.next();
-          if (done) break;
+          if (done) { trace.received(0); break; }
+          trace.received(value.length);
           if (!res.write(value)) {
             await new Promise((resolve) => res.once('drain', resolve));
           }
