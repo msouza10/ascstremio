@@ -330,7 +330,17 @@ function classifyRemote(address) {
 // Observador de conexões de ENTRADA de peers. Guarda só contadores e horários: nenhum
 // endereço, porta remota, peerId ou info hash (privacidade; o tracker é privado).
 function createPeerObserver({ now = Date.now } = {}) {
-  const st = { total: 0, publico: 0, privado: 0, desconhecido: 0, lastAt: null, lastPublicAt: null, startedAt: now(), firstTorrentAt: null };
+  const st = { total: 0, publico: 0, privado: 0, desconhecido: 0, lastAt: null, lastPublicAt: null, startedAt: now(), activeMs: 0 };
+  let client = null;
+  let lastSample = now();
+  let lastActive = false;
+  // Soma só os intervalos em que havia torrent ativo (amostrado a cada snapshot, ~1 min).
+  const sample = () => {
+    const t = now();
+    if (lastActive) st.activeMs += Math.max(0, t - lastSample);
+    lastSample = t;
+    lastActive = Boolean(client?.torrents?.length);
+  };
   const seen = new WeakSet();
   const onWire = (wire) => {
     // 'tcpIncoming'/'utpIncoming' = o peer nos procurou; 'tcpOutgoing' = fomos nós (não prova nada).
@@ -345,17 +355,18 @@ function createPeerObserver({ now = Date.now } = {}) {
   const watch = (torrent) => {
     if (!torrent || seen.has(torrent) || typeof torrent.on !== 'function') return;
     seen.add(torrent);
-    if (st.firstTorrentAt === null) st.firstTorrentAt = now();
     torrent.on('wire', onWire);
   };
   return {
     // Liga ao cliente do motor: pega os torrents existentes e os futuros. Não abre porta nem torrent.
-    attach(client) {
-      if (!client || typeof client.on !== 'function') return;
+    attach(c) {
+      if (!c || typeof c.on !== 'function') return;
+      client = c;
+      sample();
       for (const t of client.torrents ?? []) watch(t);
       client.on('torrent', watch);
     },
-    snapshot: () => ({ ...st }),
+    snapshot: () => { sample(); return { ...st }; },
   };
 }
 
@@ -383,7 +394,7 @@ function evaluatePeerPort({ engine = { known: false }, observed = null, configur
   const port = listening ? engine.port : null;
   const evidence = observed ? (container ? observed.publico + observed.privado : observed.publico) : 0;
   const localOnly = observed && !container ? observed.privado : 0;
-  const observedMs = observed?.firstTorrentAt ? now - observed.firstTorrentAt : 0;
+  const observedMs = observed?.activeMs ?? 0;
 
   let state;
   if (!engine.known) state = 'desconhecido';

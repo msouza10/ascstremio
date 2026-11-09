@@ -66,7 +66,7 @@ test('estados: desconhecido, sem_escuta (porta ocupada), escutando, sem_entrada,
   const client = fakeClient();
   obs.attach(client);
   const t = new EventEmitter();
-  client.emit('torrent', t);
+  client.torrents.push(t); client.emit('torrent', t);
   assert.equal(ev(client, obs.snapshot()).state, 'escutando');
   clk.t += 7 * H;
   const quiet = ev(client, obs.snapshot());
@@ -80,6 +80,28 @@ test('estados: desconhecido, sem_escuta (porta ocupada), escutando, sem_entrada,
   const ok = ev(client, obs.snapshot());
   assert.equal(ok.state, 'entrada_observada');
   assert.equal(ok.layers.entrada.observada, 1);
+});
+
+test('tempo ocioso sem torrent não conta para sem_entrada', () => {
+  const clk = clock();
+  const obs = network.createPeerObserver({ now: clk.now });
+  const client = fakeClient();
+  obs.attach(client);
+  const t = new EventEmitter();
+  client.torrents.push(t); client.emit('torrent', t);
+  obs.snapshot();
+  clk.t += 5 * 60000;
+  obs.snapshot();
+  client.torrents.length = 0; // torrent removido
+  obs.snapshot();
+  clk.t += 10 * H; // longo período ocioso
+  assert.ok(obs.snapshot().activeMs <= 6 * 60000);
+  const r = network.evaluatePeerPort({ engine: network.engineState(client), observed: obs.snapshot(), configuredPort: 7030 });
+  assert.equal(r.state, 'escutando');
+  // um novo torrent não herda o tempo ocioso
+  const t2 = new EventEmitter();
+  client.torrents.push(t2); client.emit('torrent', t2);
+  assert.equal(network.evaluatePeerPort({ engine: network.engineState(client), observed: obs.snapshot(), configuredPort: 7030 }).state, 'escutando');
 });
 
 test('escuta local nunca vira prova de alcance: firewall/NAT sempre desconhecido', () => {
@@ -97,7 +119,7 @@ test('porta aleatória e divergência de configuração geram nota', () => {
 });
 
 test('contêiner: publicação não verificável e origem mascarada', () => {
-  const observed = { total: 1, publico: 0, privado: 1, desconhecido: 0, lastAt: 5, lastPublicAt: null, startedAt: 1, firstTorrentAt: 1 };
+  const observed = { total: 1, publico: 0, privado: 1, desconhecido: 0, lastAt: 5, lastPublicAt: null, startedAt: 1, activeMs: 10 * 3600 * 1000 };
   const r = network.evaluatePeerPort({ engine: { known: true, listening: true, port: 7030 }, observed, configuredPort: 7030, container: true, now: 10 });
   assert.equal(r.layers.publicacao.modo, 'contêiner');
   assert.equal(r.layers.publicacao.verificavel, false);
@@ -109,7 +131,7 @@ test('contêiner: publicação não verificável e origem mascarada', () => {
 test('resumo em disco: leitura recente vale; velho, ausente ou corrompido é desconhecido', () => {
   const dir = tmpdir('peers-');
   assert.equal(network.readPeerStatus(dir).stale, true);
-  const observed = { total: 0, publico: 0, privado: 0, desconhecido: 0, lastAt: null, lastPublicAt: null, startedAt: 1, firstTorrentAt: null };
+  const observed = { total: 0, publico: 0, privado: 0, desconhecido: 0, lastAt: null, lastPublicAt: null, startedAt: 1, activeMs: 0 };
   assert.ok(network.writePeerStatus(dir, { engine: { known: true, listening: true, port: 7030 }, observed }, 1000));
   assert.equal(network.readPeerStatus(dir, 1000 + 60000).engine.port, 7030);
   assert.equal(network.readPeerStatus(dir, 1000 + network.PEER_STATUS_FRESH_MS + 1).engine.known, false);
@@ -128,7 +150,7 @@ test('CLI rede peers: sem processo em execução é desconhecido; com resumo rec
   assert.equal(rede.run(['peers'], { env, interfaces: {}, out: (l) => out.push(l) }), 0);
   assert.match(out.join('\n'), /DESCONHECIDO/);
   const now = 5_000_000;
-  const observed = { total: 1, publico: 1, privado: 0, desconhecido: 0, lastAt: now - 1000, lastPublicAt: now - 1000, startedAt: now - 9000, firstTorrentAt: now - 8000 };
+  const observed = { total: 1, publico: 1, privado: 0, desconhecido: 0, lastAt: now - 1000, lastPublicAt: now - 1000, startedAt: now - 9000, activeMs: 8000 };
   network.writePeerStatus(dir, { engine: { known: true, listening: true, port: 7030, utp: true }, observed }, now - 1000);
   const out2 = [];
   assert.equal(rede.run(['peers', '--json'], { env, interfaces: {}, out: (l) => out2.push(l), now }), 0);

@@ -249,6 +249,21 @@
       return c;
     }
 
+    // O cartão da porta de peers é redesenhado sozinho (sem tocar no formulário nem nas edições).
+    let peerHost = null;
+    let peerAt = 0;
+    function drawPeer() {
+      if (!peerHost) return;
+      clear(peerHost);
+      const c = peerPortCard();
+      if (c) peerHost.append(c);
+    }
+    async function refreshPeer() {
+      if (!state || !peerHost || Date.now() - peerAt < 15000) return;
+      peerAt = Date.now();
+      try { const fresh = await loadState(); state.peerPort = fresh.peerPort; drawPeer(); } catch { /* mantém o último valor */ }
+    }
+
     // Porta de peers: somente leitura. Escuta local não é alcance externo; os estados são explícitos.
     function peerPortCard() {
       const p = state.peerPort;
@@ -311,8 +326,7 @@
       discard.addEventListener('click', () => { drafts = {}; errors = { byKey: {}, general: [] }; errBox.clear(); previewHost.replaceChildren(); setText(live, 'Alterações descartadas.'); draw(); });
       const pb = playbackCard();
       if (pb) host.append(pb);
-      const pp = peerPortCard();
-      if (pp) host.append(pp);
+      peerHost = el('div'); host.append(peerHost); drawPeer();
       host.append(errBox.root, previewHost, form, installCard(() => state, M.copyName(state.mode)).root);
     }
 
