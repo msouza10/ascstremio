@@ -23,6 +23,7 @@ commits em português do Brasil, com acentuação.
 |---|---|
 | `src/index.js` | ponto de entrada: lê o ambiente, monta ponte, addon, painel e o vigia de hit-and-run |
 | `src/bridge.js` | **ponte** (porta 7010): `/s/<hash>/<idx>` e `/a/<id>` (stream), rotas administrativas, seed e conclusão |
+| `src/credentials.js`, `src/addon-auth.js`, `src/credenciais-cli.js` | credenciais de instalação, porta autenticada do addon e CLI (`npm run credenciais`) |
 | `src/addon.js`, `src/asc-provider.js`, `src/providers/` | addon Stremio (porta 7000): catálogos, fontes sob demanda, nomes e selos |
 | `src/asc-client.js` | cliente HTTP do site do ASC (login, cookies, busca, `.torrent`, atividade) |
 | `src/config-server.js`, `src/ui/` | painel e login (porta 7020); UI em JS puro, sem framework |
@@ -95,7 +96,7 @@ tem de ser igual à de dentro (ele confere `Host: 127.0.0.1:<CONFIG_PORT>`).
    em `127.0.0.1`). A ponte não tem autenticação de usuário.
 3. **Anti DNS rebinding:** addon, ponte e painel recusam `Host` que não seja IP literal, `localhost`
    ou algo em `ALLOWED_HOSTS`/`BRIDGE_PUBLIC_URL`/`ADDON_PUBLIC_URL` (`safety.hostAllowed`).
-4. **Chave nas URLs de stream** (`?k=`, `bridge-key` 0600): `/s/…` e `/a/…` sem ela dão 403. Impede
+4. **Credencial de instalação** (token por instalação, `credentials.json` 0600 só com verificador; prefixo `/<token>/` no addon e `?k=` no vídeo): sem credencial ativa, addon, `/s/…` e `/a/…` dão 403; revogar vale na hora. Nunca em log (o logger redige `ascc_…`/`k=`). Impede
    que uma página web dispare download/snatch com a conta do usuário.
 5. **Rotas administrativas** (`/cleanup`, `/status`, `/seed-status`, `/complete`): só da própria máquina
    e nunca com cabeçalho `Origin` (anti-CSRF). O painel exige token CSRF, `Origin` e `Host` exatos.

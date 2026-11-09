@@ -1,6 +1,6 @@
 # Uso no Stremio e no painel
 
-Com a instalação concluída, faça login no painel **http://127.0.0.1:7020/** e instale **http://127.0.0.1:7000/manifest.json** no Stremio. Se mudar a porta, use os endereços correspondentes da sua [configuração](configuracao.md).
+Com a instalação concluída, faça login no painel **http://127.0.0.1:7020/** e instale no Stremio a URL `http://127.0.0.1:7000/<credencial>/manifest.json`, emitida por `npm run credenciais -- garantir` (veja [credenciais](seguranca.md#credenciais-de-instalação-do-addon)). Se mudar a porta, use os endereços correspondentes da sua [configuração](configuracao.md).
 
 ## Login e busca
 
@@ -63,7 +63,7 @@ O painel atualiza a cada cinco segundos e oferece temas claro e escuro. O monito
 
 ## ASC — status
 
-Esse catálogo mostra resumo, avisos, conta e filmes em andamento dentro do Stremio. Abrir um item oferece a ação de abrir o painel. Avisos críticos também podem aparecer no topo das fontes de um filme.
+Esse catálogo mostra resumo, avisos, conta e filmes em andamento dentro do Stremio. Por expor ratio e avisos da conta, ele só aparece para credenciais emitidas com `--status` (`credenciais criar "Nome" --status`); as demais não o veem. Abrir um item oferece a ação de abrir o painel. Avisos críticos também podem aparecer no topo das fontes de um filme.
 
 Se o catálogo não aparecer, remova e instale o addon novamente: o Stremio pode ter guardado o manifesto antigo. `STATUS_CATALOG=off` desliga o recurso. Os cartões são SVG; clientes sem suporte ainda podem mostrar o texto.
 

@@ -22,7 +22,7 @@ No serviço Linux, alterar `service.env` exige reiniciar. O serviço tenta inici
 
 1. Verifique as pendências e pare a instância para obter um conjunto consistente.
 2. Copie toda a pasta de dados, incluindo arquivos ocultos quando existirem. Se `ASC_TORRENT_DIR` ou `BRIDGE_STORE` apontarem para fora dela, copie esses caminhos também.
-3. Proteja o backup como credencial: ele contém sessão, passkey e chave de reprodução. Não o envie ao GitHub.
+3. Proteja o backup como credencial: ele contém sessão, passkey e verificadores das credenciais de reprodução. Não o envie ao GitHub.
 4. Restaure com a aplicação parada, em uma única instância, preservando permissões e caminhos configurados.
 5. Inicie e confirme sessão, arquivos locais, pendências e conciliação com o tracker no painel.
 
@@ -54,7 +54,8 @@ A redação automática não remove necessariamente dados pessoais, títulos ou 
 | Painel responde 403 | Use `127.0.0.1`, não `localhost`, nome do NAS ou IP LAN; mantenha a porta externa igual à interna no contêiner |
 | POST do painel responde 403 | Reabra a página após reiniciar; token antigo, Origin ou tipo JSON incorretos são recusados |
 | Sem fontes ASC | Sessão confirmada, filme compatível, filtro freeleech e disponibilidade da busca; consulte os logs |
-| Catálogo de status não aparece | `STATUS_CATALOG` e manifesto guardado pelo Stremio; remova e reinstale o addon |
+| Catálogo de status não aparece | `STATUS_CATALOG`, credencial emitida sem `--status` e manifesto guardado pelo Stremio; remova e reinstale o addon |
+| Addon ou vídeo dão 403 depois de atualizar | A chave única antiga `bridge-key` não vale mais; emita uma credencial (`credenciais garantir`) e reinstale o addon com a URL nova |
 | `UND_ERR_HEADERS_OVERFLOW` | Execute por `npm start` ou com a opção de cabeçalhos prevista no launcher; não use `node src/index.js` isoladamente |
 | Torrent sem peers | Passkey carregada, peers disponíveis, rede e acesso ao tracker; login no site não substitui passkey |
 | Play retorna 409 | Filtro freeleech ou política de seed, conforme a rota e a mensagem |
@@ -66,4 +67,4 @@ A redação automática não remove necessariamente dados pessoais, títulos ou 
 | Conta ainda não lida | Aguarde a consulta e examine sessão/rede; ausência de dados não significa tudo em dia |
 | Seed para quando o PC suspende | Verifique `KEEP_AWAKE`, ferramenta do sistema e energia do host, especialmente em contêiner |
 
-Para abrir uma issue, informe versão, sistema, Node (se execução manual), método de instalação e passos sem dados reais. Informe também se mudou LAN, portas ou diretórios. Nunca inclua senha, passkey, cookie, `bridge-key` ou URL completa com `?k=`.
+Para abrir uma issue, informe versão, sistema, Node (se execução manual), método de instalação e passos sem dados reais. Informe também se mudou LAN, portas ou diretórios. Nunca inclua senha, passkey, cookie, URL de instalação do addon (`/<credencial>/manifest.json`) ou URL de vídeo com `?k=`.

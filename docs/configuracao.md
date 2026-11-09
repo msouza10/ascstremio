@@ -12,7 +12,7 @@ As variáveis são lidas na inicialização. Reinicie a instância depois de alt
 
 | Variável | Padrão | Comportamento |
 |---|---|---|
-| `DATA_DIR` | `private/` na raiz do código | Sessão, passkey, chave de reprodução, cofre, torrents, cache e logs |
+| `DATA_DIR` | `private/` na raiz do código | Sessão, passkey, credenciais de reprodução, cofre, torrents, cache e logs |
 | `ASC_TORRENT_DIR` | `DATA_DIR/torrents` | Biblioteca local de `.torrent` |
 | `BRIDGE_STORE` | `DATA_DIR/cache` | Arquivos de vídeo e dados recebidos |
 | `PASSKEY` | ausente | Credencial do tracker em memória; precede a leitura do arquivo |
