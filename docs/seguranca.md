@@ -51,6 +51,8 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 
 **Migração.** A chave única antiga (`bridge-key`) e o manifesto sem prefixo deixam de funcionar. Emita uma credencial, remova o addon antigo no Stremio e instale a URL nova. Os dados e o seed não são afetados.
 
+**Limite de reproduções.** A quota opcional de reproduções simultâneas (`PLAYBACK_MAX_SESSIONS`, `PLAYBACK_MAX_PER_CREDENTIAL`) é contada por credencial, nunca por IP, e é verificada depois da credencial e antes de qualquer download. O diagnóstico (`GET /playback`) é administrativo e traz só contagens; um aparelho não consulta o histórico de outro. Detalhes em [configuração](configuracao.md#reproduções-simultâneas).
+
 ## Controles atuais
 
 - Addon e ponte validam `Host`, aceitando IP literal, localhost e nomes explicitamente configurados. Isso combate DNS rebinding; não autentica o cliente.

@@ -40,6 +40,7 @@ A ponte serve vídeo por HTTP com suporte a `Range`, usando o motor BitTorrent l
 | Sem seeders | O play online é recusado com 503 antes do download; dados locais completos ainda podem tocar |
 | Não freeleech com filtro ativo | Recusado com 409 |
 | Primeiro trecho sem chegar em 60 s | Resposta 504; veja [diagnóstico](manutencao.md#diagnóstico) |
+| Limite de reproduções simultâneas atingido (opcional) | Resposta 429 com `Retry-After`; veja [reproduções simultâneas](configuracao.md#reproduções-simultâneas) |
 
 Torrents com flag privada ou não privada usam a mesma ponte, com descoberta pública de peers desativada. O formato completo pode ser descoberto somente depois de obter o `.torrent`; um release recusado deixa de ser oferecido nas próximas listas dessa execução.
 
