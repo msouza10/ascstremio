@@ -53,13 +53,36 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 
 **Limite de reproduções.** A quota opcional de reproduções simultâneas (`PLAYBACK_MAX_SESSIONS`, `PLAYBACK_MAX_PER_CREDENTIAL`) é contada por credencial, nunca por IP, e é verificada depois da credencial e antes de qualquer download. O diagnóstico (`GET /playback`) é administrativo e traz só contagens; um aparelho não consulta o histórico de outro. Detalhes em [configuração](configuracao.md#reproduções-simultâneas).
 
+## Administração do painel pela LAN
+
+Opcional, desligada por padrão e **separada** da reprodução na LAN (`ASCSTREMIO_MODE=lan` sozinho não abre o painel). Habilitação e uso: [configuração](configuracao.md#administração-do-painel-pela-lan).
+
+**Três credenciais distintas, com ciclos de vida distintos:** (1) o login do ASC só confirma a conta no tracker e **não autentica** quem fala com este computador; (2) a credencial de instalação do addon dá reprodução e nunca administração; (3) a senha de administração do painel vale só para o painel. O token administrativo da ponte (`admin-key`) nunca é entregue ao navegador e não vale no painel.
+
+**O que muda quando está ativa.** Todas as rotas `/api/*` (inclusive logs, status, configurações, login do ASC e ações), pelo endereço da LAN **e** por `127.0.0.1`, exigem uma sessão de administração. Ficam públicos apenas o shell estático da interface, `/config.js` (só um token de pré-login) e `GET /api/admin/session` (que diz se há sessão). O painel não tem rotas da ponte: `/s/…`, `/a/…`, `/cleanup`, `/credentials`, `/complete` etc. dão 404 por esse caminho, com ou sem sessão.
+
+**Controles.**
+- Sessão: identificador aleatório de 256 bits em cookie `HttpOnly; SameSite=Strict; Path=/` (em HTTPS, `__Host-…; Secure`), guardada só em memória (indexada por SHA-256). Inatividade (padrão 30 min) e limite absoluto (12 h) são relógios separados; o id é rotacionado a cada 15 min (o anterior vale 15 s para requisições paralelas) e é sempre novo no login (sem fixação). Fica presa ao `Host` do login. Logout, troca de senha, `revogar-sessoes`, remoção da senha e reinício a encerram.
+- Senha: mínimo de 12 caracteres, scrypt (N=32768) com sal, comparação em tempo constante, arquivo `panel-admin.json` 0600; nunca em log, URL ou resposta. A resposta de erro é genérica (`Senha incorreta.`).
+- Tentativas: 5 erros por minuto por origem do socket (nunca de cabeçalho encaminhado) e 30 globais; excedido, `429` com `Retry-After`, inclusive para a senha certa. Atraso fixo após erro e no máximo 2 verificações scrypt simultâneas. Não há bloqueio permanente.
+- `Host` exato (`<LAN_ADVERTISE_HOST>:<CONFIG_PORT>` ou o host de `CONFIG_PUBLIC_URL`), sem curinga, e `Origin` exata derivada dele; fora disso, `403`. Isso cobre DNS rebinding para o endereço da LAN. O login exige ainda `Origin`, JSON e o token de pré-login (login-CSRF); as demais ações exigem o CSRF **da sessão**.
+- O painel só escuta no IPv4 da LAN escolhido (nunca `0.0.0.0`) mais o loopback. Fora do contêiner apenas.
+
+**Transporte e limites honestos.**
+- Sem `CONFIG_PUBLIC_URL`, a senha e o cookie trafegam em **HTTP sem criptografia**. Quem vê o tráfego da rede (Wi-Fi compartilhado, aparelho comprometido, ARP spoofing) lê ambos e passa a administrar o host. Por isso o modo exige o aceite explícito `CONFIG_ADMIN_HTTP_CLEAR=true` e o programa não promete nada além de "rede doméstica confiável".
+- A opção recomendada é um **proxy reverso com HTTPS no mesmo computador** (Caddy, nginx; certificado de CA local ou de um nome seu) e `CONFIG_PUBLIC_URL=https://…`. O programa não implementa TLS. O proxy deve repassar o `Host` original e conectar a `127.0.0.1:<CONFIG_PORT>`. Cabeçalhos `X-Forwarded-*`/`Forwarded` **nunca** são lidos; a origem pública vem só da configuração. Nesse modo o painel recusa conexões que não venham do loopback; mas, como todos os clientes chegam pelo proxy, o limite de tentativas por origem vira praticamente global.
+- Cookies não isolam portas: outro serviço no mesmo host em outra porta recebe o cookie de sessão (ele é `HttpOnly`, mas é enviado). Não rode serviços não confiáveis no mesmo nome.
+- Quem tem acesso ao terminal do host (ou ao `DATA_DIR`) administra de qualquer jeito; a senha protege contra a rede, não contra o dono da máquina.
+- Um vizinho da rede pode provocar `429` e atrasar o login do dono por até um minuto (negação de serviço breve, não acesso).
+- Não expõe à internet: não encaminhe portas nem publique o proxy fora da LAN/VPN pessoal. Não há suporte a hospedagem pública.
+
 ## Controles atuais
 
 - Addon e ponte validam `Host`, aceitando IP literal, localhost e nomes explicitamente configurados. Isso combate DNS rebinding; não autentica o cliente.
 - Todas as rotas do addon e `/a/…`, `/s/…` exigem uma credencial de instalação ativa (prefixo `/<token>/` no addon, `?k=<token>` no vídeo), verificada a cada pedido.
 - As rotas administrativas da ponte exigem `X-Admin-Token`, recusam `Origin` e, fora do contêiner, só aceitam loopback. `POST /cleanup` não tem mais `force=1`.
 - O painel exige `Host` exato `127.0.0.1:<CONFIG_PORT>`; ações POST também exigem origem exata, JSON e token CSRF. O token não é uma autenticação de usuário do sistema.
-- As rotas de configuração do painel (`/api/settings`, `/api/settings/preview`, `/api/wizard/*`, `/api/credentials`) exigem sessão do ASC confirmada além das proteções acima, não existem na ponte e escrevem pelo único escritor do processo (`settings.update` com `expectedRevision`). Segredos (passkey, `ANNOUNCE_BASE`, token administrativo) nunca saem: só "definido". O único segredo devolvido é o token de uma credencial recém-emitida, na resposta da emissão, uma vez, e ele é redigido nos logs. O painel continua só em loopback; administrar pela LAN não faz parte disto.
+- As rotas de configuração do painel (`/api/settings`, `/api/settings/preview`, `/api/wizard/*`, `/api/credentials`) exigem sessão do ASC confirmada além das proteções acima, não existem na ponte e escrevem pelo único escritor do processo (`settings.update` com `expectedRevision`). Segredos (passkey, `ANNOUNCE_BASE`, token administrativo) nunca saem: só "definido". O único segredo devolvido é o token de uma credencial recém-emitida, na resposta da emissão, uma vez, e ele é redigido nos logs. Por padrão o painel continua só em loopback; a administração pela LAN é um opt-in separado (seção própria).
 - DHT, LSD, PEX, UPnP e NAT-PMP estão desativados no motor da ponte.
 - A imagem roda sem root; as invocações fornecidas usam sistema de arquivos somente leitura, `/tmp` temporário, capabilities removidas e `no-new-privileges`.
 
@@ -71,6 +94,7 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 | Passkey | `passkey.txt` ou ambiente | Credencial do tracker; não compartilhar |
 | Credenciais de reprodução | `credentials.json` | Só verificadores (SHA-256); o token não é recuperável. Mesmo assim, não publique |
 | Chave única antiga | `bridge-key` | Obsoleta e ignorada; pode ser apagada |
+| Senha de administração do painel | `panel-admin.json` | Só verificador scrypt com sal (0600); a senha não é recuperável. Quem o copia pode tentar força bruta offline: use senha longa |
 | Token administrativo | `admin-key` | Dá acesso às rotas administrativas da ponte; nunca em URL, log ou captura |
 | Obrigações de seed | `seed-vault.json` | Histórico local e referências a torrents |
 | Metadados de fontes | `meta-cache.json` | Só nome, tamanho e selos de releases por filme; sem cookie, passkey, credencial, URL, seeders ou freeleech. Modo restrito, até 90 dias. Pode ser apagado |
