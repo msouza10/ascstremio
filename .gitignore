@@ -5,6 +5,7 @@ data/
 passkey.txt
 *.passkey
 bridge-key
+admin-key
 asc-session.json
 seed-vault.json
 service.env
