@@ -23,7 +23,7 @@ async function setup({ env = {}, connected = true, interfaces = NET } = {}) {
   const credentials = new CredentialStore({ file: path.join(dataDir, 'credentials.json') });
   const levels = [];
   const panel = createPanelSettings({
-    dataDir, bootEnv, running: snap.values, credentials, interfaces, playback: () => ({ active: 1, maxSessions: 2, maxPerCredential: 0, graceSeconds: 30, credentials: [] }),
+    dataDir, bootEnv, running: snap.values, credentials, interfaces, peerPort: () => require('../src/network').evaluatePeerPort({ engine: { known: true, listening: true, port: 7030 }, configuredPort: 7030 }), playback: () => ({ active: 1, maxSessions: 2, maxPerCredential: 0, graceSeconds: 30, credentials: [] }),
     addonBase: snap.derived.network.urls.addon,
     applyLive: (key, value) => { if (key === 'LOG_LEVEL') { levels.push(value); return true; } return false; },
   });
@@ -76,6 +76,8 @@ test('reproduções simultâneas: chaves PLAYBACK_* aparecem com unidade, faixa 
     assert.equal(o.restart, true);
     assert.equal(o.editable, true);
     assert.equal(st.playback.active, 1);
+    assert.equal(st.peerPort.state, 'escutando');
+    assert.equal(st.peerPort.layers.firewallNat.estado, 'desconhecido');
     const prev = await (await t.post('settings/preview', { expectedRevision: 0, changes: { PLAYBACK_MAX_SESSIONS: '3' } })).json();
     assert.deepEqual(prev.restart, ['PLAYBACK_MAX_SESSIONS']);
     assert.equal((await t.post('settings/preview', { expectedRevision: 0, changes: { PLAYBACK_MAX_SESSIONS: '5000' } })).status, 422);

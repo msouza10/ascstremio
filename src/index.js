@@ -156,6 +156,17 @@ async function main() {
     ? '[ponte] passkey carregada em memória (não existe nos .torrent)'
     : '[ponte] sem passkey: torrents privados ficarão sem peers (veja PASSKEY_FILE)');
   await bridge.start();
+  // Porta de peers (issue #34): só observa o motor já aberto (escuta e conexões de ENTRADA, em
+  // contadores sem endereço). Não abre porta, não abre torrent e não consulta serviço externo.
+  const peerObserver = network.createPeerObserver();
+  peerObserver.attach(bridge.client);
+  const peerPortNow = () => network.evaluatePeerPort({
+    engine: network.engineState(bridge.client), observed: peerObserver.snapshot(),
+    configuredPort: v.TORRENT_PORT, container: cfg.container,
+  });
+  const gravaPeers = () => network.writePeerStatus(DATA_DIR, { engine: network.engineState(bridge.client), observed: peerObserver.snapshot() });
+  gravaPeers();
+  setInterval(gravaPeers, 60_000).unref();
   if (backgroundMode === 'auto') {
     console.log(`[conclusão] automática: freeleech parados há ${idleMinutes} min são concluídos em segundo plano`);
   }
@@ -169,6 +180,7 @@ async function main() {
     dataDir: DATA_DIR, bootEnv, running: cfg.values, credentials,
     addonBase: net.urls.addon,
     playback: () => bridge.playbackSnapshot(),
+    peerPort: peerPortNow,
     addSecret: (secret) => logger.addSecret(secret),
     applyLive: (key, value) => (key === 'LOG_LEVEL' ? logger.setLevel(value) : false),
   });
