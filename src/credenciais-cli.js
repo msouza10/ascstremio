@@ -7,7 +7,8 @@
 //   npm run credenciais -- revogar <id>
 //
 // Fala com a ponte em execução pelas rotas administrativas, usando o token administrativo
-// de DATA_DIR/admin-key (o mesmo DATA_DIR do aplicativo). O token de reprodução só aparece
+// de DATA_DIR/admin-key (o mesmo DATA_DIR do aplicativo). Nunca grava credentials.json: só o
+// processo que detém a trava da instância escreve nele, via as rotas /credentials. O token de reprodução só aparece
 // na saída do terminal que o emitiu; não é gravado em log nem em arquivo.
 
 const fs = require('fs');
@@ -17,8 +18,13 @@ const USO = 'uso: credenciais listar | criar <nome> [--status] | garantir | rota
 
 function config(env = process.env) {
   const dataDir = path.resolve(env.DATA_DIR || path.join(__dirname, '..', 'private'));
-  const addon = (env.ADDON_PUBLIC_URL || `http://127.0.0.1:${env.PORT || 7000}`).replace(/\/$/, '');
-  return { dataDir, bridge: `http://127.0.0.1:${env.BRIDGE_PORT || 7010}`, addon };
+  // Portas e URL do addon seguem a configuração central (ambiente > settings.json > padrão).
+  // Se ela estiver quebrada, cai no ambiente: a CLI só precisa achar a ponte.
+  let v = {};
+  try { v = require('./settings').resolve({ dataDir, env }).values ?? {}; } catch { /* usa o ambiente */ }
+  const bridgePort = v.BRIDGE_PORT || env.BRIDGE_PORT || 7010;
+  const addon = String(v.ADDON_PUBLIC_URL || env.ADDON_PUBLIC_URL || `http://127.0.0.1:${v.PORT || env.PORT || 7000}`).replace(/\/$/, '');
+  return { dataDir, bridge: `http://127.0.0.1:${bridgePort}`, addon };
 }
 
 async function call(cfg, method, route, doFetch) {

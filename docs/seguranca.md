@@ -39,7 +39,7 @@ npm run credenciais -- rotacionar c_1a2b3c4d # emite outra igual e revoga a anti
 npm run credenciais -- revogar c_1a2b3c4d
 ```
 
-No contêiner use `scripts/docker.sh credenciais ...`. O instalador Linux emite a primeira credencial ao final (a saída é do terminal, não do log do serviço). A emissão também existe como rota administrativa da ponte ([arquitetura](arquitetura.md#ponte-http)).
+A CLI nunca grava `credentials.json`: só o processo que detém a [trava da instância](configuracao.md) escreve nele, e a CLI apenas chama as rotas administrativas. Portas e URL do addon vêm da configuração central (ambiente > `settings.json` > padrão). No contêiner use `scripts/docker.sh credenciais ...`. O instalador Linux emite a primeira credencial ao final (a saída é do terminal, não do log do serviço). A emissão também existe como rota administrativa da ponte ([arquitetura](arquitetura.md#ponte-http)).
 
 **O que a credencial dá e não dá.** Dá catálogo, metadados, fontes e vídeo. Não dá painel, configuração, logs, conta, nem rotas administrativas; o ratio e os avisos da conta só aparecem com `--status`, que é negado por padrão.
 
