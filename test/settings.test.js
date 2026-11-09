@@ -225,3 +225,16 @@ test('applyToEnv copia só o que veio do arquivo e liga o legado da LAN', () => 
   assert.equal(env.DEMO_MODE, 'false');
   assert.equal(env.BRIDGE_ALLOW_LAN, '1');
 });
+
+test('segredo ou chave só-ambiente no arquivo é erro explícito e update não regrava', () => {
+  const dir = novo();
+  const conteudo = JSON.stringify({ version: 1, revision: 2, values: { PASSKEY: 'x', ANNOUNCE_BASE: 'https://t.exemplo/a' } });
+  fs.writeFileSync(arquivo(dir), conteudo);
+  const r = settings.resolve({ dataDir: dir, env: {} });
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((p) => /PASSKEY.*só pelo ambiente/.test(p)));
+  assert.ok(r.problems.some((p) => /ANNOUNCE_BASE/.test(p)));
+  assert.throws(() => settings.load({ dataDir: dir, env: {} }), (e) => e.code === 'invalid');
+  assert.throws(() => settings.update({ dataDir: dir, env: {}, expectedRevision: 2, changes: { PORT: 8000 } }), (e) => e.code === 'invalid');
+  assert.equal(fs.readFileSync(arquivo(dir), 'utf8'), conteudo);
+});

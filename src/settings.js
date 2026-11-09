@@ -342,12 +342,14 @@ function resolve({ dataDir = resolveDataDir(process.env), env = process.env, fil
     const { key } = entry;
     const fromEnvText = envText(env, key);
 
+    // Chave só de ambiente (inclusive segredo) no arquivo é erro, mesmo que o valor seja ignorado.
+    if (key in disk.values && entry.envOnly) {
+      problems.push(`${FILE_NAME}: ${key} não pode ser definida no arquivo de configuração (só pelo ambiente). Remova-a do arquivo.`);
+    }
     if (entry.secret) { present[key] = fromEnvText !== null; sources[key] = fromEnvText !== null ? 'env' : 'default'; continue; }
 
     if (key in disk.values) {
-      if (entry.envOnly) {
-        problems.push(`${key}: não pode ser definida no arquivo de configuração (só pelo ambiente).`);
-      } else {
+      if (!entry.envOnly) {
         const r = coerce(entry, disk.values[key], false);
         if (r.error) problems.push(`${FILE_NAME}: ${r.error}`); else fileValues[key] = r.value;
       }
@@ -460,7 +462,11 @@ function update({ dataDir = resolveDataDir(process.env), env = process.env, chan
     if (disk.revision !== expectedRevision) {
       throw new SettingsError('conflict', `A configuração mudou (revisão ${disk.revision}, esperada ${expectedRevision}). Releia e tente de novo.`);
     }
-    const before = new Set(resolve({ dataDir, env, file: disk }).problems);
+    const antes = resolve({ dataDir, env, file: disk }).problems;
+    // Nunca regrava por cima de um arquivo com problema próprio (ex.: segredo gravado à mão): conserte antes.
+    const doArquivo = antes.filter((p) => p.startsWith(`${FILE_NAME}: `));
+    if (doArquivo.length) throw new SettingsError('invalid', doArquivo);
+    const before = new Set(antes);
     const next = { ...disk.values };
     const changed = [];
     for (const key of keys) {
