@@ -119,7 +119,7 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'LAN_ADVERTISE_HOST', type: 'advhost', default: null, group: 'rede', access: 'advanced', restart: true,
-    description: 'Endereço (IPv4, IPv6 ou nome DNS estável, sem esquema, porta ou caminho) que os outros aparelhos usam para chegar aqui, nas URLs de instalação e de vídeo. Só vale no modo LAN. Não muda a escuta nem o Host aceito além deste próprio nome.',
+    description: 'Endereço (IPv4 ou nome DNS estável; IPv6 ainda não, pois a escuta é só IPv4, sem esquema, porta ou caminho) que os outros aparelhos usam para chegar aqui, nas URLs de instalação e de vídeo. Só vale no modo LAN. Não muda a escuta nem o Host aceito além deste próprio nome.',
   },
   {
     key: 'LAN_INTERFACE', type: 'ifname', default: null, group: 'rede', access: 'advanced', restart: true,

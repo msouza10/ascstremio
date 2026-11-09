@@ -54,7 +54,8 @@ test('candidatos: nomes de interface do Windows e IPv6', () => {
   const w = network.listCandidates(REDES.windows);
   assert.deepEqual(w.filter((x) => x.auto).map((x) => x.address), ['192.168.0.15']);
   const v6 = network.listCandidates(REDES.v6);
-  assert.equal(v6.find((x) => x.address === '2804:14c:1::5').auto, true);
+  assert.equal(v6.find((x) => x.address === '2804:14c:1::5').usable, false, 'escuta é só IPv4');
+  assert.match(v6.find((x) => x.address === '2804:14c:1::5').reason, /só em IPv4/);
   assert.equal(v6.find((x) => x.address === 'fe80::5').usable, false);
   assert.equal(v6.find((x) => x.address === '::1').usable, false);
 });
@@ -114,7 +115,7 @@ test('LAN com várias interfaces: ambiguidade avisada, seleção explícita reso
   assert.equal(porIf.host, '192.168.1.20');
   assert.equal(porIf.hostSource, 'interface');
   const uma = network.evaluate(base({ interfaces: REDES.soUma }));
-  assert.equal(uma.host, '192.168.1.10', 'IPv4 preferido sobre IPv6 na mesma interface');
+  assert.equal(uma.host, '192.168.1.10');
   assert.equal(uma.ambiguous, false);
 });
 
@@ -126,11 +127,21 @@ test('Docker no host: bridges e veth não entram na escolha automática', () => 
   assert.match(sobreDocker.warnings.join(' '), /interface virtual docker0/);
 });
 
-test('IPv6 escolhido entra com colchetes nas URLs', () => {
+test('IPv6: recusado enquanto a escuta for só IPv4 (URL formada com colchetes quando houver suporte)', () => {
   const p = network.evaluate(base({ interfaces: REDES.v6, advertiseHost: '2804:14c:1::5' }));
-  assert.equal(p.urls.addon, 'http://[2804:14c:1::5]:7000');
+  assert.match(p.problems.join(' '), /IPv6 ainda não é suportado/);
   const auto = network.evaluate(base({ interfaces: REDES.v6 }));
-  assert.equal(auto.host, '2804:14c:1::5');
+  assert.equal(auto.host, null, 'só IPv6: nada elegível automaticamente');
+  assert.equal(network.urlHost('2804:14c:1::5'), '[2804:14c:1::5]');
+});
+
+test('interface presente sem endereço (DHCP subindo): aviso na partida, problema só ao salvar', () => {
+  const rede = { lo: REDES.soUma.lo, eth1: [nic('169.254.3.3')] };
+  const partida = network.evaluate(base({ interfaces: rede, interfaceName: 'eth1' }));
+  assert.deepEqual(partida.problems, []);
+  assert.match(partida.warnings.join(' '), /não tem endereço elegível/);
+  const salvar = network.evaluate(base({ interfaces: rede, interfaceName: 'eth1', strict: true }));
+  assert.match(salvar.problems.join(' '), /não tem endereço elegível/);
 });
 
 test('endereço escolhido fora do host: aviso na partida, problema ao salvar (strict)', () => {

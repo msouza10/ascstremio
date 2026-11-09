@@ -80,12 +80,14 @@ function listCandidates(interfaces = systemInterfaces()) {
         out.push({ ...base, kind: 'vpn', usable: true, auto: false, reason: 'VPN/overlay (ou faixa 100.64.0.0/10): só alcança aparelhos na mesma VPN. Use só se for o desejado, escolhendo-a explicitamente.' });
         continue;
       }
-      const ula = family === 6 && (firstHextet(address) & 0xfe00) === 0xfc00;
-      const priv = family === 4 && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(address);
-      let reason = 'Rede local.';
-      if (family === 6 && !ula) reason = 'IPv6 global: pode mudar (extensões de privacidade/prefixo do provedor); prefira um nome estável.';
-      else if (family === 4 && !priv) reason = 'IPv4 público ou fora das faixas privadas: confira se é mesmo o endereço da LAN.';
-      out.push({ ...base, kind: ula ? 'ula' : priv ? 'privado' : 'outro', usable: true, auto: true, reason });
+      if (family === 6) {
+        // A escuta é só IPv4 (0.0.0.0): anunciar IPv6 geraria URLs que ninguém alcança.
+        out.push({ ...base, kind: 'ipv6', usable: false, auto: false, reason: 'Excluído: addon e ponte escutam só em IPv4 (0.0.0.0); um endereço IPv6 anunciado não seria alcançável.' });
+        continue;
+      }
+      const priv = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(address);
+      const reason = priv ? 'Rede local.' : 'IPv4 público ou fora das faixas privadas: confira se é mesmo o endereço da LAN.';
+      out.push({ ...base, kind: priv ? 'privado' : 'outro', usable: true, auto: true, reason });
     }
   }
   return out;
@@ -166,6 +168,9 @@ function evaluate({
 
   const chosen = advertiseHost ? parseHost(advertiseHost) : null;
   if (chosen?.error) problems.push(`LAN_ADVERTISE_HOST: ${chosen.error}`);
+  if (chosen?.kind === 'ipv6' && lan) {
+    problems.push('LAN_ADVERTISE_HOST: IPv6 ainda não é suportado, pois addon e ponte escutam só em IPv4 (0.0.0.0). Use o IPv4 do host ou um nome DNS.');
+  }
 
   if (!lan) {
     // Local: escuta só em loopback (ou, no contêiner, porta publicada no 127.0.0.1 do host).
@@ -207,7 +212,7 @@ function evaluate({
     } else if (interfaceName) {
       const ok = byName.filter((c) => c.usable).sort((a, b) => (a.family === 'IPv4' ? 0 : 1) - (b.family === 'IPv4' ? 0 : 1));
       if (ok.length) { host = ok[0].address; hostSource = 'interface'; hostKind = ok[0].family === 'IPv4' ? 'ipv4' : 'ipv6'; }
-      else { host = null; if (interfaceName in (interfaces ?? {})) problems.push(`LAN_INTERFACE=${interfaceName} não tem endereço elegível (${byName.map((c) => c.reason).join(' ') || 'sem endereços'}).`); }
+      else { host = null; if (interfaceName in (interfaces ?? {})) fail(`LAN_INTERFACE=${interfaceName} não tem endereço elegível (${byName.map((c) => c.reason).join(' ') || 'sem endereços'}).`); }
     } else {
       // Sem escolha explícita: só automático entre redes locais comuns. Várias interfaces =
       // ambiguidade avisada em voz alta (não é escolha silenciosa); a partida não é bloqueada
