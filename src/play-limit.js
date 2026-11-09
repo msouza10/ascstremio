@@ -59,6 +59,14 @@ class PlaybackLimiter {
     return { ok: true, lease: new Lease(this, session) };
   }
 
+  // Há sessão (aberta ou ainda na janela de inatividade) cuja chave começa por `prefixo`?
+  // Usada pela retenção: um título com sessão recente nunca é removido.
+  hasKeyPrefix(prefixo) {
+    this.sweep();
+    for (const s of this.sessions.values()) if (String(s.key).startsWith(prefixo)) return true;
+    return false;
+  }
+
   // Segundos até a primeira vaga ociosa expirar (as que têm resposta aberta não têm prazo).
   refuse(scope, limit, credentialId) {
     const t = this.now();
