@@ -28,6 +28,7 @@ commits em português do Brasil, com acentuação.
 | `src/asc-client.js` | cliente HTTP do site do ASC (login, cookies, busca, `.torrent`, atividade) |
 | `src/config-server.js`, `src/ui/` | painel e login (porta 7020); UI em JS puro, sem framework |
 | `src/config-admin.js`, `src/configurar-cli.js` | configuração no terminal (`npm run configurar`): lógica (trava da instância + `settings.update`) e CLI/menu |
+| `src/panel-settings.js` | assistente e página de configurações do painel: prévia/gravação via `settings.update`, estado do assistente (`wizard.json`), emissão de credencial |
 | `src/seedvault.js`, `src/hnr-guard.js` | cofre de seed e conciliação com o tracker (o tracker sempre vence) |
 | `src/safety.js` | loopback, `Host` anti-rebinding, modo contêiner, aviso de inatividade |
 | `src/passkey.js` | passkey fora dos `.torrent` (injetada em memória) |

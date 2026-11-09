@@ -55,9 +55,17 @@ Os caminhos abaixo são relativos a `http://127.0.0.1:7020`. São páginas locai
 | `/trafego` | Download/upload e composição do disco; gráfico com tabela equivalente |
 | `/logs` | Logs ao vivo, filtros, arquivos e exportação |
 | `/conta` | Sessão, conta ASC, serviço e resumo das regras |
+| `/configuracoes` | Todas as opções do esquema por assunto, com valor em uso, origem, bloqueios e aviso de reinício |
+| `/assistente` | Configuração guiada: modo local ou LAN, endereço, seed e disco, instalação no Stremio |
 | `/entrar` | Login |
 
 O painel atualiza a cada cinco segundos e oferece temas claro e escuro. O monitor exige sessão confirmada; os logs continuam acessíveis localmente sem login no ASC para permitir diagnóstico. As ações de login, logout, conclusão e alteração do nível de log exigem as proteções CSRF do painel.
+
+### Assistente e Configurações
+
+Depois do **primeiro login** bem-sucedido o painel abre o assistente uma vez (dá para "Pular por enquanto"; ele continua em `/assistente` e em *Configurações → Abrir o assistente*). No modo local, os valores seguros já vêm preenchidos e o passo de seed mostra o efeito de `AFTER_SEED=delete` (apagar os arquivos depois que o tracker confirmar o seed). No modo LAN o assistente pede o endereço deste computador, explica o que fica acessível, que o tráfego é HTTP e que cada aparelho recebe uma credencial própria (a senha do ASC não é usada pelos aparelhos nem dá acesso administrativo ao aplicativo). O último passo cria a credencial e mostra a URL do addon **uma única vez**; se houver reinício pendente de rede, a URL só é oferecida depois dele.
+
+A página **Configurações** usa a mesma validação da partida e do terminal: mostra a prévia das alterações e quais exigem reinício antes de gravar, preserva o que você digitou se algo falhar ou se a configuração mudou em outra aba (conflito de revisão), e explica por que uma opção é somente leitura (definida pelo ambiente, segredo ou pasta de dados, que só se troca pelo terminal com o aplicativo parado). Sair da sessão do ASC ou atualizar o programa não refaz o assistente: a conclusão fica em `DATA_DIR/wizard.json`, separada da sessão e do `settings.json`. Se a sessão do ASC expirar, as telas pedem novo login; o terminal (`npm run configurar`) continua funcionando.
 
 **Concluir download em segundo plano** pede confirmação e baixa o restante do torrent. Isso consome disco/rede e, ao completar, abre a obrigação de seed. Consulte [seed](seed.md) antes de confirmar.
 

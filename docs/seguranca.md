@@ -57,6 +57,7 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 - Todas as rotas do addon e `/a/…`, `/s/…` exigem uma credencial de instalação ativa (prefixo `/<token>/` no addon, `?k=<token>` no vídeo), verificada a cada pedido.
 - As rotas administrativas da ponte exigem `X-Admin-Token`, recusam `Origin` e, fora do contêiner, só aceitam loopback. `POST /cleanup` não tem mais `force=1`.
 - O painel exige `Host` exato `127.0.0.1:<CONFIG_PORT>`; ações POST também exigem origem exata, JSON e token CSRF. O token não é uma autenticação de usuário do sistema.
+- As rotas de configuração do painel (`/api/settings`, `/api/settings/preview`, `/api/wizard/*`, `/api/credentials`) exigem sessão do ASC confirmada além das proteções acima, não existem na ponte e escrevem pelo único escritor do processo (`settings.update` com `expectedRevision`). Segredos (passkey, `ANNOUNCE_BASE`, token administrativo) nunca saem: só "definido". O único segredo devolvido é o token de uma credencial recém-emitida, na resposta da emissão, uma vez, e ele é redigido nos logs. O painel continua só em loopback; administrar pela LAN não faz parte disto.
 - DHT, LSD, PEX, UPnP e NAT-PMP estão desativados no motor da ponte.
 - A imagem roda sem root; as invocações fornecidas usam sistema de arquivos somente leitura, `/tmp` temporário, capabilities removidas e `no-new-privileges`.
 

@@ -29,6 +29,10 @@ Regras que valem para qualquer origem:
 - `scripts/docker.sh run` repassa diretamente apenas `AFTER_SEED` e `LOG_LEVEL`, além dos padrões da imagem; outras opções exigem ajustar a invocação ou usar Compose.
 - Windows: não há carregamento de `service.env` pelo launcher; configure o ambiente herdado pelo processo e reinicie-o.
 
+## Configuração pelo painel
+
+O painel (`http://127.0.0.1:<CONFIG_PORT>/configuracoes`, depois de entrar no ASC) lista todas as opções do esquema por assunto, com o valor em uso, a origem (ambiente, arquivo ou padrão) e se vale na hora ou só após reiniciar. Como o painel roda no mesmo processo que detém a trava da instância, ele grava em `settings.json` por esse processo, com `expectedRevision` (conflito de revisão preserva o arquivo e o que foi digitado); a CLI continua recusando escrever com o aplicativo ativo. Antes de gravar há uma prévia (mesma validação da gravação, sem escrever). `LOG_LEVEL` vale na hora; as demais opções aguardam reinício e o painel mostra "reinício pendente" enquanto o valor em uso difere do salvo. Opções do ambiente, segredos e as pastas de dados (`ASC_TORRENT_DIR`, `BRIDGE_STORE`) não são editáveis ali. Mudanças de modo, portas ou endereço trazem instruções de recuperação pelo terminal. A conclusão do assistente fica em `DATA_DIR/wizard.json` (independente de `settings.json` e da sessão do ASC).
+
 ## Configuração pelo terminal
 
 Depois de instalar, a configuração também se consulta e se altera pelo terminal (no host ou por SSH), com a mesma validação da partida. Não é um terminal servido no navegador e não depende da sessão do ASC: serve para consertar rede e painel mesmo com a sessão expirada.
