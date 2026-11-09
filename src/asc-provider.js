@@ -246,7 +246,14 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return task;
   }
 
+  // Tamanho anunciado da release na listagem (bytes), para reservar disco antes do snatch.
+  function sizeOf(rawId) {
+    const n = Number(records.get(String(rawId))?.row?.size);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
   return {
+    sizeOf,
     async catalog(query) { return (await search(query)).map(meta); },
     meta(id) { const record = records.get(String(id)); return record ? meta(record.row) : null; },
     streamsFor,

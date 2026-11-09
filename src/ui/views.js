@@ -195,11 +195,13 @@
         clear(alerts);
         const items = [];
         for (const t of d.titles) for (const w of t.warnings) items.push({ tone: t.risk === 'crit' ? 'leech' : 'complete', text: w, hash: t.infoHash });
+        // Política de disco (alerta com histerese): novos downloads bloqueados também aparecem aqui.
+        if (s.disk?.blocked) items.unshift({ tone: 'complete', text: `Novos downloads bloqueados: ${s.disk.reason}. O seed que já está em disco continua.`, hash: null });
         items.sort((a, b) => (a.tone === 'leech' ? 0 : 1) - (b.tone === 'leech' ? 0 : 1));
         if (!items.length) {
           alerts.append(alertBox('seed', 'Tudo em dia', 'Nenhum risco de hit-and-run agora. A ponte segue semeando o que o tracker cobra.'));
         } else {
-          for (const i of items) alerts.append(alertBox(i.tone, i.tone === 'leech' ? 'Aja agora' : 'Atenção', i.text, link(`/filmes/${i.hash}`, 'Abrir')));
+          for (const i of items) alerts.append(alertBox(i.tone, i.tone === 'leech' ? 'Aja agora' : 'Atenção', i.text, i.hash ? link(`/filmes/${i.hash}`, 'Abrir') : undefined));
         }
 
         K.pending.set(U.num.format(s.hoursPending), 'h', s.pending ? `${s.pending} filme(s) com obrigação aberta` : 'Nenhuma obrigação aberta');
@@ -556,7 +558,9 @@
 
         bar.update(s, d.titles);
         clear(diskRows);
-        for (const [k, v] of [['Ocupado pelo addon', fmtBytes(s.diskUsed)], ['Sem uso (só streaming e fora da biblioteca)', fmtBytes(s.diskReclaimable)], ['Livre no disco', fmtBytes(s.freeBytes)]]) {
+        for (const [k, v] of [['Ocupado pelo addon', fmtBytes(s.diskUsed)], ['Sem uso (só streaming e fora da biblioteca)', fmtBytes(s.diskReclaimable)], ['Livre no disco', fmtBytes(s.freeBytes)],
+          ...(s.disk ? [['Reserva efetiva', s.disk.reserve === null ? 'indisponível' : fmtBytes(s.disk.reserve)], ['Comprometido com downloads', fmtBytes(s.disk.committed)],
+            ['Disponível para novos downloads', s.disk.available === null ? 'desconhecido' : fmtBytes(Math.max(0, s.disk.available))]] : [])]) {
           const r = el('div', 'row'); r.append(el('dt', '', k), el('dd', '', v)); diskRows.append(r);
         }
         clear(tb);

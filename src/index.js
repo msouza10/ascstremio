@@ -132,6 +132,7 @@ async function main() {
   log.info('iniciando', {
     node: process.version, pid: process.pid, host, bridgePort, addonPort, configPort, modo: cfg.mode,
     afterSeed, backgroundMode, idleMinutes, keepAwake: v.KEEP_AWAKE,
+    reservaDiscoGiB: v.DISK_RESERVE_GIB, reservaDiscoPercent: v.DISK_RESERVE_PERCENT,
     nivelDeLog: logger.level, uploadLimit, passkeyConfigurada: Boolean(passkey),
   });
 
@@ -150,6 +151,7 @@ async function main() {
     torrentDir, storeDir, port: bridgePort, host, publicUrl, passkey, strictHost: true,
     credentials, adminKey, uploadLimit, announceBase, vault,
     backgroundMode, idleMs: idleMinutes * 60 * 1000, afterSeed,
+    minFreeBytes: Math.round(v.DISK_RESERVE_GIB * 1024 ** 3), reservePercent: v.DISK_RESERVE_PERCENT,
     resumeOnStart: false, // painel e addon sobem primeiro; os torrents retomam em seguida
     keepAwake: new KeepAwake({ mode: v.KEEP_AWAKE }),
     accountNotice: () => asc.inactivityNotice(),
@@ -173,6 +175,7 @@ async function main() {
   const remote = createAscProvider(asc, bridge, torrentDir);
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).
   bridge.ascResolver = (ascId) => remote.resolve(ascId);
+  bridge.ascSizeHint = (ascId) => remote.sizeOf(ascId);
   // Catálogo "ASC — status" dentro do Stremio (STATUS_CATALOG=off desliga).
   const addonBase = v.ADDON_PUBLIC_URL || `http://${advertisedHost(host)}:${addonPort}`;
   const status = v.STATUS_CATALOG === 'off' ? null : {

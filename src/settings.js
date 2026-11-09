@@ -41,6 +41,7 @@ const GROUPS = {
   caminhos: 'Credenciais e caminhos',
   rede: 'Rede e Stremio',
   seed: 'Seed, energia e transferência',
+  disco: 'Disco',
   logs: 'Logs',
 };
 
@@ -147,6 +148,14 @@ const SCHEMA = Object.freeze([
   {
     key: 'BRIDGE_UPLOAD_LIMIT', type: 'int', min: -1, default: -1, unit: 'B/s', group: 'seed', access: 'advanced', restart: true,
     description: 'Limite de upload em bytes por segundo. -1 = sem limite.',
+  },
+  {
+    key: 'DISK_RESERVE_GIB', type: 'number', min: 0, max: 1048576, default: 2, unit: 'GiB', group: 'disco', access: 'editable', restart: true,
+    description: 'Reserva de espaço livre no volume de BRIDGE_STORE que nenhum novo download pode consumir (streaming, conclusão e retomada). 0 desliga a parte absoluta. Vale a maior entre esta e DISK_RESERVE_PERCENT.',
+  },
+  {
+    key: 'DISK_RESERVE_PERCENT', type: 'number', min: 0, max: 90, default: 0, unit: '%', group: 'disco', access: 'editable', restart: true,
+    description: 'Reserva em percentual do tamanho do volume de BRIDGE_STORE. 0 desliga. Vale a maior entre esta e DISK_RESERVE_GIB; sem conseguir medir o volume, novos downloads são recusados.',
   },
   {
     key: 'LOG_LEVEL', type: 'enum', values: ['debug', 'info', 'warn', 'error'], default: 'debug', group: 'logs', access: 'editable', restart: false,
