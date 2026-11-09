@@ -24,6 +24,8 @@ actionlint .github/workflows/*.yml
 
 `npm test` chama a mesma verificação de sintaxe da UI e testes `node:test`. Os testes não devem usar rede real, conta ASC, `private/` ou caminhos específicos da máquina. Para um arquivo: `node --test test/seed-policy.test.js`.
 
+`npm run bench:reproducao` é um benchmark **sob demanda** (swarm local com arquivo sintético, sem rede externa nem dados reais) e não faz parte de `npm run check` nem do CI; só suas partes puras são testadas (`test/bench-playback.test.js`). A instrumentação que ele lê (`src/stream-metrics.js`) é testada com relógio e streams simulados em `test/stream-metrics.test.js`. Como interpretar: [Medir stalls e seeks](manutencao.md#medir-stalls-e-seeks-da-reprodução).
+
 Mudanças em scripts precisam passar shellcheck; alterações de workflows precisam passar actionlint. `node scripts/audit-check.js` consulta a auditoria de dependências com exceções justificadas no próprio script; essa etapa exige acesso ao registro. Não adicione dependências sem necessidade.
 
 ## Documentação pública e notas privadas
