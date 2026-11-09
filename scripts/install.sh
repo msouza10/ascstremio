@@ -162,7 +162,13 @@ if npm ls --depth=0 >/dev/null 2>&1; then
 elif [ "$MODE" = check ]; then
   fail "dependências ausentes ou fora do lock (rode sem --check)"
 else
-  npm ci --no-audit --no-fund
+  # Os binários nativos vêm do GitHub Releases, que às vezes responde 504: tenta de novo.
+  npm_ok=0
+  for tentativa in 1 2 3 4; do
+    if npm ci --no-audit --no-fund; then npm_ok=1; break; fi
+    echo "  npm ci falhou (tentativa $tentativa de 4); aguardando"; sleep $((tentativa * 20))
+  done
+  [ "$npm_ok" -eq 1 ] || die "npm ci falhou depois de 4 tentativas (sem internet ou GitHub fora do ar?)."
   ok "dependências instaladas (npm ci)"
 fi
 
