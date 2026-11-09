@@ -139,6 +139,11 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
       let editable = !o.locked;
       let reason = o.locked;
       if (!o.locked && o.risky) { editable = false; reason = 'só pelo terminal, com o aplicativo parado (npm run configurar): trocar pastas exige travar o novo diretório'; }
+      // BRIDGE_ALLOW_LAN=1 (variável antiga) força a LAN e contradiz ASCSTREMIO_MODE=local.
+      if (o.key === 'ASCSTREMIO_MODE' && editable && snapshot.values.BRIDGE_ALLOW_LAN === '1') {
+        editable = false;
+        reason = 'a variável antiga BRIDGE_ALLOW_LAN=1 do ambiente já liga o modo LAN; remova-a do ambiente (systemd/Compose) e use ASCSTREMIO_MODE';
+      }
       if (o.secret) { editable = false; reason = 'segredo: nunca é exibido nem gravado pela configuração'; }
       const row = {
         ...o,

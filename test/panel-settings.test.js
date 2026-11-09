@@ -188,6 +188,17 @@ test('modo LAN: prévia valida o endereço, avisa reinício e traz instruções 
   } finally { await t.close(); }
 });
 
+test('BRIDGE_ALLOW_LAN=1: o estado informa o modo efetivo (lan) e trava ASCSTREMIO_MODE', async () => {
+  const t = await setup({ env: { BRIDGE_ALLOW_LAN: '1', LAN_ADVERTISE_HOST: '192.168.1.20' } });
+  try {
+    const st = await t.get('settings');
+    assert.equal(st.mode, 'lan');
+    const modo = st.options.find((o) => o.key === 'ASCSTREMIO_MODE');
+    assert.equal(modo.editable, false);
+    assert.match(modo.reason, /BRIDGE_ALLOW_LAN/);
+  } finally { await t.close(); }
+});
+
 test('mudar CONFIG_PORT explica onde o painel passa a abrir', async () => {
   const t = await setup();
   try {
@@ -284,6 +295,13 @@ test('modelo da UI: só envia o que mudou e pode ser editado', () => {
   assert.deepEqual(M.buildChanges(options, { A: '2', B: null, C: 'y', D: 'true' }), { B: null, D: 'true' });
   assert.deepEqual(M.buildChanges(options, { A: ' 3 ' }), { A: '3' });
   assert.deepEqual(M.buildChanges(options, {}), {});
+  // opcional esvaziada: remove do arquivo (não grava texto vazio nem mantém o valor antigo)
+  const opcionais = [
+    { key: 'H', editable: true, value: '192.168.1.20', default: null, source: 'file' },
+    { key: 'I', editable: true, value: null, default: null, source: 'default' },
+  ];
+  assert.deepEqual(M.buildChanges(opcionais, { H: '', I: '' }), { H: null });
+  assert.deepEqual(M.buildChanges(opcionais, { H: null }), { H: null });
 });
 
 test('modelo da UI: agrupa na ordem do esquema, associa problemas aos campos e escreve a prévia', () => {

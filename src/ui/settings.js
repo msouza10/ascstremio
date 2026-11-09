@@ -363,7 +363,8 @@
     const live = liveRegion();
     const LABELS = { modo: 'Uso', endereco: 'Endereço', seed: 'Seed e disco', revisar: 'Revisar', instalar: 'Instalar' };
     const opt = (key) => state.options.find((o) => o.key === key);
-    const draftMode = () => (drafts.ASCSTREMIO_MODE ?? M.textOf(opt('ASCSTREMIO_MODE').value));
+    // O modo efetivo (state.mode) vale: BRIDGE_ALLOW_LAN=1 liga a LAN com ASCSTREMIO_MODE ainda no padrão.
+    const draftMode = () => (drafts.ASCSTREMIO_MODE ?? state.mode);
 
     function drawStepper() {
       clear(stepper);
@@ -436,6 +437,16 @@
       c.append(nav([button('Continuar', 'btn-primary', () => go(nextOf())), button('Pular por enquanto', 'btn-ghost', dismiss)]));
     }
 
+    // Vazio = escolha automática: se havia endereço salvo no arquivo, a alteração é REMOVÊ-LO
+    // (null); só apagar o rascunho manteria o IP antigo sem o operador perceber.
+    function setAddress(value) {
+      const o = opt('LAN_ADVERTISE_HOST');
+      const v = String(value).trim();
+      if (v) drafts.LAN_ADVERTISE_HOST = v;
+      else if (o.source === 'file') drafts.LAN_ADVERTISE_HOST = null;
+      else delete drafts.LAN_ADVERTISE_HOST;
+    }
+
     function drawAddress(c) {
       c.append(cardHead('Endereço deste computador na rede'));
       c.append(el('p', 'muted', 'É o endereço que a TV e o celular vão usar para chegar aqui. Se o roteador trocar o IP, os aparelhos deixam de achar o addon: reserve o IP no roteador ou use um nome da sua rede.'));
@@ -449,13 +460,13 @@
         const none = el('option', '', 'Escolher automaticamente (aviso se houver mais de um)'); none.value = '';
         sel.append(none);
         for (const x of net.list) { const op = el('option', '', `${x.address} (${x.interface}): ${x.reason}`); op.value = x.address; sel.append(op); }
-        sel.value = drafts.LAN_ADVERTISE_HOST ?? M.textOf(o.value);
+        sel.value = drafts.LAN_ADVERTISE_HOST === null ? '' : (drafts.LAN_ADVERTISE_HOST ?? M.textOf(o.value));
         sel.disabled = !o.editable;
-        sel.addEventListener('change', () => { if (sel.value) drafts.LAN_ADVERTISE_HOST = sel.value; else delete drafts.LAN_ADVERTISE_HOST; manual.input.value = sel.value; });
+        sel.addEventListener('change', () => { setAddress(sel.value); manual.input.value = sel.value; });
         f.append(lab, sel);
         c.append(f);
       }
-      const manual = optionField(o, drafts, (v) => { if (v) drafts.LAN_ADVERTISE_HOST = v; else delete drafts.LAN_ADVERTISE_HOST; }, { noReset: true });
+      const manual = optionField(o, drafts, (v) => setAddress(v ?? ''), { noReset: true });
       c.append(manual.root);
       const info = el('ul', 'foot-list');
       for (const t of [
@@ -554,7 +565,7 @@
 
     (async () => {
       body.append(loadingCard('Carregando…'));
-      try { state = await loadState(); mode = M.textOf(opt('ASCSTREMIO_MODE').value) || 'local'; draw(); } catch (ex) {
+      try { state = await loadState(); mode = state.mode; draw(); } catch (ex) {
         clear(body);
         body.append(alertBox('leech', 'Não foi possível abrir o assistente', ex.status === 401 ? 'A sessão do ASC não está confirmada. Entre de novo; o assistente continua disponível.' : ex.message));
       }

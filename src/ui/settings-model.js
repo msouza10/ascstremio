@@ -39,6 +39,8 @@
       if (!o.editable || !Object.prototype.hasOwnProperty.call(drafts, o.key)) continue;
       const draft = drafts[o.key];
       if (draft === null) { if (o.source === 'file') changes[o.key] = null; continue; }
+      // Campo opcional esvaziado = voltar ao padrão (remover do arquivo), nunca gravar texto vazio.
+      if (String(draft).trim() === '' && textOf(o.default) === '') { if (o.source === 'file') changes[o.key] = null; continue; }
       if (String(draft).trim() === textOf(o.value)) continue;
       changes[o.key] = String(draft).trim();
     }
