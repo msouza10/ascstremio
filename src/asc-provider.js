@@ -57,10 +57,6 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return rows;
   }
 
-  // Trocou o filtro "somente freeleech": as linhas lembradas vieram do filtro anterior. Esquecê-las
-  // faz o catálogo e as fontes serem buscados de novo e o play revalidar a regra 2.7 (fail-closed).
-  asc.onFreeleechChange?.(() => records.clear());
-
   const isDisc = (row) => DISC.test(`${row.name} ${(row.badges ?? []).map((b) => b?.label).join(' ')}`);
 
   // Selos da busca separados por assunto. Resolução e fonte vão no título da fonte
@@ -354,7 +350,14 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
   return {
     sizeOf,
     async catalog(query) { return (await search(query)).map(meta); },
-    meta(id) { const record = records.get(String(id)); return record ? meta(record.row) : null; },
+    // As linhas lembradas descrevem o release (não dependem do filtro) e a query de cada uma
+    // permite rebuscar depois de uma troca; por isso não são apagadas. Com o filtro ligado, só a
+    // apresentação de release que não é freeleech é recusada (regra 2.7).
+    meta(id) {
+      const record = records.get(String(id));
+      if (!record || (asc.onlyFreeleech && record.row.freeleech !== true)) return null;
+      return meta(record.row);
+    },
     streamsFor,
     resolve,
     lookup,

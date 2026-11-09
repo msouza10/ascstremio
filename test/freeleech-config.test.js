@@ -106,15 +106,21 @@ test('busca e catálogo refletem a troca na hora, sem novo login', async () => {
   assert.deepEqual(await ids(), ['ascfilm:1']);
 });
 
-test('trocar o filtro esquece as linhas lembradas do filtro anterior', async () => {
+test('trocar o filtro mantém a query das linhas lembradas: cartões antigos continuam abrindo', async () => {
   const dir = tmpdir('fl-rec-');
   const { asc } = clientWithSite(dir);
-  const provider = createAscProvider(asc, {}, path.join(dir, 't'));
+  const provider = createAscProvider(asc, { lazyUrl: (id) => `http://127.0.0.1:7010/a/${id}`, vault: { get: () => null }, entryByAscId: () => null, diskState: () => 'none' }, path.join(dir, 't'));
+  await provider.catalog('x'); // filtro ligado: só o release 1 é lembrado
   asc.setOnlyFreeleech(false);
-  await provider.catalog('x');
-  assert.ok(provider.meta('2'), 'release não freeleech lembrado enquanto o filtro está desligado');
+  await provider.catalog('x'); // agora também o 2
+  assert.ok(provider.meta('1') && provider.meta('2'));
   asc.setOnlyFreeleech(true);
-  assert.equal(provider.meta('2'), null, 'depois de ligar o filtro ele não é mais apresentado');
+  assert.equal(provider.meta('2'), null, 'com o filtro ligado o release não freeleech não é mais apresentado');
+  assert.ok(provider.meta('1'), 'o freeleech segue disponível');
+  assert.equal((await provider.streamsFor('2')).length, 0, 'e a rebusca (filtrada) não o devolve');
+  assert.equal((await provider.streamsFor('1')).length, 1, 'cartão antigo de freeleech abre depois da troca');
+  asc.setOnlyFreeleech(false);
+  assert.ok(provider.meta('2'), 'ao desligar o filtro volta a ser apresentado');
 });
 
 test('painel: salvar a chave aplica ao cliente em execução (applyLive) sem reiniciar', () => {
