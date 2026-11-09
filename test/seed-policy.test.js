@@ -4,18 +4,20 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 
 const { Bridge } = require('../src/bridge');
 const { SeedVault } = require('../src/seedvault');
+const { tmpdir } = require('./tmp-helper');
 
-const tmpFile = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'vault-')), 'vault.json');
+const tmpFile = () => path.join(tmpdir('vault-'), 'vault.json');
 const HASH = 'a'.repeat(40);
 const LOCAL = { remoteAddress: '127.0.0.1' };
+const ADMIN_KEY = 'cd'.repeat(16);
+const ADMIN = { 'x-admin-token': ADMIN_KEY };
 
 function bridgeCom(vault) {
-  return new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', port: 7098, vault });
+  return new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', port: 7098, vault, adminKey: ADMIN_KEY });
 }
 
 const torrent = (over = {}) => ({ infoHash: HASH, uploaded: 0, downloaded: 0, ...over });
@@ -104,7 +106,7 @@ test('cleanup recusa encerrar torrent com obrigação pendente', async () => {
   };
 
   const res = { status: 0, body: null, setHeader() {}, writeHead(s) { this.status = s; }, end(p) { this.body = p; } };
-  await b.handle({ method: 'POST', url: `/cleanup?hash=${HASH}`, headers: {}, socket: LOCAL }, res);
+  await b.handle({ method: 'POST', url: `/cleanup?hash=${HASH}`, headers: ADMIN, socket: LOCAL }, res);
 
   assert.equal(res.status, 409);
   assert.equal(JSON.parse(res.body).blocked.length, 1);
@@ -120,7 +122,7 @@ test('cleanup libera torrent que já cumpriu', async () => {
   b.client = { torrents: [{ ...torrent(), destroy: (opts, cb) => { destruiu = true; cb(); } }] };
 
   const res = { status: 0, body: null, setHeader() {}, writeHead(s) { this.status = s; }, end(p) { this.body = p; } };
-  await b.handle({ method: 'POST', url: '/cleanup', headers: {}, socket: LOCAL }, res);
+  await b.handle({ method: 'POST', url: '/cleanup', headers: ADMIN, socket: LOCAL }, res);
 
   assert.equal(res.status, 200);
   assert.equal(destruiu, true);
@@ -149,30 +151,73 @@ test('HEAD responde pelos metadados locais, sem abrir o torrent', async () => {
   assert.equal(abriu, false, 'HEAD não pode criar snatch');
 });
 
-test('rotas administrativas recusam acesso da LAN e de páginas web', async () => {
+test('rotas administrativas exigem o token, e endereço privado não basta', async () => {
+  const destruidos = [];
   const b = bridgeCom(new SeedVault({ file: tmpFile() }));
-  b.client = { torrents: [] };
+  b.client = { torrents: [{ infoHash: HASH, destroy: (_o, cb) => { destruidos.push(HASH); cb(); } }] };
   const tentar = async (req) => {
     const res = { status: 0, setHeader() {}, writeHead(s) { this.status = s; }, end() {} };
     await b.handle(req, res);
     return res.status;
   };
   const lan = { remoteAddress: '192.168.0.20' };
-  assert.equal(await tentar({ method: 'POST', url: '/cleanup?force=1', headers: {}, socket: lan }), 403);
-  assert.equal(await tentar({ method: 'GET', url: '/seed-status', headers: {}, socket: lan }), 403);
-  assert.equal(await tentar({ method: 'GET', url: '/status', headers: {} }), 403);
-  const web = { origin: 'https://exemplo.org' };
-  assert.equal(await tentar({ method: 'POST', url: '/cleanup?force=1', headers: web, socket: LOCAL }), 403);
-  assert.equal(await tentar({ method: 'GET', url: '/seed-status', headers: {}, socket: LOCAL }), 200);
-  assert.equal(await tentar({ method: 'GET', url: '/seed-status', headers: {}, socket: { remoteAddress: '::ffff:127.0.0.1' } }), 200);
+  const rotas = [['POST', '/cleanup?force=1'], ['POST', '/cleanup'], ['POST', `/complete?hash=${HASH}`], ['GET', '/seed-status'], ['GET', '/status']];
+  for (const container of [false, true]) {
+    if (container) process.env.ASCSTREMIO_CONTAINER = '1';
+    try {
+      for (const [method, url] of rotas) {
+        const errado = { 'x-admin-token': 'ef'.repeat(16) };
+        assert.equal(await tentar({ method, url, headers: {}, socket: LOCAL }), 403, `${method} ${url} sem token`);
+        assert.equal(await tentar({ method, url, headers: errado, socket: LOCAL }), 403, `${method} ${url} token errado`);
+        assert.equal(await tentar({ method, url, headers: { 'x-admin-token': 'curto' }, socket: LOCAL }), 403);
+        assert.equal(await tentar({ method, url, headers: {}, socket: lan }), 403, `${method} ${url} LAN sem token`);
+        assert.equal(await tentar({ method, url, headers: { ...ADMIN, origin: 'https://exemplo.org' }, socket: LOCAL }), 403, 'Origin bloqueia mesmo com token');
+        assert.equal(await tentar({ method, url, headers: {} }), 403, 'sem socket');
+      }
+    } finally {
+      delete process.env.ASCSTREMIO_CONTAINER;
+    }
+  }
+  assert.deepEqual(destruidos, [], 'recusa nunca destrói torrent');
+  // A chave de streaming (?k=) não administra.
+  assert.equal(await tentar({ method: 'GET', url: `/seed-status?k=${ADMIN_KEY}`, headers: {}, socket: LOCAL }), 403);
+  // Nativo: token + loopback (IPv4, IPv6 e mapeado). LAN com token correto segue recusada.
+  assert.equal(await tentar({ method: 'GET', url: '/seed-status', headers: ADMIN, socket: LOCAL }), 200);
+  assert.equal(await tentar({ method: 'GET', url: '/seed-status', headers: ADMIN, socket: { remoteAddress: '::ffff:127.0.0.1' } }), 200);
+  assert.equal(await tentar({ method: 'GET', url: '/seed-status', headers: ADMIN, socket: { remoteAddress: '::1' } }), 200);
+  assert.equal(await tentar({ method: 'GET', url: '/seed-status', headers: ADMIN, socket: lan }), 403);
+  // Contêiner: o endereço é o do gateway/outro contêiner, então vale só o token.
+  process.env.ASCSTREMIO_CONTAINER = '1';
+  try {
+    assert.equal(await tentar({ method: 'GET', url: '/seed-status', headers: ADMIN, socket: { remoteAddress: '172.18.0.1' } }), 200);
+    assert.equal(await tentar({ method: 'GET', url: '/seed-status', headers: {}, socket: { remoteAddress: '172.18.0.5' } }), 403);
+  } finally {
+    delete process.env.ASCSTREMIO_CONTAINER;
+  }
+});
+
+test('ponte sem token administrativo configurado recusa as rotas administrativas', async () => {
+  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', port: 7098, vault: new SeedVault({ file: tmpFile() }) });
+  b.client = { torrents: [] };
+  const res = { status: 0, setHeader() {}, writeHead(s) { this.status = s; }, end() {} };
+  await b.handle({ method: 'GET', url: '/seed-status', headers: {}, socket: LOCAL }, res);
+  assert.equal(res.status, 403);
+});
+
+test('cleanup ignora force=1: sem o tracker confirmar, nada é destruído', async () => {
+  const b = bridgeCom(new SeedVault({ file: tmpFile() }));
+  b.client = { torrents: [{ infoHash: HASH, name: 'x', ready: true, done: true, length: 10, downloaded: 10, uploaded: 0, destroy: () => { throw new Error('não devia destruir'); } }] };
+  const res = { status: 0, setHeader() {}, writeHead(s) { this.status = s; }, end() {} };
+  await b.handle({ method: 'POST', url: '/cleanup?force=1', headers: ADMIN, socket: LOCAL }, res);
+  assert.equal(res.status, 409);
 });
 
 test('/seed-status inclui avisos da conta', async () => {
-  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', vault: new SeedVault({ file: tmpFile() }),
+  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', vault: new SeedVault({ file: tmpFile() }), adminKey: ADMIN_KEY,
     accountNotice: () => 'entre no site' });
   b.client = { torrents: [] };
   const res = { body: null, setHeader() {}, writeHead() {}, end(p) { this.body = p; } };
-  await b.handle({ method: 'GET', url: '/seed-status', headers: {}, socket: LOCAL }, res);
+  await b.handle({ method: 'GET', url: '/seed-status', headers: ADMIN, socket: LOCAL }, res);
   assert.deepEqual(JSON.parse(res.body).avisos, ['entre no site']);
 });
 
@@ -278,7 +323,7 @@ test('cleanup consulta o tracker antes e não libera se ele diz que falta seed',
   });
   b.client = { torrents: [{ ...torrent({ downloaded: 500 }), destroy: () => { throw new Error('não devia destruir'); } }] };
   const res = { status: 0, body: null, setHeader() {}, writeHead(s) { this.status = s; }, end(p) { this.body = p; } };
-  await b.handle({ method: 'POST', url: '/cleanup', headers: {}, socket: LOCAL }, res);
+  await b.handle({ method: 'POST', url: '/cleanup', headers: ADMIN, socket: LOCAL }, res);
   assert.equal(res.status, 409);
 });
 
@@ -298,7 +343,7 @@ test('datas do site sem fuso são UTC, em qualquer fuso da máquina (myHistory r
 const MIN = 60_000;
 
 function bridgeBg(vault, over = {}) {
-  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', port: 7098, vault,
+  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', port: 7098, vault, adminKey: ADMIN_KEY,
     backgroundMode: 'auto', idleMs: 10 * MIN, minFreeBytes: 1000, freeSpace: () => 1e12, ...over });
   const selecoes = [];
   const t = { infoHash: HASH, name: 'Filme', ready: true, done: false, length: 5000, downloaded: 1000,
@@ -369,9 +414,9 @@ test('POST /complete valida o hash e só atende local', async () => {
     await b.handle(req, res);
     return res;
   };
-  assert.equal((await chamar({ method: 'POST', url: '/complete', headers: {}, socket: LOCAL })).status, 400);
+  assert.equal((await chamar({ method: 'POST', url: '/complete', headers: ADMIN, socket: LOCAL })).status, 400);
   assert.equal((await chamar({ method: 'POST', url: `/complete?hash=${HASH}`, headers: {}, socket: { remoteAddress: '10.0.0.5' } })).status, 403);
-  const ok = await chamar({ method: 'POST', url: `/complete?hash=${HASH}`, headers: {}, socket: LOCAL });
+  const ok = await chamar({ method: 'POST', url: `/complete?hash=${HASH}`, headers: ADMIN, socket: LOCAL });
   assert.equal(ok.status, 202);
   assert.equal(JSON.parse(ok.body).infoHash, HASH);
 });
@@ -398,7 +443,7 @@ function bridgeLiberar(afterSeed, trackerOk, over = {}) {
   if (trackerOk !== null) {
     vault.setTracker(HASH, hnr.normalizeHistory({ completedAt: '2026-11-01 00:00:00', remainingSeedTime: trackerOk ? 0 : 3600 }));
   }
-  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', vault, afterSeed, ...over });
+  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', vault, afterSeed, adminKey: ADMIN_KEY, ...over });
   const chamadas = [];
   b.client = { torrents: [{ infoHash: HASH, destroy: (opts, cb) => { chamadas.push(opts); cb(); } }] };
   return { b, vault, chamadas };

@@ -13,11 +13,12 @@ test('fora do contêiner tudo escuta só em loopback e só loopback é local', (
   assert.equal(isLoopbackAddress('::ffff:127.0.0.1', {}), true);
 });
 
-test('no contêiner escuta em 0.0.0.0 e aceita o gateway do Docker como local', () => {
+test('no contêiner escuta em 0.0.0.0, mas endereço privado não conta como local', () => {
   assert.equal(bridgeHost(CT), '0.0.0.0');
   assert.equal(configHost(CT), '0.0.0.0');
-  assert.equal(isLoopbackAddress('::ffff:172.17.0.1', CT), true);
-  assert.equal(isLoopbackAddress('192.168.1.20', CT), true);
+  assert.equal(isLoopbackAddress('::ffff:172.17.0.1'), false);
+  assert.equal(isLoopbackAddress('192.168.1.20'), false);
+  assert.equal(isLoopbackAddress('::1'), true);
   assert.equal(isLoopbackAddress('8.8.8.8', CT), false);
 });
 

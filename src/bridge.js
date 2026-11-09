@@ -71,6 +71,7 @@ class Bridge {
     port = 7010,
     host = '127.0.0.1',
     publicUrl = null,
+    adminKey = null, // credencial das rotas administrativas (cabeçalho X-Admin-Token); sem ela elas recusam tudo
     accessKey = null, // chave nas URLs de stream (?k=): barra CSRF e páginas web que adivinham /a/<id>
     strictHost = false, // recusa Host que não seja IP/localhost (anti DNS rebinding)
     firstByteTimeoutMs = 60000,
@@ -132,6 +133,7 @@ class Bridge {
     this.trackerPending = [];
     this.publicUrl = publicUrl;
     this.accessKey = accessKey;
+    this.adminKey = adminKey;
     this.strictHost = strictHost;
     this.firstByteTimeoutMs = firstByteTimeoutMs;
     // Credencial em memória: os .torrent em disco ficam sem token.
@@ -689,6 +691,13 @@ class Bridge {
     return given.length === want.length && timingSafeEqual(given, want);
   }
 
+  adminOk(req) {
+    if (!this.adminKey) return false;
+    const given = Buffer.from(String(req.headers?.['x-admin-token'] ?? ''));
+    const want = Buffer.from(this.adminKey);
+    return given.length === want.length && timingSafeEqual(given, want);
+  }
+
   async getTorrent(infoHash) {
     if (this.loading.has(infoHash)) return this.loading.get(infoHash);
 
@@ -864,14 +873,15 @@ class Bridge {
       return;
     }
 
-    // Rotas administrativas: só desta máquina e nunca a partir de uma página web
-    // (navegadores enviam Origin em POST/fetch entre origens, o que bloquearia
-    // um site qualquer de disparar /cleanup?force=1 no seu computador).
+    // Rotas administrativas: exigem o token administrativo (cabeçalho, nunca na URL),
+    // sem Origin (navegadores o enviam em POST/fetch entre origens) e, fora do
+    // contêiner, vindas de loopback. No contêiner o endereço de origem é o do gateway
+    // ou de outro contêiner, então só o token vale; ele é independente da chave ?k=.
     const admin = ['/cleanup', '/seed-status', '/status', '/complete'].includes(url.pathname);
-    if (admin && (!isLoopbackRequest(req) || req.headers?.origin)) {
+    if (admin && (!this.adminOk(req) || req.headers?.origin || !(inContainer() || isLoopbackRequest(req)))) {
       log.warn(`rota administrativa recusada: ${req.method} ${url.pathname} (origem ${req.socket?.remoteAddress ?? '?'}${req.headers?.origin ? `, Origin ${req.headers.origin}` : ''})`);
       res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: 'rota administrativa: só local, fora de navegador' }));
+      res.end(JSON.stringify({ error: 'rota administrativa: exige token administrativo, fora de navegador' }));
       return;
     }
 
@@ -879,32 +889,29 @@ class Bridge {
       // Regra 13.1 do ASC: depois de baixar, semear por 72 h ou até o ratio
       // 1.0 no torrent, o que vier primeiro. Encerrar antes disso é o caminho
       // para hit-and-run (13.3/13.4), então só remove quem já cumpriu.
-      // use ?force=1 para ignorar a checagem (assumindo o risco).
+      // Não há atalho para pular a checagem (o antigo ?force=1 foi removido).
       const victim = url.searchParams.get('hash');
-      const force = url.searchParams.get('force') === '1';
-      log.info(`cleanup pedido${victim ? ` para ${short(victim)}` : ' para todos'}${force ? ' com force=1' : ''}`);
+      log.info(`cleanup pedido${victim ? ` para ${short(victim)}` : ' para todos'}`);
       const targets = victim
         ? this.client.torrents.filter((t) => t.infoHash === victim.toLowerCase())
         : this.client.torrents;
 
       const blocked = [];
-      if (!force) {
-        // O tracker decide: confirma antes de liberar (falha de rede não libera).
-        await this.trackerCheck?.(targets.map((t) => t.infoHash)).catch(() => {});
-        for (const t of targets) {
-          const state = this.seedState(t);
-          if (!state.met) blocked.push({ infoHash: t.infoHash, ...state });
-        }
-        if (blocked.length > 0) {
-          log.warn(`cleanup recusado: ${blocked.length} torrent(s) com obrigação de seed pendente (regra 13.1)`);
-          res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({
-            removed: 0,
-            blocked,
-            hint: 'regra 13.1: 72 h de seed ou ratio 1.0 no torrent',
-          }, null, 2));
-          return;
-        }
+      // O tracker decide: confirma antes de liberar (falha de rede não libera).
+      await this.trackerCheck?.(targets.map((t) => t.infoHash)).catch(() => {});
+      for (const t of targets) {
+        const state = this.seedState(t);
+        if (!state.met) blocked.push({ infoHash: t.infoHash, ...state });
+      }
+      if (blocked.length > 0) {
+        log.warn(`cleanup recusado: ${blocked.length} torrent(s) com obrigação de seed pendente (regra 13.1)`);
+        res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          removed: 0,
+          blocked,
+          hint: 'regra 13.1: 72 h de seed ou ratio 1.0 no torrent',
+        }, null, 2));
+        return;
       }
 
       await Promise.all(targets.map((t) => new Promise((resolve) => {
@@ -912,8 +919,8 @@ class Bridge {
       })));
       for (const t of targets) this.startedAt.delete(t.infoHash);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      log.info(`cleanup concluído: ${targets.length} torrent(s) removido(s)${force ? ' (force)' : ''}`);
-      res.end(JSON.stringify({ removed: targets.length, forced: force }));
+      log.info(`cleanup concluído: ${targets.length} torrent(s) removido(s)`);
+      res.end(JSON.stringify({ removed: targets.length }));
       return;
     }
 

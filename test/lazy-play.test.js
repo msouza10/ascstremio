@@ -1,15 +1,15 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
 const { Bridge } = require('../src/bridge');
 const { SeedVault } = require('../src/seedvault');
+const { tmpdir } = require('./tmp-helper');
 
 const LOCAL = { remoteAddress: '127.0.0.1' };
-const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lazy-')), 'v.json');
+const tmp = () => path.join(tmpdir('lazy-'), 'v.json');
 const HASH = '1'.padStart(40, 'a');
 
 function ponte(over = {}) {

@@ -1,17 +1,17 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 
 const { startConfig } = require('../src/config-server');
 const { Bridge } = require('../src/bridge');
 const { SeedVault } = require('../src/seedvault');
 const hnr = require('../src/hnr-guard');
+const { tmpdir } = require('./tmp-helper');
 
 const PORT = 7219;
 const BASE = `http://127.0.0.1:${PORT}`;
-const tmpFile = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mon-')), 'vault.json');
+const tmpFile = () => path.join(tmpdir('mon-'), 'vault.json');
 const H = (c) => c.repeat(40);
 
 test('servidor: estáticos, painel só com sessão confirmada, ação protegida por CSRF', async () => {
@@ -161,7 +161,7 @@ test('syncActivity lista como sem .torrent local o que não está na biblioteca'
 
 test('snapshot: sem arquivo em disco vira "missing"; com arquivo completo fica "paused"; sem .torrent aparece como linha virtual', () => {
   const now = Date.parse('2026-11-08T20:00:00Z');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'store-'));
+  const dir = tmpdir('store-');
   const vault = new SeedVault({ file: tmpFile(), now: () => now });
   const lib = (hash, id) => ({ infoHash: hash, title: `Filme ${id}`, torrentPath: `/x/asc-${id}.torrent`, freeleech: true,
     files: [{ path: `f${id}.mkv`, length: 1000, isVideo: true }] });
@@ -192,7 +192,7 @@ test('snapshot: sem arquivo em disco vira "missing"; com arquivo completo fica "
 });
 
 test('resumePending não anuncia obrigação concluída sem o arquivo completo', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'store-'));
+  const dir = tmpdir('store-');
   const vault = new SeedVault({ file: tmpFile() });
   const b = new Bridge({ torrentDir: '/tmp', storeDir: dir, vault });
   b.entries.set(H('a'), { infoHash: H('a'), torrentPath: '/x/asc-1.torrent', files: [{ path: 'a.mkv', length: 1000 }] });
@@ -211,7 +211,7 @@ test('resumePending não anuncia obrigação concluída sem o arquivo completo',
 });
 
 test('snapshot: espaço em disco por filme, total e o que está sem uso (parciais e órfãos)', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'du-'));
+  const dir = tmpdir('du-');
   const vault = new SeedVault({ file: tmpFile() });
   const b = new Bridge({ torrentDir: '/tmp', storeDir: dir, vault, freeSpace: () => 5e9 });
   const lib = (hash, id, file) => ({ infoHash: hash, title: `Filme ${id}`, torrentPath: `/x/asc-${id}.torrent`,
@@ -255,7 +255,7 @@ test('AscClient guarda o resumo da conta (ratio, upload, download) das páginas 
 });
 
 test('start() só espera a retomada dos torrents quando resumeOnStart é verdadeiro', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'start-'));
+  const dir = tmpdir('start-');
   for (const [flag, esperado, porta] of [[false, 0, 7197], [true, 1, 7198]]) {
     const b = new Bridge({ torrentDir: dir, storeDir: path.join(dir, 'c'), port: porta, vault: new SeedVault({ file: tmpFile() }), resumeOnStart: flag });
     let chamadas = 0;
@@ -290,7 +290,7 @@ test('o painel usa o título do tracker no lugar do nome do arquivo', async () =
 // --- /api/logs ---
 test('API de logs: consulta com filtros, cursor, download, arquivos e nível', async () => {
   const { Logger } = require('../src/logger');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apilogs-'));
+  const dir = tmpdir('apilogs-');
   const logs = new Logger({ dir });
   logs.addSecret('s3gredo-muito-secreto');
   logs.write('debug', 'ponte', 'GET /s/aaaa → 206');

@@ -1,11 +1,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { Logger, LEVELS } = require('../src/logger');
+const { tmpdir } = require('./tmp-helper');
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'logs-'));
+const tmp = () => tmpdir('logs-');
 const PASSKEY = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
 test('níveis: grava a partir do mínimo, em ordem, com ids crescentes', () => {

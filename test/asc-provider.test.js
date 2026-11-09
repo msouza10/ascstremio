@@ -1,9 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { createAscProvider } = require('../src/asc-provider');
+const { tmpdir } = require('./tmp-helper');
 
 const GB = 1024 ** 3;
 const linha = (id, extra = {}) => ({
@@ -14,7 +14,7 @@ const linha = (id, extra = {}) => ({
 
 // Ponte e ASC falsos que registram tudo: o que importa é o QUE foi baixado e QUANDO.
 async function fixture(t, { rows = [linha(1), linha(2)], videosPorId = {}, arquivosPorId = {}, diskFull = false, onlyFreeleech = false, historyFreeleech = true, downloadErro = null, connected = true, original } = {}) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'asc-provider-'));
+  const dir = tmpdir('asc-provider-');
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const calls = { searches: 0, downloads: [], histories: [], originals: [] };
   const bridge = {
@@ -250,7 +250,7 @@ test('aviso de arquivos removidos aparece nas fontes de um filme já liberado', 
 });
 
 test('abertura direta revalida freeleech mesmo com metadados em cache e não baixa nada', async (t) => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'asc-recheck-'));
+  const dir = tmpdir('asc-recheck-');
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   let calls = 0; let downloads = 0;
   const provider = createAscProvider({
