@@ -18,6 +18,7 @@ const hnr = require('./hnr-guard');
 const { posterRoute } = require('./stremio-status');
 const { KeepAwake } = require('./keepawake');
 const { logger, initFiles } = require('./logger');
+const { acquireInstance } =require('./instance-lock');
 
 const ROOT = path.join(__dirname, '..');
 // Onde ficam passkey, sessão, cofre, logs, .torrent e cache. Fora do código para
@@ -68,13 +69,17 @@ async function main() {
   // com a passkey e cookies redigidos. Arquivos em private/logs/ (0600).
   fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   try { fs.chmodSync(DATA_DIR, 0o700); } catch { /* Windows/volume sem chmod */ }
+  // Antes de logs, cofre e motor: só um processo por instalação pode escrever o estado
+  // (portas diferentes não bastam). Liberada ao sair; ver src/instance-lock.js.
+  const torrentDir = process.env.ASC_TORRENT_DIR || path.join(DATA_DIR, 'torrents');
+  const storeDir = process.env.BRIDGE_STORE || path.join(DATA_DIR, 'cache');
+  const instance = acquireInstance({ dataDir: DATA_DIR, torrentDir, storeDir });
+  process.on('exit', () => instance.release());
   initFiles(path.join(DATA_DIR, 'logs'), { retentionDays: Number(process.env.LOG_RETENTION_DAYS) || 14 });
   logger.captureConsole();
   process.on('uncaughtException', (err) => { log.error('exceção não tratada: encerrando', { stack: err?.stack ?? String(err) }); process.exit(1); });
   process.on('unhandledRejection', (reason) => { log.error('promessa rejeitada sem tratamento: encerrando', { motivo: reason?.stack ?? String(reason) }); process.exit(1); });
 
-  const torrentDir = process.env.ASC_TORRENT_DIR || path.join(DATA_DIR, 'torrents');
-  const storeDir = process.env.BRIDGE_STORE || path.join(DATA_DIR, 'cache');
   const bridgePort = envInt('BRIDGE_PORT', 7010);
   const addonPort = envInt('PORT', 7000);
 

@@ -18,6 +18,15 @@ Antes de atualizar ou mover uma instalação, identifique o `DATA_DIR` e verifiq
 
 No serviço Linux, alterar `service.env` exige reiniciar. O serviço tenta iniciar mesmo sem rede e o monitor volta a consultar o ASC depois. Verifique logs e status; processo ativo não significa sessão válida ou tracker acessível.
 
+## Uma instância por instalação
+
+Ao iniciar, o programa cria o arquivo `.ascstremio.lock` em `DATA_DIR` (e em `ASC_TORRENT_DIR` e `BRIDGE_STORE` quando ficam fora dela) e o remove ao encerrar. Uma segunda instância na mesma pasta recusa a partida, mesmo com portas diferentes, porque dois processos gravando o cofre de seed perderiam atualizações. Caminhos equivalentes por symlink ou `..` contam como a mesma pasta. Também são recusados: `ASC_TORRENT_DIR` e `BRIDGE_STORE` sobrepostos, `DATA_DIR` dentro de um deles, e armazenamento externo já usado por outro `DATA_DIR`.
+
+- **Parada limpa ou queda no mesmo computador:** se o processo dono da trava não existe mais, a próxima partida a recupera sozinha. Se o PID continua vivo, a partida é recusada (o sistema pode ter reaproveitado o PID após uma queda).
+- **Outra máquina, contêiner recriado ou arquivo ilegível:** não há como provar que o dono morreu, então a partida é recusada e a mensagem informa o arquivo. Confirme que nenhuma instância usa a pasta e apague o `.ascstremio.lock` indicado. Em contêiner recriado após queda o nome do host muda; reiniciar o mesmo contêiner é reconhecido normalmente.
+- **Limites:** a trava confia em `open` exclusivo e no PID/host do sistema. Em compartilhamento de rede (NFS, SMB) ou volume sincronizado, a exclusividade não é garantida entre máquinas; nunca use a mesma pasta de dados em dois computadores. Uma pasta de armazenamento externa que contém a de outra instalação já em execução (aninhamento inverso) não é detectada.
+- A configuração pelo painel roda no mesmo processo e herda a trava; ferramentas futuras de linha de comando que gravem no `DATA_DIR` devem adquiri-la antes, nunca contorná-la.
+
 ## Backup e restauração
 
 1. Verifique as pendências e pare a instância para obter um conjunto consistente.
