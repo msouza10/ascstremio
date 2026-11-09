@@ -9,7 +9,8 @@ Antes de atualizar ou mover uma instalação, identifique o `DATA_DIR` e verifiq
 | Pelo código | Pare a instância; atualize o código para a revisão desejada; execute `npm ci` e `npm run check`; inicie pelo mesmo método e com o mesmo `DATA_DIR` |
 | Instalador remoto Linux | Execute novamente o instalador da distribuição confiável; o código é substituído, os dados ficam separados |
 | Serviço Linux pelo código | Atualize dependências/verificações e execute `systemctl --user restart ascstremio` |
-| Compose | `docker compose up -d --build`; preserve o volume |
+| Compose com imagem GHCR | `docker compose pull` e `docker compose up -d`; preserve o volume. Se fixou uma tag, altere-a para a versão desejada |
+| Compose com build local | `docker compose up -d --build`; preserve o volume |
 | `scripts/docker.sh` | Pare com `scripts/docker.sh stop`, execute `scripts/docker.sh build` e depois `scripts/docker.sh run`; preserve o volume |
 | Windows | Pare pelo atalho e execute o instalador da versão desejada; os dados ficam fora da pasta do programa |
 

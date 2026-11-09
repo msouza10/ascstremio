@@ -16,7 +16,16 @@ A integração online cobre **filmes com um vídeo principal**. Coleções com v
 
 ## Comece aqui
 
-Escolha o [guia de instalação](docs/instalacao.md) para sua plataforma. Para executar a partir de uma cópia do repositório, com Node.js 22+ e npm disponíveis:
+No Linux, instale pelo script do GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/msouza10/ascstremio/main/scripts/install-remote.sh | \
+  ASCSTREMIO_BASE_URL=https://github.com/msouza10/ascstremio/releases/latest/download bash
+```
+
+Para Docker/Podman, use a imagem pronta **`ghcr.io/msouza10/ascstremio:latest`**, conforme o [guia de instalação](docs/instalacao.md#usar-a-imagem-pronta-do-ghcr). O guia também cobre Windows e acesso autenticado quando o repositório ou pacote são privados.
+
+Para executar a partir do código, com Node.js 22+ e npm disponíveis:
 
 ```bash
 npm ci

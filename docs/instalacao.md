@@ -6,23 +6,12 @@ O ASCStremio precisa de uma conta individual válida no ASC, acesso à internet,
 
 | Plataforma | Caminho | Dados persistentes |
 |---|---|---|
-| Linux glibc | Script local ou pacote de release | `private/` na instalação pelo código; `~/.local/share/ascstremio/data` na instalação remota |
-| Docker / Podman | Compose ou `scripts/docker.sh` | Volume em `/data` |
+| Linux glibc | Instalador via curl ou script local | `private/` na instalação pelo código; `~/.local/share/ascstremio/data` na instalação remota |
+| Docker / Podman | Imagem pronta do GHCR ou build local | Volume em `/data` |
 | Windows | `AscStremio-Setup-<versão>.exe` | `%LOCALAPPDATA%\AscStremio\data` |
 | macOS / execução manual | Node.js 22+ e npm | `private/` na raiz do projeto |
 
 Não use a mesma pasta de dados simultaneamente em duas instâncias. Não misture os volumes de instalações diferentes.
-
-## Pelo código: Linux e macOS
-
-Na pasta do repositório, com Node.js 22+ e npm:
-
-```bash
-npm ci
-npm start
-```
-
-Mantenha o terminal aberto. `Ctrl+C` encerra o aplicativo e o seed. A retomada ocorre na próxima execução, mas o prazo no tracker continua correndo. O macOS usa execução manual ou contêiner; não há instalador nativo próprio.
 
 ## Linux com serviço de usuário
 
@@ -53,40 +42,127 @@ journalctl --user -u ascstremio -f
 
 Edite `service.env` dentro da pasta de dados e reinicie o serviço para mudar a configuração. Veja [manutenção](manutencao.md).
 
-### Pacote Linux por URL
+### Instalar pelo GitHub com curl
 
-Use um pacote da [página de releases](https://github.com/msouza10/ascstremio/releases), quando disponível para sua conta. O instalador remoto é gerado junto do pacote; não há uma URL genérica de instalação garantida para qualquer release.
-
-Para uma distribuição preparada pelo mantenedor, substitua `<URL-base>` pelo endereço que contém `install.sh`, `ascstremio-latest.tar.gz` e seu `.sha256`:
+Não é necessário clonar o repositório. O script-fonte fica no raw do GitHub e baixa o pacote do último release publicado:
 
 ```bash
-curl -fsSL <URL-base>/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/msouza10/ascstremio/main/scripts/install-remote.sh | \
+  ASCSTREMIO_BASE_URL=https://github.com/msouza10/ascstremio/releases/latest/download bash
 ```
 
-O código é instalado em `~/.local/share/ascstremio/app`; os dados ficam no diretório irmão `data`. O SHA-256 detecta corrupção, mas o hash servido pelo mesmo servidor não comprova a confiabilidade desse servidor. Leia o script e use uma origem confiável.
+Para instalar sem criar o serviço:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/msouza10/ascstremio/main/scripts/install-remote.sh | \
+  ASCSTREMIO_BASE_URL=https://github.com/msouza10/ascstremio/releases/latest/download bash -s -- --no-service
+```
+
+A variável precisa ser passada ao **bash**, depois do pipe: o script-fonte não tem uma URL padrão embutida. O [install.sh anexado ao release](https://github.com/msouza10/ascstremio/releases/latest/download/install.sh) já traz essa base preenchida e também pode ser baixado para inspeção antes de executar. Para repetir exatamente uma versão, use o script e o pacote do release escolhido, em vez de combinar `main` com `latest`.
+
+O código é instalado em `~/.local/share/ascstremio/app`; os dados ficam em `~/.local/share/ascstremio/data` (salvo configuração de `XDG_DATA_HOME` ou `ASCSTREMIO_HOME`). Executar novamente atualiza o código e preserva os dados. O script baixa `ascstremio-latest.tar.gz` e seu `.sha256` e recusa um hash diferente. O hash servido pelo mesmo servidor não protege contra comprometimento dessa origem.
+
+**Repositório privado:** esses comandos curl não autenticam no GitHub. Enquanto o repositório e seus assets exigirem acesso, uma resposta 404/401 não significa que o caminho esteja errado. Com GitHub CLI já autenticado e autorizado, baixe os arquivos e instale localmente:
+
+```bash
+mkdir -p ascstremio-download
+cd ascstremio-download
+gh release download --repo msouza10/ascstremio \
+  --pattern install.sh \
+  --pattern ascstremio-latest.tar.gz \
+  --pattern ascstremio-latest.tar.gz.sha256
+ASCSTREMIO_BASE_URL="file://$PWD" bash install.sh
+```
 
 ## Docker / Podman
 
-Com um dos motores já instalado, execute na raiz do projeto:
+### Usar a imagem pronta do GHCR
+
+A imagem do projeto é **`ghcr.io/msouza10/ascstremio:latest`**. Não precisa de Node no host nem de clonar/compilar o código. A esteira publica variantes Linux `amd64` e `arm64`, com tags de versão completa, versão menor e `latest`. Para fixar uma distribuição, use uma tag publicada, por exemplo `:0.1.1`, em lugar de `:latest`.
+
+Se o pacote exigir autenticação, faça login primeiro:
+
+```bash
+docker login ghcr.io --username SEU_USUARIO_GITHUB
+```
+
+Substitua o nome pelo seu usuário e, quando o Docker pedir a senha, use um token do GitHub autorizado a ler o pacote (`read:packages` e acesso ao pacote). Não use a senha da conta nem coloque o token na linha de comando. A visibilidade do pacote pode ser diferente da visibilidade do repositório; acesso anônimo não deve ser presumido.
+
+Crie uma pasta e salve este conteúdo como `compose.yaml`:
+
+```yaml
+services:
+  ascstremio:
+    image: ghcr.io/msouza10/ascstremio:latest
+    container_name: ascstremio
+    restart: unless-stopped
+    stop_signal: SIGINT
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ports:
+      - "127.0.0.1:7000:7000"
+      - "127.0.0.1:7010:7010"
+      - "127.0.0.1:7020:7020"
+      - "7030:7030"
+    volumes:
+      - ascstremio-data:/data
+    environment:
+      AFTER_SEED: delete
+      BACKGROUND_COMPLETE: "off"
+volumes:
+  ascstremio-data:
+    name: ascstremio-data
+```
+
+Depois, na mesma pasta:
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose logs --tail 100 -f
+```
+
+O volume tem nome explícito para preservar os dados entre recriações. Não suba esse exemplo junto de outra instalação que já use o nome `ascstremio`, as mesmas portas ou o mesmo volume.
+
+Para gravar a passkey nesse volume sem colocá-la no histórico, use Bash no host:
+
+```bash
+read -r -s -p 'Passkey do ASC: ' asc_passkey; printf '\n'
+printf '%s' "$asc_passkey" | docker run --rm -i \
+  --volume ascstremio-data:/data \
+  --entrypoint sh ghcr.io/msouza10/ascstremio:latest \
+  -c 'umask 077; cat > /data/passkey.txt'
+unset asc_passkey
+docker compose restart ascstremio
+```
+
+Use a mesma tag escolhida no Compose também no comando de gravação. Abra **http://127.0.0.1:7020/** para fazer login e continue em [primeiro acesso](#primeiro-acesso).
+
+Com Podman, use `podman login`, `podman pull` e um provedor Compose compatível com sua instalação. O script local abaixo também escolhe Podman via `CONTAINER_ENGINE=podman`.
+
+### Construir a partir do código
+
+Para desenvolver ou testar alterações locais, na raiz do repositório:
 
 ```bash
 scripts/docker.sh run
 scripts/docker.sh passkey
 ```
 
-O segundo comando recebe a passkey sem eco no terminal. Reinicie o contêiner com o comando indicado na saída. `CONTAINER_ENGINE=podman scripts/docker.sh run` escolhe explicitamente o Podman.
+O script usa uma imagem local chamada `ascstremio:latest`; se ela não existir, constrói a imagem. Não baixa automaticamente a imagem do GHCR. Use `scripts/docker.sh build` para reconstruir depois de alterar o código.
 
-Alternativa com Compose:
+O `docker-compose.yml` do repositório também é voltado ao build local:
 
 ```bash
 docker compose up -d --build
 ```
 
-**Os volumes têm nomes diferentes:** `scripts/docker.sh` usa `ascstremio-data`; o Compose normalmente acrescenta o nome do projeto ao volume. Não use `scripts/docker.sh passkey` para configurar um volume Compose sem confirmar que é o mesmo volume. Para Compose, uma opção é definir `PASSKEY` em um arquivo de ambiente local protegido e referenciá-la no `environment` do serviço. Nunca versione esse arquivo nem cole a credencial em comandos salvos; variáveis podem ser inspecionadas por quem controla o motor.
+**Os volumes podem ter nomes diferentes:** `scripts/docker.sh` e o exemplo de imagem pronta usam `ascstremio-data`; o Compose do repositório normalmente acrescenta o nome do projeto. Confirme o volume usado antes de gravar a passkey ou migrar dados. Não use a mesma pasta/volume simultaneamente em duas instâncias.
 
-As portas HTTP 7000/7010/7020 são publicadas em `127.0.0.1` do host. A porta TCP 7030 de peers é publicada em todas as interfaces. Mantenha o painel e a administração locais; leia [segurança](seguranca.md) antes de mudar a rede.
-
-O contêiner não impede o hospedeiro de suspender. Configure a energia do host conforme suas obrigações de seed.
+As portas HTTP 7000/7010/7020 ficam em `127.0.0.1` do host. A porta TCP 7030 de peers é publicada em todas as interfaces; remova essa publicação se não quiser conexões de entrada. Mantenha painel e administração locais; leia [segurança](seguranca.md) antes de mudar a rede. O contêiner não bloqueia a suspensão do hospedeiro.
 
 ## Windows
 
@@ -95,6 +171,17 @@ Execute `AscStremio-Setup-<versão>.exe` de uma distribuição confiável. Ele c
 O Menu Iniciar recebe atalhos para abrir o painel, parar o processo e abrir a pasta de dados. Um atalho na pasta Inicializar sobe o programa ao entrar no Windows. A máquina precisa continuar ligada e a sessão de usuário precisa permitir sua execução. A desinstalação mantém os dados.
 
 O instalador não é assinado; o SmartScreen pode mostrar um aviso. A porta de peers pode provocar uma solicitação do firewall. Os serviços HTTP permanecem em loopback. O comando de parar encerra o processo à força; o cofre é salvo a cada minuto. A CI possui teste de instalação silenciosa e inicialização em Windows; isso não comprova compatibilidade de reprodução com todos os players e codecs.
+
+## Pelo código: Linux e macOS
+
+Na pasta do repositório, com Node.js 22+ e npm:
+
+```bash
+npm ci
+npm start
+```
+
+Mantenha o terminal aberto. `Ctrl+C` encerra o aplicativo e o seed. A retomada ocorre na próxima execução, mas o prazo no tracker continua correndo. O macOS usa execução manual ou contêiner; não há instalador nativo próprio.
 
 ## Passkey do tracker
 
