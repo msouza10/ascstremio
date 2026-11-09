@@ -23,7 +23,7 @@ async function setup({ env = {}, connected = true, interfaces = NET } = {}) {
   const credentials = new CredentialStore({ file: path.join(dataDir, 'credentials.json') });
   const levels = [];
   const panel = createPanelSettings({
-    dataDir, bootEnv, running: snap.values, credentials, interfaces,
+    dataDir, bootEnv, running: snap.values, credentials, interfaces, playback: () => ({ active: 1, maxSessions: 2, maxPerCredential: 0, graceSeconds: 30, credentials: [] }),
     addonBase: snap.derived.network.urls.addon,
     applyLive: (key, value) => { if (key === 'LOG_LEVEL') { levels.push(value); return true; } return false; },
   });
@@ -62,6 +62,23 @@ test('GET /api/settings: todas as opções do esquema, origem, bloqueios e nenhu
     assert.match(by('ASC_TORRENT_DIR').reason, /terminal/);
     assert.equal(st.wizard.completed, false);
     assert.equal(st.revision, 0);
+  } finally { await t.close(); }
+});
+
+test('reproduções simultâneas: chaves PLAYBACK_* aparecem com unidade, faixa e reinício; vagas só leitura', async () => {
+  const t = await setup();
+  try {
+    const st = await t.get('settings');
+    const o = st.options.find((x) => x.key === 'PLAYBACK_MAX_SESSIONS');
+    assert.equal(o.groupLabel, 'Reproduções simultâneas');
+    assert.equal(o.unit, 'sessões');
+    assert.equal(o.max, 1000);
+    assert.equal(o.restart, true);
+    assert.equal(o.editable, true);
+    assert.equal(st.playback.active, 1);
+    const prev = await (await t.post('settings/preview', { expectedRevision: 0, changes: { PLAYBACK_MAX_SESSIONS: '3' } })).json();
+    assert.deepEqual(prev.restart, ['PLAYBACK_MAX_SESSIONS']);
+    assert.equal((await t.post('settings/preview', { expectedRevision: 0, changes: { PLAYBACK_MAX_SESSIONS: '5000' } })).status, 422);
   } finally { await t.close(); }
 });
 

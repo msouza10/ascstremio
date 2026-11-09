@@ -142,6 +142,28 @@ Consulte [segurança e rede](seguranca.md) antes de habilitar LAN. Não use essa
 
 Não reduza a meta local como forma de contornar as regras do ASC. A conciliação continua subordinada ao tracker. Veja [seed](seed.md) para os efeitos de assistir só parte de um filme e de concluir o download.
 
+## Reproduções simultâneas
+
+| Variável | Padrão | Comportamento |
+|---|---|---|
+| `PLAYBACK_MAX_SESSIONS` | `0` (sem limite) | Máximo de reproduções simultâneas no total (0 a 1000) |
+| `PLAYBACK_MAX_PER_CREDENTIAL` | `0` (sem limite) | Máximo por credencial de instalação; vale junto com o global |
+| `PLAYBACK_SESSION_GRACE_SECONDS` | `30` | Segundos sem requisições para uma reprodução expirar (5 a 3600) |
+
+O padrão não limita nada: o uso local de um aparelho não muda. Os valores não vêm de uma medição: três TVs não saturam necessariamente qualquer host, e o custo depende de bitrate, disco, rede e peers. Defina um limite só se observar problema (por exemplo, `PLAYBACK_MAX_PER_CREDENTIAL=1` para que cada aparelho toque um filme por vez).
+
+**O que é uma reprodução.** Uma sessão é identificada por **credencial de instalação + conteúdo** (torrent e arquivo; antes de o torrent existir, o id do ASC, que passa a valer como o torrent assim que ele é resolvido).
+
+- Só um `GET` abre ou renova a sessão. `HEAD`, `OPTIONS` e listagem de fontes nunca ocupam vaga nem causam efeitos.
+- Seeks, vários `Range` abertos juntos, reconexões e retentativas do mesmo aparelho no mesmo filme compartilham a **mesma** vaga.
+- A sessão vale enquanto há resposta aberta e por `PLAYBACK_SESSION_GRACE_SECONDS` depois da última fechar. Sem nenhuma requisição nesse período, ela expira e libera a vaga. Resposta de erro (504, 416, 404, falha ao preparar o filme) ou cliente que sai antes de receber bytes não segura vaga. Revogar a credencial libera as vagas na hora.
+- Clientes **não** são agrupados por IP/NAT: duas TVs atrás do mesmo IP com credenciais diferentes são duas sessões. Limitação conhecida: o Stremio não identifica o aparelho, então duas TVs com **a mesma** credencial vendo **o mesmo** filme contam como uma só. Para contá-las separadas, emita uma credencial por aparelho.
+- Trocar de filme no mesmo aparelho ocupa uma segunda vaga até a janela do filme anterior expirar; com limite 1 por credencial, a troca pode receber 429 por até `PLAYBACK_SESSION_GRACE_SECONDS`.
+
+**Recusa.** O excesso recebe `429` com `Retry-After` (segundos até a primeira vaga ociosa expirar) e corpo JSON com `limite` (`global` ou `credencial`), `max` e `retryAfter`, **antes** de baixar o `.torrent`, abrir o torrent ou anunciar no tracker, na mesma disciplina da reserva de disco. Não afeta seed nem reproduções já em curso. Não foi verificado se o Stremio respeita `Retry-After`; ele costuma exibir erro de reprodução, e tentar de novo depois resolve.
+
+Diagnóstico: `GET /playback` na ponte (token administrativo, como as demais rotas administrativas) e o campo `playback` do painel mostram vagas usadas, limites e contagens por credencial (id e nome), sem títulos nem endereços.
+
 ## Disco
 
 | Variável | Padrão | Comportamento |

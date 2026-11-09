@@ -73,7 +73,7 @@ function fromSettingsError(err) {
 // efetivos em uso agora (cfg.values da partida); applyLive(key, value): aplica sem reiniciar
 // (hoje só LOG_LEVEL), devolve true se aplicou; credentials: CredentialStore; addonBase: URL
 // do addon que os aparelhos usam (cfg.derived.network.urls.addon).
-function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => false, credentials = null, addonBase = null, addSecret = () => {}, interfaces = undefined } = {}) {
+function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => false, credentials = null, addonBase = null, addSecret = () => {}, interfaces = undefined, playback = null } = {}) {
   if (!dataDir || !bootEnv || !running) throw new Error('panel-settings: dataDir, bootEnv e running são obrigatórios');
   const live = { ...running };
   const wizardPath = path.join(dataDir, WIZARD_FILE);
@@ -177,6 +177,12 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     return { url: addonBase, reason: null };
   }
 
+  // Vagas de reprodução ocupadas (só leitura; contagens por credencial, sem título nem IP).
+  function playbackNow() {
+    if (!playback) return null;
+    try { return playback(); } catch { return null; }
+  }
+
   function state() {
     const snapshot = resolve();
     const pending = pendingKeys(snapshot);
@@ -196,6 +202,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
       network: { ...candidates(snapshot), advertised: snapshot.derived.network.host, hostSource: snapshot.derived.network.hostSource },
       addon: addonUrlInfo(snapshot),
       credentials: credentials ? credentials.list() : [],
+      playback: playbackNow(),
     };
   }
 

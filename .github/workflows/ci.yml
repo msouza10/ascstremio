@@ -67,7 +67,7 @@ jobs:
       - name: Nenhum dado de conta no repositório
         run: scripts/check-no-secrets.sh .
       - name: Nenhum segredo no histórico (gitleaks, local)
-        run: scripts/audit-secrets.sh
+        run: scripts/audit-secrets.sh --head
       - uses: actions/setup-node@v4
         with:
           node-version: 22

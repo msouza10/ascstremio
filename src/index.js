@@ -4,7 +4,8 @@ const path = require('path');
 
 const { getRouter } = require('stremio-addon-sdk');
 const { createAddon } = require('./addon');
-const { loadLibrary } = require('./library');
+const { loadLibrary, describeEntry } = require('./library');
+const { MetaCache } = require('./meta-cache');
 const { Bridge } = require('./bridge');
 const { AscClient } = require('./asc-client');
 const { startConfig } = require('./config-server');
@@ -124,6 +125,7 @@ async function main() {
     node: process.version, pid: process.pid, host, bridgePort, addonPort, configPort, modo: cfg.mode,
     afterSeed, backgroundMode, idleMinutes, keepAwake: v.KEEP_AWAKE,
     reservaDiscoGiB: v.DISK_RESERVE_GIB, reservaDiscoPercent: v.DISK_RESERVE_PERCENT,
+    limiteReproducoes: v.PLAYBACK_MAX_SESSIONS, limiteReproducoesPorCredencial: v.PLAYBACK_MAX_PER_CREDENTIAL,
     nivelDeLog: logger.level, uploadLimit, passkeyConfigurada: Boolean(passkey),
   });
 
@@ -143,6 +145,8 @@ async function main() {
     credentials, adminKey, uploadLimit, announceBase, vault,
     backgroundMode, idleMs: idleMinutes * 60 * 1000, afterSeed,
     minFreeBytes: Math.round(v.DISK_RESERVE_GIB * 1024 ** 3), reservePercent: v.DISK_RESERVE_PERCENT,
+    maxPlaybacks: v.PLAYBACK_MAX_SESSIONS, maxPlaybacksPerCredential: v.PLAYBACK_MAX_PER_CREDENTIAL,
+    playbackGraceMs: v.PLAYBACK_SESSION_GRACE_SECONDS * 1000,
     resumeOnStart: false, // painel e addon sobem primeiro; os torrents retomam em seguida
     keepAwake: new KeepAwake({ mode: v.KEEP_AWAKE }),
     accountNotice: () => asc.inactivityNotice(),
@@ -164,6 +168,7 @@ async function main() {
   const panel = createPanelSettings({
     dataDir: DATA_DIR, bootEnv, running: cfg.values, credentials,
     addonBase: net.urls.addon,
+    playback: () => bridge.playbackSnapshot(),
     addSecret: (secret) => logger.addSecret(secret),
     applyLive: (key, value) => (key === 'LOG_LEVEL' ? logger.setLevel(value) : false),
   });
@@ -171,7 +176,8 @@ async function main() {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
     complete: (infoHash) => bridge.requestCompletion(infoHash),
   }, undefined, panel);
-  const remote = createAscProvider(asc, bridge, torrentDir);
+  const metaCache = new MetaCache({ file: path.join(DATA_DIR, 'meta-cache.json') }).load();
+  const remote = createAscProvider(asc, bridge, torrentDir, { cache: metaCache });
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).
   bridge.ascResolver = (ascId) => remote.resolve(ascId);
   bridge.ascSizeHint = (ascId) => remote.sizeOf(ascId);
@@ -187,6 +193,10 @@ async function main() {
     status,
     remote,
     library,
+    // Biblioteca atual (inclui o baixado após a partida) com o estado em disco de cada item.
+    localEntries: () => [...bridge.entries.values()]
+      .map((entry) => { const item = describeEntry(entry); return item && { ...item, disk: bridge.diskState(entry.infoHash) }; })
+      .filter(Boolean),
     bridgeUrl: (infoHash, fileIdx) => bridge.urlFor(infoHash, fileIdx),
     demo: v.DEMO_MODE,
     statusAllowed: () => currentCredential()?.status === true,

@@ -233,6 +233,22 @@
     const errBox = errorBox();
     const previewHost = el('div', 'stack');
 
+    // Vagas de reprodução em uso agora: só leitura (os limites se editam em "Reproduções simultâneas").
+    function playbackCard() {
+      const p = state.playback;
+      if (!p) return null;
+      const c = card();
+      c.append(cardHead('Reproduções em andamento'));
+      const lim = (n) => (n > 0 ? String(n) : 'sem limite');
+      c.append(el('p', 'muted', `${p.active} em uso; limite total: ${lim(p.maxSessions)}; por credencial: ${lim(p.maxPerCredential)}.`));
+      if (p.credentials?.length) {
+        const ul = el('ul', 'foot-list');
+        for (const x of p.credentials) ul.append(el('li', '', `${x.name ?? x.credentialId}: ${x.active ?? x.sessions ?? 0}`));
+        c.append(ul);
+      }
+      return c;
+    }
+
     function bannerPending() {
       if (!state.pending.length) return null;
       return alertBox('complete', 'Reinício pendente', `${state.pending.join(', ')} já está(ão) salvo(s), mas só vale(m) depois de reiniciar. ${state.restartHint}`);
@@ -272,6 +288,8 @@
       form.append(bar);
       form.addEventListener('submit', (e) => { e.preventDefault(); doPreview(); });
       discard.addEventListener('click', () => { drafts = {}; errors = { byKey: {}, general: [] }; errBox.clear(); previewHost.replaceChildren(); setText(live, 'Alterações descartadas.'); draw(); });
+      const pb = playbackCard();
+      if (pb) host.append(pb);
       host.append(errBox.root, previewHost, form, installCard(() => state, M.copyName(state.mode)).root);
     }
 

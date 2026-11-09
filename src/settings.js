@@ -43,6 +43,7 @@ const GROUPS = {
   rede: 'Rede e Stremio',
   seed: 'Seed, energia e transferência',
   disco: 'Disco',
+  reproducao: 'Reproduções simultâneas',
   logs: 'Logs',
 };
 
@@ -165,6 +166,18 @@ const SCHEMA = Object.freeze([
   {
     key: 'DISK_RESERVE_PERCENT', type: 'number', min: 0, max: 90, default: 0, unit: '%', group: 'disco', access: 'editable', restart: true,
     description: 'Reserva em percentual do tamanho do volume de BRIDGE_STORE. 0 desliga. Vale a maior entre esta e DISK_RESERVE_GIB; sem conseguir medir o volume, novos downloads são recusados.',
+  },
+  {
+    key: 'PLAYBACK_MAX_SESSIONS', type: 'int', min: 0, max: 1000, default: 0, unit: 'sessões', group: 'reproducao', access: 'editable', restart: true,
+    description: 'Máximo de reproduções simultâneas no total (uma por credencial e filme; HEAD, seeks e reconexões não contam). 0 = sem limite. O excesso recebe 429 com Retry-After antes de qualquer download.',
+  },
+  {
+    key: 'PLAYBACK_MAX_PER_CREDENTIAL', type: 'int', min: 0, max: 1000, default: 0, unit: 'sessões', group: 'reproducao', access: 'editable', restart: true,
+    description: 'Máximo de reproduções simultâneas por credencial de instalação. 0 = sem limite. Vale em conjunto com PLAYBACK_MAX_SESSIONS.',
+  },
+  {
+    key: 'PLAYBACK_SESSION_GRACE_SECONDS', type: 'int', min: 5, max: 3600, default: 30, unit: 's', group: 'reproducao', access: 'advanced', restart: true,
+    description: 'Tempo sem requisições para uma reprodução expirar e liberar a vaga. Cobre o intervalo entre fechar um Range e abrir outro num seek.',
   },
   {
     key: 'LOG_LEVEL', type: 'enum', values: ['debug', 'info', 'warn', 'error'], default: 'debug', group: 'logs', access: 'editable', restart: false,

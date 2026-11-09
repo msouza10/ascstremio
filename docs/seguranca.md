@@ -51,6 +51,8 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 
 **Migração.** A chave única antiga (`bridge-key`) e o manifesto sem prefixo deixam de funcionar. Emita uma credencial, remova o addon antigo no Stremio e instale a URL nova. Os dados e o seed não são afetados.
 
+**Limite de reproduções.** A quota opcional de reproduções simultâneas (`PLAYBACK_MAX_SESSIONS`, `PLAYBACK_MAX_PER_CREDENTIAL`) é contada por credencial, nunca por IP, e é verificada depois da credencial e antes de qualquer download. O diagnóstico (`GET /playback`) é administrativo e traz só contagens; um aparelho não consulta o histórico de outro. Detalhes em [configuração](configuracao.md#reproduções-simultâneas).
+
 ## Controles atuais
 
 - Addon e ponte validam `Host`, aceitando IP literal, localhost e nomes explicitamente configurados. Isso combate DNS rebinding; não autentica o cliente.
@@ -71,6 +73,7 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 | Chave única antiga | `bridge-key` | Obsoleta e ignorada; pode ser apagada |
 | Token administrativo | `admin-key` | Dá acesso às rotas administrativas da ponte; nunca em URL, log ou captura |
 | Obrigações de seed | `seed-vault.json` | Histórico local e referências a torrents |
+| Metadados de fontes | `meta-cache.json` | Só nome, tamanho e selos de releases por filme; sem cookie, passkey, credencial, URL, seeders ou freeleech. Modo restrito, até 90 dias. Pode ser apagado |
 | Biblioteca | `torrents/` | Metadados dos torrents; manter privados mesmo sanitizados |
 | Arquivos recebidos | `cache/` | Conteúdo baixado e partes de vídeos |
 | Logs | `logs/` | Eventos e identificadores podem revelar hábitos de uso |

@@ -92,4 +92,6 @@ As fontes da ponte usam `behaviorHints.notWebReady` para o cliente escolher uma 
 
 `DATA_DIR` separa estado da instalação e código atualizável. Sessão, chave, cofre e arquivos precisam ser preservados de forma consistente; veja [backup](manutencao.md#backup-e-restauração). Notas locais e sondas do mantenedor não são dependências do programa, dos testes ou da CI.
 
+`meta-cache.json` (`src/meta-cache.js`) guarda, por filme IMDb, apenas nome, tamanho e selos dos releases vistos numa busca online bem-sucedida (até 300 filmes, 12 releases, 512 KiB, 90 dias; escrita atômica, modo 0600, formato versionado; arquivo ilegível é ignorado). Serve só à queda para arquivos locais completos quando o ASC está indisponível (`lookup` em `src/asc-provider.js`); não substitui a consulta ao tracker nem guarda seeders, freeleech, cookies ou passkey.
+
 Os testes usam ASC, torrents e respostas simulados. Passar na suíte não confirma regras atuais do tracker, disponibilidade real do swarm ou suporte de codecs do player.

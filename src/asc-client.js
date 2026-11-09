@@ -4,7 +4,14 @@ const { CookieJar } = require('tough-cookie');
 const { inactivityNotice } = require('./safety');
 const log = require('./logger').logger.child('asc');
 
-class AscError extends Error {}
+// `kind` (opcional) classifica a falha para quem consulta o site: 'session' (sessão ausente,
+// expirada ou recusada), 'network' (sem conexão com o site) ou 'site' (o site respondeu com erro).
+class AscError extends Error {
+  constructor(message, kind = null) {
+    super(message);
+    this.kind = kind;
+  }
+}
 
 function pageProps(html) {
   const match = html.match(/<script\b(?=[^>]*\bdata-page=["']app["'])[^>]*>([\s\S]*?)<\/script>/i);
@@ -86,7 +93,7 @@ class AscClient {
         if (error?.cause?.code === 'UND_ERR_HEADERS_OVERFLOW') {
           throw new AscError('Cabeçalhos do ASC acima do limite do Node. Inicie com `npm start` (usa --max-http-header-size=65536).');
         }
-        throw new AscError('Não foi possível conectar ao ASC. Tente novamente.');
+        throw new AscError('Não foi possível conectar ao ASC. Tente novamente.', 'network');
       }
       for (const cookie of response.headers.getSetCookie()) await this.jar.setCookie(cookie, url.href);
       if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -98,7 +105,7 @@ class AscClient {
           this.connected = false;
           this.message = 'Sessão expirada. Entre novamente.';
           log.warn('sessão expirada: o site redirecionou para /login');
-          throw new AscError(this.message);
+          throw new AscError(this.message, 'session');
         }
         if (response.status === 303 || ([301, 302].includes(response.status) && method === 'POST')) { method = 'GET'; body = undefined; }
         continue;
@@ -108,11 +115,11 @@ class AscClient {
       if (response.status === 401) {
         this.connected = false;
         this.message = 'Sessão inválida ou credenciais recusadas. Entre novamente.';
-        throw new AscError(this.message);
+        throw new AscError(this.message, 'session');
       }
-      if (response.status === 403) throw new AscError('Acesso bloqueado ou desafio do site. Abra o ASC no navegador.');
-      if (response.status === 429) throw new AscError('Limite de acesso do ASC. Aguarde antes de tentar novamente.');
-      if (!response.ok) throw new AscError('O ASC não concluiu a solicitação.');
+      if (response.status === 403) throw new AscError('Acesso bloqueado ou desafio do site. Abra o ASC no navegador.', 'site');
+      if (response.status === 429) throw new AscError('Limite de acesso do ASC. Aguarde antes de tentar novamente.', 'site');
+      if (!response.ok) throw new AscError('O ASC não concluiu a solicitação.', 'site');
       return response;
     }
     throw new AscError('Excesso de redirecionamentos no ASC.');
