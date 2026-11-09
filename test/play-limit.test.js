@@ -313,3 +313,39 @@ test('ponte: método diferente de GET/HEAD nas rotas de vídeo é recusado sem e
   assert.equal(efeitos, 0);
   assert.equal(b.limiter.snapshot().active, 0);
 });
+
+test('ponte: 504 do primeiro trecho sai sem esperar o iterador e libera vaga e contador (issue #52)', async () => {
+  const b = ponte({ firstByteTimeoutMs: 30 });
+  const a = store.create({ name: 'sala' });
+  let descartado = 0;
+  let falharReturn;
+  // Iterador que se comporta como o assíncrono real: o return() só termina depois do next()
+  // pendente, que aqui nunca resolve (sem peers).
+  const iterador = {
+    next: () => new Promise(() => {}),
+    return: () => { descartado++; return new Promise((_, rej) => { falharReturn = rej; }); },
+  };
+  b.getTorrent = async () => ({
+    ready: true, numPeers: 0, progress: 0,
+    files: [{ length: 10, path: 'f.mkv', createReadStream: () => ({ [Symbol.asyncIterator]: () => iterador }) }],
+  });
+  const naoTratadas = [];
+  const ouvinte = (e) => naoTratadas.push(e);
+  process.on('unhandledRejection', ouvinte);
+  try {
+    const r = resposta();
+    const t0 = Date.now();
+    await b.handle(get(a.token, `/s/${HASH}/0`), r);
+    assert.equal(r.statusCode, 504);
+    assert.ok(Date.now() - t0 < 2000, 'o 504 não espera o return() do iterador');
+    assert.equal(b.snapshot().streaming.timeouts504, 1);
+    assert.equal(descartado, 1, 'o iterador é descartado, uma vez, em segundo plano');
+    assert.equal(b.limiter.snapshot().active, 0, 'vaga de reprodução liberada');
+    assert.equal(b.streams.get(HASH), 0, 'sem contador de stream preso');
+    falharReturn(new Error('falha tardia no descarte'));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(naoTratadas, [], 'falha tardia do return() não vira rejeição não tratada');
+  } finally {
+    process.off('unhandledRejection', ouvinte);
+  }
+});
