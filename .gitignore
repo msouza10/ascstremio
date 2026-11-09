@@ -9,6 +9,7 @@ admin-key
 credentials.json
 asc-session.json
 seed-vault.json
+meta-cache.json
 service.env
 service.log
 .env
