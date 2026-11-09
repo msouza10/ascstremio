@@ -26,6 +26,7 @@ docs/
 tools/
 *.md
 !README.md
+!CHANGELOG.md
 *.png
 *.jpg
 *.jpeg

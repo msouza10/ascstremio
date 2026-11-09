@@ -31,6 +31,17 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run check
 
+  commits:
+    name: Commits no padrão (Conventional Commits)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # O título do commit decide a versão e o changelog: ver scripts/check-commits.sh.
+      - run: scripts/check-commits.sh "origin/${{ github.base_ref }}..HEAD"
+
   lint:
     name: Shell, workflows e segredos
     runs-on: ubuntu-latest

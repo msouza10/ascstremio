@@ -23,8 +23,8 @@ if echo "$files" | tr '\n' '\0' | xargs -0 grep -IlE 'announce/[A-Za-z0-9]{16,}|
   report "URL de announce com passkey em: $(echo "$files" | tr '\n' '\0' | xargs -0 grep -IlE 'announce/[A-Za-z0-9]{16,}|passkey=[A-Za-z0-9]{16,}' 2>/dev/null | tr '\n' ' ')"
 fi
 # só o README é documentação publicada; docs/ e tools/ ficam locais
-echo "$files" | grep -E '^(docs|tools)/' | grep -q . && report "docs/ ou tools/ no pacote (só o README.md é publicado)"
-echo "$files" | grep -E '\.md$' | grep -vE '^README\.md$' | grep -q . && report "documento .md além do README.md"
+echo "$files" | grep -E '^(docs|tools)/' | grep -q . && report "docs/ ou tools/ no pacote (só README.md e CHANGELOG.md são publicados)"
+echo "$files" | grep -E '\.md$' | grep -vE '^(README|CHANGELOG)\.md$' | grep -q . && report "documento .md além de README.md e CHANGELOG.md"
 # a passkey real desta máquina (se existir) não pode aparecer em lugar nenhum
 for pk in "$OLDPWD/private/passkey.txt" "$HOME/.local/share/ascstremio/data/passkey.txt"; do
   if [ -s "$pk" ] && echo "$files" | tr '\n' '\0' | xargs -0 grep -IlF -- "$(tr -d '\n' < "$pk")" 2>/dev/null | grep -q .; then

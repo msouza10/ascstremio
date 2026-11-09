@@ -467,11 +467,35 @@ curto ou HnR registrado saem no log (`[hnr]`) e em `GET /seed-status`. A ponte p
 
 ## Esteira de CI/CD
 
-GitHub Actions em `.github/workflows/`: `ci.yml` (testes em Ubuntu e Windows com Node 22 e 24,
-shellcheck, actionlint, auditoria de dependências, barreira de segredos, pacote Linux, imagem
-Docker, instalador Windows instalado de verdade) e `release.yml` (ao enviar a tag `vX.Y.Z`,
-igual à `version` do `package.json`: pacote Linux, `.exe`, imagem multi-arquitetura no GHCR,
-`SHA256SUMS`, atestado de procedência e release). Lançar: `npm version patch && git push --follow-tags`.
+GitHub Actions em `.github/workflows/`:
+
+- **`ci.yml`** (push, pull request): testes em Ubuntu e Windows com Node 22 e 24, shellcheck,
+  actionlint, auditoria de dependências, barreira de segredos, pacote Linux, imagem Docker,
+  instalador Windows instalado de verdade e, nos pull requests, conferência dos títulos dos commits.
+- **`release.yml`** (push na `main`): versão, changelog e release automáticos (abaixo).
+
+### Versão e changelog pelos commits
+
+Os títulos dos commits seguem [Conventional Commits](https://www.conventionalcommits.org/pt-br/)
+(`scripts/check-commits.sh` confere nos pull requests) e decidem a versão:
+
+| Título do commit | Efeito (hoje, em 0.x) |
+|---|---|
+| `fix:`, `perf:`, `security:` | correção: 0.1.0 → 0.1.1 |
+| `feat:` | versão menor: 0.1.0 → 0.2.0 |
+| `feat!:` ou rodapé `BREAKING CHANGE:` | versão maior (em 0.x conta como menor; depois da 1.0, maior) |
+| `docs:` `refactor:` `build:` `ci:` | entram no changelog, **sem** versão nova |
+| `test:` `chore:` `style:` | não entram no changelog |
+
+Fluxo: a cada push na `main`, o *release-please* mantém um PR **"chore(main): release X.Y.Z"**
+com o `CHANGELOG.md` e a versão nova (`package.json` e lock). **Mergear esse PR é lançar a versão**:
+o release é criado como rascunho e a esteira então testa e monta tudo — pacote Linux
+(`ascstremio-X.Y.Z.tar.gz` + `install.sh`), instalador `AscStremio-Setup-X.Y.Z.exe` (instalado e
+iniciado num Windows real antes de sair), `SHA256SUMS` e atestado de procedência — publica a
+**imagem Docker no GitHub Packages** (`ghcr.io/<dono>/ascstremio`, tags `X.Y.Z`, `X.Y` e `latest`,
+amd64 e arm64) e só então publica o release com as notas do changelog. Se algum passo falhar, o
+release continua rascunho. Nada de `npm version` nem de tag à mão.
+
 Os passos vivem em `scripts/` e rodam igual localmente: `scripts/build-release.sh`,
 `scripts/smoke-install.sh`, `scripts/smoke-container.sh`, `scripts/check-no-secrets.sh`.
 
@@ -480,7 +504,7 @@ Os passos vivem em `scripts/` e rodam igual localmente: `scripts/build-release.s
 - O repositório **não** contém passkey, cookies, `.torrent`, cofre de seed, logs nem capturas do
   site: `private/`, `*.torrent`, `docs/`, `tools/` e afins ficam no `.gitignore`, e
   `scripts/check-no-secrets.sh` (rodado no CI antes de qualquer pacote) falha se algo assim
-  aparecer. Só este `README.md` é documentação publicada.
+  aparecer. Só o `README.md` e o `CHANGELOG.md` gerado são publicados.
 - **Proteções do app local** (cada uma com teste em `test/`):
   - escuta só em `127.0.0.1` (a rede local exige `BRIDGE_ALLOW_LAN=1`);
   - **anti DNS rebinding**: addon, ponte e painel recusam `Host` que seja nome DNS (só IP
