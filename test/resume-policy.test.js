@@ -192,7 +192,18 @@ test('já no motor ou fora da biblioteca: ignora', async () => {
   b.client.torrents.push({ infoHash: H(1) });
   await b.resumePending();
   assert.deepEqual(abertos, []);
-  assert.equal(b.resumeSnapshot().skipped, 1);
+  assert.equal(b.resumeSnapshot(), null); // passada ociosa não cria medição
+});
+
+test('passada ociosa (tudo já aberto) preserva a medição da retomada real', async () => {
+  const v = cofre();
+  add(v, 1, { tracker: { deadlineMs: NOW + DIA } });
+  const b = ponte(v, { hashes: [H(1)] });
+  await b.resumePending();
+  const antes = JSON.stringify(b.resumeSnapshot());
+  assert.equal(b.resumeSnapshot().opened, 1);
+  await b.resumePending(); // conciliação horária: o torrent segue pendente e já está no motor
+  assert.equal(JSON.stringify(b.resumeSnapshot()), antes);
 });
 
 test('concorrência limitada: o prazo curto não espera o torrent grande e lento', async () => {
@@ -272,7 +283,12 @@ test('reentrada: chamadas durante a retomada não duplicam a fila e refazem a or
   await p1;
   // Cada torrent foi pedido uma única vez, e o novo entrou na passada extra.
   assert.deepEqual(chamadas, [H(1), H(2)]);
-  assert.equal(b.resumeSnapshot().runs, 2);
+  const s = b.resumeSnapshot();
+  assert.equal(s.runs, 2);
+  // As duas passadas somam na mesma medição (a segunda não apaga a da partida).
+  assert.equal(s.opened, 2);
+  assert.equal(s.queued, 2);
+  assert.deepEqual(s.items.map((i) => i.resultado), ['ok', 'ok']);
   assert.equal(b.resumeRun, null);
   // Nova chamada depois do fim começa outra retomada (nada a fazer: já estão no motor).
   await b.resumePending();

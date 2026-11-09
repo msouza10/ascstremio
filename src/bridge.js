@@ -363,9 +363,10 @@ class Bridge {
     }
     this.resumeRun = (async () => {
       try {
+        const run = { stats: null }; // as passadas de uma mesma retomada somam na mesma medição
         do {
           this.resumeAgain = false;
-          await this.resumeOnce();
+          await this.resumeOnce(run);
         } while (this.resumeAgain);
       } finally {
         this.resumeRun = null;
@@ -377,22 +378,23 @@ class Bridge {
   // Uma passada: ordena por risco de seed (src/resume-policy.js) e abre os torrents com no máximo
   // `resumeConcurrency` ao mesmo tempo. Cada abertura passa por getTorrent (admissão de disco
   // inclusive) e é medida; a falha de uma não interrompe as outras.
-  async resumeOnce() {
+  async resumeOnce(run = { stats: null }) {
     const pendencias = this.vault.list().filter((e) => (
       (e.completedAt && !e.satisfiedAt) || (e.backgroundComplete && !e.completedAt)
-    ) && this.entries.has(e.infoHash));
+    ) && this.entries.has(e.infoHash)
+      // Já no motor ou abrindo: nada a fazer, e a passada ociosa não apaga a medição da retomada real.
+      && !this.loading.has(e.infoHash) && !this.client.torrents.some((t) => t.infoHash === e.infoHash));
     const ranked = rankPending(pendencias, { vault: this.vault, now: this.clock() });
     if (!ranked.length) return;
 
-    const prev = this.resumeStats;
-    const stats = {
+    const stats = run.stats ?? {
       running: true,
-      runs: (prev?.runs ?? 0) + 1,
+      runs: 0,
       concurrency: this.resumeConcurrency,
       startedAt: new Date(this.clock()).toISOString(),
       finishedAt: null,
       uptimeAtStartSeconds: Math.round(process.uptime()),
-      queued: ranked.length,
+      queued: 0,
       opened: 0, failed: 0, deferred: 0, noData: 0, skipped: 0,
       bytes: 0, totalMs: null, firstOpenMs: null, slowestMs: 0,
       loopLagMaxMs: null,
@@ -400,10 +402,15 @@ class Bridge {
       inFlight: new Map(),
       items: [],
     };
-    stats.rssPeakMB = stats.rssStartMB;
+    stats.rssPeakMB = Math.max(stats.rssPeakMB, stats.rssStartMB);
+    stats.runs += 1;
+    stats.running = true;
+    run.stats = stats;
     this.resumeStats = stats;
     const lag = monitorEventLoopDelay({ resolution: 20 });
     lag.enable();
+    stats.queued += ranked.length;
+    const prior = stats.totalMs ?? 0;
     const t0 = this.monotonic();
     const peak = () => { stats.rssPeakMB = Math.max(stats.rssPeakMB, Math.round(process.memoryUsage().rss / 1048576)); };
     log.info(`retomada: ${ranked.length} pendência(s), até ${this.resumeConcurrency} por vez`, {
@@ -447,7 +454,7 @@ class Bridge {
           stats.inFlight.delete(hash);
           record.ms = Math.round(this.monotonic() - started);
           stats.slowestMs = Math.max(stats.slowestMs, record.ms);
-          if (stats.firstOpenMs === null && record.resultado === 'ok') stats.firstOpenMs = Math.round(this.monotonic() - t0);
+          if (stats.firstOpenMs === null && record.resultado === 'ok') stats.firstOpenMs = prior + Math.round(this.monotonic() - t0);
           if (stats.items.length < 100) stats.items.push(record);
           peak();
           log.info(`retomada: ${record.hash} ${record.resultado} em ${record.ms} ms`, {
@@ -457,8 +464,8 @@ class Bridge {
       });
     } finally {
       lag.disable();
-      stats.totalMs = Math.round(this.monotonic() - t0);
-      stats.loopLagMaxMs = Number((lag.max / 1e6).toFixed(1));
+      stats.totalMs = prior + Math.round(this.monotonic() - t0);
+      stats.loopLagMaxMs = Math.max(stats.loopLagMaxMs ?? 0, Number((lag.max / 1e6).toFixed(1)));
       stats.rssEndMB = Math.round(process.memoryUsage().rss / 1048576);
       stats.running = false;
       stats.finishedAt = new Date(this.clock()).toISOString();
