@@ -61,7 +61,7 @@ scripts/build-release.sh [--base-url URL] [--windows]     # gera dist/
 scripts/smoke-install.sh dist && scripts/smoke-container.sh IMAGEM
 scripts/check-no-secrets.sh .             # barreira de segredos (rode antes de todo commit)
 node scripts/audit-check.js               # npm audit com exceções justificadas
-scripts/audit-secrets.sh                  # gitleaks em todo o histórico (versão fixada, local, valores redigidos)
+scripts/audit-secrets.sh [--head]           # gitleaks: todas as refs (antes de publicar) ou só o commit atual (CI)
 shellcheck -S warning scripts/*.sh windows/build.sh && actionlint .github/workflows/*.yml
 ```
 
