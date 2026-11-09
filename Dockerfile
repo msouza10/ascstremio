@@ -3,7 +3,8 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
+# Binários nativos vêm do GitHub Releases, que às vezes responde 504: tenta de novo.
+RUN for i in 1 2 3 4; do npm ci --omit=dev --no-audit --no-fund && exit 0; sleep $((i * 20)); done; exit 1
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production \
