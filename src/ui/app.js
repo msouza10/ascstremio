@@ -6,20 +6,23 @@
   const POLL_MS = 5000;
   const $ = (id) => document.getElementById(id);
 
-  const store = { status: null, snap: null };
+  const store = { status: null, snap: null, admin: null };
+  window.ASC_LOGIN_CSRF = window.ASC_CSRF; // token de pré-login, preservado para entrar de novo após sair/expirar
   let view = null; let viewKey = ''; let timer = null; let loading = false; let autoVerified = false;
 
   // ---------------------------------------------------------------- API
   async function call(method, route, body) {
     const opts = { method, headers: {} };
     if (method === 'POST') {
-      opts.headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': window.ASC_CSRF };
+      // O login de administração usa o token de pré-login (de /config.js), nunca o da sessão anterior.
+      opts.headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': route === 'admin/session' ? window.ASC_LOGIN_CSRF : window.ASC_CSRF };
       opts.body = JSON.stringify(body ?? {});
     }
     let res;
     try { res = await fetch(`/api/${route}`, opts); } catch { throw new Error('Falha ao falar com o addon local.'); }
     let data = {};
     try { data = await res.json(); } catch { /* corpo vazio */ }
+    if (res.status === 401 && data.code === 'admin_required' && store.admin?.enabled) { adminExpired(); }
     if (!res.ok) { const err = new Error(data.error || 'Não foi possível concluir.'); err.status = res.status; err.data = data; throw err; }
     return data;
   }
@@ -63,7 +66,39 @@
     }
   }
 
+  // Administração pela LAN (issue #24): sem sessão de administração só a tela de entrada aparece.
+  function adminExpired() {
+    if (!store.admin?.authenticated) return;
+    store.admin = { ...store.admin, authenticated: false, csrf: undefined };
+    stopPolling(); store.snap = null; side.built = false;
+    render();
+  }
+  async function adminLogin(password) {
+    const data = await call('POST', 'admin/session', { password });
+    store.admin = data; window.ASC_CSRF = data.csrf;
+    try { applyStatus(await call('GET', 'status')); } catch { /* segue com o estado anterior */ }
+    viewKey = ''; render();
+  }
+  async function adminLogout() {
+    try { await fetch('/api/admin/session', { method: 'DELETE', headers: { 'X-CSRF-Token': store.admin?.csrf ?? '' } }); } catch { /* o servidor expira sozinho */ }
+    store.admin = { enabled: true, authenticated: false }; window.ASC_CSRF = undefined;
+    stopPolling(); store.snap = null; store.status = { connected: false }; side.built = false;
+    render();
+  }
+  function renderAdmin() {
+    document.querySelector('.shell').classList.add('no-side');
+    $('nav').hidden = true; $('nav-mobile').hidden = true; clear($('topstats')); $('admin-logout').hidden = true;
+    if (viewKey !== 'admin') {
+      view?.destroy?.();
+      view = window.Views.adminEntrar(); viewKey = 'admin';
+      const host = $('view'); clear(host); host.append(view.root);
+    }
+    document.title = 'Administração · Monitor ASC';
+  }
+
   function render() {
+    if (store.admin?.enabled && !store.admin.authenticated) { renderAdmin(); return; }
+    $('admin-logout').hidden = !store.admin?.enabled;
     const connected = Boolean(store.status?.connected);
     let path = location.pathname.replace(/\/+$/, '') || '/';
     const redo = new URLSearchParams(location.search).has('de-novo');
@@ -218,8 +253,11 @@
   }
 
   async function boot() {
-    window.App = { call, nav, refresh, session, store, markNav };
+    window.App = { call, nav, refresh, session, store, markNav, adminLogin };
+    $('admin-logout').addEventListener('click', adminLogout);
+    try { store.admin = await call('GET', 'admin/session'); if (store.admin.authenticated) window.ASC_CSRF = store.admin.csrf; } catch { store.admin = null; }
     bindShell();
+    if (store.admin?.enabled && !store.admin.authenticated) { render(); return; }
     try {
       applyStatus(await call('GET', 'status'));
     } catch (e) {

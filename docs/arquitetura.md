@@ -78,7 +78,7 @@ Rotas relativas a `http://127.0.0.1:7020`. Todas exigem Host exato; as ações P
 | `GET /api/logs/file?nome=<arquivo>` | Obtém arquivo diário validado pelo logger |
 | `POST /api/logs/level` | Altera mínimo com o campo `nivel` |
 
-As rotas de log funcionam sem sessão ASC para diagnóstico local. A interface usa polling; não há WebSocket. O painel não publica uma API remota multiusuário nem promete estabilidade de todos os campos internos.
+As rotas de log funcionam sem sessão ASC para diagnóstico local. A interface usa polling; não há WebSocket. O painel não publica uma API remota multiusuário nem promete estabilidade de todos os campos internos. Com a [administração pela LAN](seguranca.md#administração-do-painel-pela-lan) ativa, `GET/POST/DELETE /api/admin/session` entram e saem da sessão de administração e todas as demais rotas `/api` (inclusive logs) exigem essa sessão, com Host/Origin exatos do endereço configurado e CSRF por sessão.
 
 ## Addon HTTP
 

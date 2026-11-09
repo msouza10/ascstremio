@@ -98,6 +98,7 @@ Caminhos relativos fornecidos por variável são interpretados a partir do diret
 | `ADDON_PUBLIC_URL` | Calculada a partir da interface e da porta | Base das imagens do catálogo de status; não muda sozinha a interface de escuta |
 | `LAN_ADVERTISE_HOST` | ausente | Endereço anunciado aos outros aparelhos no modo LAN: IPv4 ou nome DNS (IPv6 ainda não: a escuta é só IPv4), sem esquema, porta ou caminho; ver [endereço anunciado](#endereço-anunciado-na-lan) |
 | `LAN_INTERFACE` | ausente | Interface de onde tirar o endereço anunciado quando há várias (`enp3s0`, `Wi-Fi`) |
+| `CONFIG_ALLOW_LAN` e demais `CONFIG_*` | desligado | Administração opcional do painel pela LAN; ver [a seção própria](#administração-do-painel-pela-lan) |
 | `ALLOWED_HOSTS` | vazio | Nomes DNS adicionais aceitos por addon/ponte, separados por vírgula |
 | `STATUS_CATALOG` | `on` | `off` remove o catálogo de status e seus alertas das fontes |
 | `DEMO_MODE` | desligado | `true` adiciona uma fonte de demonstração externa |
@@ -134,6 +135,40 @@ A URL de instalação aparece com `<credencial>`; o token real só sai uma vez e
 Estados: `escutando` (escuta local, sem entrada observada ainda), `sem entrada observada` (6 h ou mais com torrent ativo e nenhuma entrada; compatível com firewall, NAT/CGNAT ou ninguém ter tentado, não prova bloqueio), `entrada observada` (ao menos um peer de endereço público entrou; no contêiner o Docker pode mascarar a origem; entradas de rede local não contam), `sem escuta` (motor parado, por exemplo porta ocupada) e `desconhecido`. A CLI lê um resumo (`peer-port-status.json`, 0600, só contadores) que o aplicativo em execução regrava a cada minuto; sem ele ou com ele velho, o estado é `desconhecido`. Os contadores zeram a cada partida. Não há teste de alcance automático; para conferir de fora, use outra rede por sua conta.
 
 Consulte [segurança e rede](seguranca.md) antes de habilitar LAN. Não use essas opções para hospedar uma conta compartilhada.
+
+## Administração do painel pela LAN
+
+Opcional e **desligada por padrão**. Serve para quem mantém o host num notebook ou NAS e quer abrir o painel de outro aparelho da mesma rede. Quem usa só o computador local não precisa de nada disto: o painel segue em `http://127.0.0.1:<CONFIG_PORT>`, sem senha de administração.
+
+| Variável | Padrão | Comportamento |
+|---|---|---|
+| `CONFIG_ALLOW_LAN` | `false` | Habilita a administração pela LAN. Só pelo terminal (`npm run admin-painel -- ativar`); o painel não consegue ligá-la |
+| `CONFIG_PUBLIC_URL` | ausente | Origem **https** exata do seu proxy reverso (`https://painel.casa.lan`), sem caminho. Com ela o painel escuta só em `127.0.0.1` e o cookie é `Secure` |
+| `CONFIG_ADMIN_HTTP_CLEAR` | `false` | Sem `CONFIG_PUBLIC_URL`, confirma que você aceita a senha em HTTP sem criptografia na LAN |
+| `CONFIG_BIND_ADDRESS` | ausente | IPv4 deste computador onde escutar. Vazio = o IPv4 de `LAN_ADVERTISE_HOST`; obrigatório se este for um nome DNS. Nunca `0.0.0.0` |
+| `CONFIG_SESSION_IDLE_MINUTES` | `30` | Inatividade que encerra a sessão (5 a 120) |
+| `CONFIG_SESSION_MAX_HOURS` | `12` | Duração absoluta da sessão (1 a 24) |
+
+**Pré-condições** (todas, ou a administração remota continua desligada e o painel local segue funcionando; a falta é registrada no log e o seed retoma normalmente): `ASCSTREMIO_MODE=lan`, fora de contêiner; `LAN_ADVERTISE_HOST` definido explicitamente (o endereço automático pode mudar com o DHCP); senha de administração definida; e transporte decidido (`CONFIG_PUBLIC_URL` https **ou** `CONFIG_ADMIN_HTTP_CLEAR=true`).
+
+```bash
+npm run admin-painel -- definir            # pergunta a senha sem eco (mín. 12 caracteres; não é a do ASC)
+npm run admin-painel -- gerar              # alternativa: senha aleatória, mostrada uma única vez
+npm run admin-painel -- ativar --http-claro --sim   # ou: ativar --https https://painel.casa.lan
+npm run admin-painel -- status             # situação e pendências; nunca mostra a senha
+```
+
+`ativar` confere as pré-condições, **mostra o que muda** (interfaces, Host aceito, exigência de senha também em `127.0.0.1`, risco do HTTP em claro) e só grava com confirmação ou `--sim`; exige o aplicativo parado e reinício. `desativar` desfaz.
+
+**Recuperação local** (no terminal do host, sem conta do ASC, sem painel; valem **na hora**, com o aplicativo ligado):
+
+```bash
+npm run admin-painel -- revogar-sessoes    # derruba todas as sessões abertas
+npm run admin-painel -- definir --trocar   # nova senha (derruba as sessões); também --senha-arquivo ARQ
+npm run admin-painel -- remover            # apaga a senha: o acesso remoto fecha e o painel local volta ao modo local
+```
+
+A senha fica só como verificador scrypt com sal em `DATA_DIR/panel-admin.json` (0600), escrito apenas pelo terminal; o servidor apenas lê. Trocar ou apagar o arquivo vale sem reiniciar. Reiniciar o aplicativo encerra todas as sessões (elas vivem em memória). Detalhes do modelo de ameaça e limites: [segurança](seguranca.md#administração-do-painel-pela-lan).
 
 ## Seed, energia e transferência
 

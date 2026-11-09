@@ -23,6 +23,8 @@ const { KeepAwake } = require('./keepawake');
 const { logger, initFiles } = require('./logger');
 const { acquireInstance }  = require('./instance-lock');
 const { createPanelSettings } = require('./panel-settings');
+const adminAccess = require('./admin-access');
+const { AdminCredential } = require('./admin-auth');
 const { AlertManager, configFromValues, OBSERVE_INTERVAL_MS } = require('./alerts');
 
 // Onde ficam passkey, sessão, cofre, logs, .torrent e cache. Fora do código para
@@ -203,10 +205,16 @@ async function main() {
       return false;
     },
   });
+  // Administração do painel pela LAN (opcional, desligada por padrão; issue #24). Falta de
+  // pré-condição só desliga a administração remota, nunca impede o motor de retomar o seed.
+  const adminCredential = new AdminCredential({ dataDir: DATA_DIR });
+  const remoteAdmin = adminAccess.plan({
+    values: v, mode: cfg.mode, container: cfg.container, net, credentialConfigured: adminCredential.configured(), port: configPort,
+  });
   const config = await startConfig(asc, configPort, {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
     complete: (infoHash) => bridge.requestCompletion(infoHash),
-  }, undefined, panel, alerts);
+  }, undefined, panel, alerts, { plan: remoteAdmin, credential: adminCredential });
   // Alertas: avaliação a cada minuto sobre o snapshot (leitura pura); a entrega é assíncrona e
   // nunca bloqueia nem derruba o aplicativo.
   setInterval(() => alerts.observe(() => ({ ...bridge.snapshot(), stats: asc.accountStats })), OBSERVE_INTERVAL_MS).unref();

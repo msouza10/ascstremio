@@ -138,7 +138,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     return settings.view(snapshot, bootEnv).map((o) => {
       let editable = !o.locked;
       let reason = o.locked;
-      if (!o.locked && o.risky) { editable = false; reason = 'só pelo terminal, com o aplicativo parado (npm run configurar): trocar pastas exige travar o novo diretório'; }
+      if (!o.locked && o.risky) { editable = false; reason = o.group === 'administracao' ? 'só pelo terminal, com o aplicativo parado (npm run admin-painel): habilitar o painel pela LAN não pode partir do próprio painel' : 'só pelo terminal, com o aplicativo parado (npm run configurar): trocar pastas exige travar o novo diretório'; }
       // BRIDGE_ALLOW_LAN=1 (variável antiga) força a LAN e contradiz ASCSTREMIO_MODE=local.
       if (o.key === 'ASCSTREMIO_MODE' && editable && snapshot.values.BRIDGE_ALLOW_LAN === '1') {
         editable = false;

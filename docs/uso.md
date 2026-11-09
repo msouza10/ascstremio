@@ -70,6 +70,10 @@ A página **Configurações** usa a mesma validação da partida e do terminal: 
 
 **Concluir download em segundo plano** pede confirmação e baixa o restante do torrent. Isso consome disco/rede e, ao completar, abre a obrigação de seed. Consulte [seed](seed.md) antes de confirmar.
 
+### Administração pela LAN (opcional)
+
+Por padrão o painel abre só em `http://127.0.0.1:7020/`. Se você habilitou a [administração pela LAN](configuracao.md#administração-do-painel-pela-lan), abra o endereço configurado de outro aparelho (por exemplo `http://192.168.1.20:7020/`): aparece primeiro a tela **Entrar como administrador**, com a senha de administração definida no terminal (não é a do ASC). Depois disso o login do ASC e o painel funcionam como de costume. Enquanto a opção estiver ativa a senha também é pedida em `127.0.0.1`. O botão **Sair da administração** encerra a sessão; ela expira sozinha por inatividade. Perdeu a senha: no terminal do host, `npm run admin-painel -- definir --trocar` (ou `remover`).
+
 ## ASC — status
 
 Esse catálogo mostra resumo, avisos, conta e filmes em andamento dentro do Stremio. Por expor ratio e avisos da conta, ele só aparece para credenciais emitidas com `--status` (`credenciais criar "Nome" --status`); as demais não o veem. Abrir um item oferece a ação de abrir o painel. Avisos críticos também podem aparecer no topo das fontes de um filme.

@@ -41,6 +41,7 @@ const GROUPS = {
   modo: 'Modo de uso',
   caminhos: 'Credenciais e caminhos',
   rede: 'Rede e Stremio',
+  administracao: 'Administração pela LAN',
   seed: 'Seed, energia e transferência',
   disco: 'Disco',
   reproducao: 'Reproduções simultâneas',
@@ -127,6 +128,30 @@ const SCHEMA = Object.freeze([
   {
     key: 'LAN_INTERFACE', type: 'ifname', default: null, group: 'rede', access: 'advanced', restart: true,
     description: 'Interface de rede (ex.: enp3s0, Wi-Fi) de onde tirar o endereço anunciado no modo LAN quando há várias. LAN_ADVERTISE_HOST, se definida, prevalece; as URLs públicas explícitas também.',
+  },
+  {
+    key: 'CONFIG_ALLOW_LAN', type: 'bool', default: false, group: 'administracao', access: 'advanced', restart: true, risky: true,
+    description: 'true habilita a administração do painel pela LAN (opcional, desligada por padrão, só no modo lan e com senha de administração definida). Só pelo terminal: npm run admin-painel -- ativar. Sem as pré-condições, a administração remota continua desligada e o painel local segue funcionando.',
+  },
+  {
+    key: 'CONFIG_PUBLIC_URL', type: 'url', default: null, group: 'administracao', access: 'advanced', restart: true, risky: true,
+    description: 'Origem https exata do painel atrás do seu proxy reverso (ex.: https://painel.casa.lan), sem caminho. Com ela o painel escuta só em 127.0.0.1 (o proxy roda neste computador) e o cookie de sessão é Secure. Vazio = HTTP em claro na LAN, que exige CONFIG_ADMIN_HTTP_CLEAR=true.',
+  },
+  {
+    key: 'CONFIG_ADMIN_HTTP_CLEAR', type: 'bool', default: false, group: 'administracao', access: 'advanced', restart: true, risky: true,
+    description: 'Confirma que você aceita a senha de administração trafegar em HTTP sem criptografia na sua rede local (sem CONFIG_PUBLIC_URL https). Quem vê o tráfego da rede lê a senha e a sessão.',
+  },
+  {
+    key: 'CONFIG_BIND_ADDRESS', type: 'advhost', default: null, group: 'administracao', access: 'advanced', restart: true, risky: true,
+    description: 'IPv4 deste computador onde o painel escuta para a LAN. Vazio = o IPv4 de LAN_ADVERTISE_HOST. Obrigatório se LAN_ADVERTISE_HOST for um nome DNS. Nunca 0.0.0.0.',
+  },
+  {
+    key: 'CONFIG_SESSION_IDLE_MINUTES', type: 'int', min: 5, max: 120, default: 30, unit: 'min', group: 'administracao', access: 'advanced', restart: true,
+    description: 'Inatividade que encerra a sessão de administração.',
+  },
+  {
+    key: 'CONFIG_SESSION_MAX_HOURS', type: 'int', min: 1, max: 24, default: 12, unit: 'h', group: 'administracao', access: 'advanced', restart: true,
+    description: 'Duração absoluta da sessão de administração, mesmo com uso contínuo.',
   },
   {
     key: 'STATUS_CATALOG', type: 'enum', values: ['on', 'off'], default: 'on', group: 'rede', access: 'editable', restart: true,
@@ -498,7 +523,7 @@ function resolve({ dataDir = resolveDataDir(process.env), env = process.env, fil
   problems.push(...plan.problems);
   warnings.push(...plan.warnings);
   if (mode === 'lan') {
-    warnings.push('Modo LAN: addon e ponte escutam fora do loopback; o acesso exige a credencial de instalação (sem TLS: o token trafega em HTTP na rede local). Use só em rede doméstica confiável e para os seus próprios aparelhos; o painel continua restrito a este computador.');
+    warnings.push('Modo LAN: addon e ponte escutam fora do loopback; o acesso exige a credencial de instalação (sem TLS: o token trafega em HTTP na rede local). Use só em rede doméstica confiável e para os seus próprios aparelhos; o painel continua restrito a este computador, salvo a administração pela LAN (opcional, CONFIG_ALLOW_LAN).');
   }
 
   if (values.ALERTS_ENABLED === true) {
