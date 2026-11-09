@@ -11,7 +11,7 @@ A instalação é pessoal e local. Não publique addon, ponte ou painel na inter
 | Painel HTTP `7020` | `127.0.0.1` | `0.0.0.0` interno | `127.0.0.1:7020` |
 | Peers BitTorrent | Porta escolhida pelo sistema, recebimento em interfaces de rede | Porta `7030` | TCP `7030` em todas as interfaces, conforme firewall |
 
-As portas podem mudar por configuração. A publicação TCP de peers é distinta dos endpoints HTTP e não fornece acesso direto ao painel. Remover a publicação de peers reduz a conectividade de entrada; não transforma o cliente em somente download. UPnP e NAT-PMP estão desligados: o aplicativo não abre portas no roteador automaticamente.
+As portas podem mudar por configuração. A publicação TCP de peers é distinta dos endpoints HTTP e não fornece acesso direto ao painel. Remover a publicação de peers reduz a conectividade de entrada; não transforma o cliente em somente download. UPnP e NAT-PMP estão desligados: o aplicativo não abre portas no roteador automaticamente. O diagnóstico `npm run rede -- peers` só prova o que o processo observa (escuta local e conexões de entrada recebidas); não testa alcance pela internet, não contata serviços externos e não vê firewall, roteador, CGNAT nem a publicação do contêiner. Abra, se quiser, somente a porta de peers; nunca addon, ponte ou painel.
 
 ## Rede local e contêineres
 
@@ -75,6 +75,17 @@ Opcional, desligada por padrão e **separada** da reprodução na LAN (`ASCSTREM
 - Quem tem acesso ao terminal do host (ou ao `DATA_DIR`) administra de qualquer jeito; a senha protege contra a rede, não contra o dono da máquina.
 - Um vizinho da rede pode provocar `429` e atrasar o login do dono por até um minuto (negação de serviço breve, não acesso).
 - Não expõe à internet: não encaminhe portas nem publique o proxy fora da LAN/VPN pessoal. Não há suporte a hospedagem pública.
+
+## Alertas por webhook
+
+Modelo de ameaça: o operador escolhe o destino; o risco é o aplicativo ser induzido a falar com a rede interna (SSRF) ou a vazar dados da conta.
+
+- A URL do destino é segredo (pode conter token). Fica no ambiente ou em `alert-webhook.json` (0600, fora do controle de versão); não vai ao `settings.json`, ao painel, à CLI, a respostas nem a logs, e é registrada no redator de logs. Erros viram códigos fixos (por exemplo "tempo esgotado"); o corpo da resposta do destino é lido até 4 KiB e nunca registrado.
+- Só `http`/`https`, sem usuário, sem fragmento, com host em `ALERT_WEBHOOK_ALLOWED_HOSTS`. Loopback, link-local, metadata de nuvem, multicast, reservados e o próprio addon/ponte/painel são sempre recusados. Rede privada exige `ALERT_WEBHOOK_ALLOW_PRIVATE`; `http://` só vale para rede privada.
+- O endereço é validado no momento da conexão (todos os endereços do nome precisam passar), contra DNS rebinding. Sem redirecionamentos, sem cookies, sem proxy do ambiente, timeout de 5 s.
+- O conteúdo é texto fixo mais contador. Nunca passkey, cookies, tokens, caminhos, títulos, hashes, ratio ou URLs.
+- Configurar e testar só pelo painel local (Host, Origin, CSRF e sessão do ASC) ou pela CLI no host. A falha do destino não interrompe seed, reprodução nem conciliação.
+- Limitação: a mensagem atravessa a internet com o sigilo do TLS do destino; o texto genérico reduz o que um destino comprometido aprende.
 
 ## Controles atuais
 

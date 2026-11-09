@@ -176,7 +176,8 @@ async function setup({ remote = true, extra = {}, planOver = {}, withPassword = 
   const clock = { t: Date.now() };
   const asc = { connected: true, status: () => ({ connected: true, user: 'fulano' }) };
   const panel = { state: () => ({ options: [] }), listCredentials: () => [], preview: () => ({}), save: () => ({ changes: [], revision: 1 }) };
-  const server = await startConfig(asc, port, { snapshot: () => ({ titles: [] }), complete: async () => ({}) }, logs, panel,
+  const alertsStub = { status: () => ({ configured: false }), test: async () => ({ ok: true, status: 200 }), setDestination: () => ({ ok: true, status: 200 }), removeDestination: () => ({ ok: true, status: 200 }) };
+  const server = await startConfig(asc, port, { snapshot: () => ({ titles: [] }), complete: async () => ({}) }, logs, panel, alertsStub,
     remote ? { plan, dataDir, now: () => clock.t, failDelayMs: 0 } : null);
   const lanHost = `192.168.1.20:${port}`;
   const localHost = `127.0.0.1:${port}`;
@@ -490,5 +491,24 @@ test('login: corpos atrasados não furam o limite nem o teto de verificações s
     for (const r of reqs) r.end(payload.slice(5)); // todos os corpos terminam juntos
     const codes = await Promise.all(reqs.map((r) => r.done));
     assert.ok(codes.filter((c) => c === 429).length >= 5, `esperava 429 para o excesso: ${codes}`);
+  } finally { await t.close(); }
+});
+
+test('rotas de alertas (webhook) e todas as /api/* ficam atrás da sessão de administração', async () => {
+  const t = await setup();
+  try {
+    const gets = ['/api/alerts', '/api/settings', '/api/status', '/api/monitor', '/api/logs', '/api/credentials'];
+    const posts = ['/api/alerts/webhook', '/api/alerts/webhook/clear', '/api/alerts/test', '/api/settings', '/api/settings/preview', '/api/wizard/complete', '/api/credentials', '/api/login', '/api/logout', '/api/verify', '/api/complete'];
+    for (const host of [t.lanHost, t.localHost]) {
+      for (const r of gets) assert.equal((await t.req('GET', r, { host })).status, 401, `GET ${r} ${host}`);
+      for (const r of posts) {
+        const x = await t.req('POST', r, { host, headers: { Origin: `http://${host}`, 'X-CSRF-Token': t.loginToken }, body: { url: 'http://x.invalid/' } });
+        assert.equal(x.status, 401, `POST ${r} ${host}`);
+      }
+    }
+    const s = await t.logged();
+    assert.equal((await t.req('GET', '/api/alerts', { host: t.lanHost, cookie: s.cookie })).status, 200);
+    const noCsrf = await t.req('POST', '/api/alerts/webhook', { host: t.lanHost, cookie: s.cookie, headers: { Origin: `http://${t.lanHost}`, 'X-CSRF-Token': t.loginToken }, body: { url: 'http://x.invalid/' } });
+    assert.equal(noCsrf.status, 403);
   } finally { await t.close(); }
 });

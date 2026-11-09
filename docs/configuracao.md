@@ -128,6 +128,12 @@ npm run rede -- --json
 
 A URL de instalação aparece com `<credencial>`; o token real só sai uma vez em `npm run credenciais -- criar "<nome>"`, já com o endereço anunciado (e um aviso se ele não servir a outros aparelhos), e nunca vai para log. QR code não é gerado.
 
+### Porta de peers (diagnóstico)
+
+`npm run rede -- peers` (e o cartão "Porta de peers" em Configurações, somente leitura) mostra quatro camadas sem confundir escuta local com alcance externo: (1) porta configurada e se o motor realmente escuta; (2) no contêiner, só a porta de dentro, pois a publicação (`-p`) é do hospedeiro e não é verificável daqui; (3) firewall/NAT, sempre "desconhecido": o programa não abre portas (UPnP/NAT-PMP desligados), não altera o roteador e **não consulta serviços de terceiros**; (4) conexões de **entrada** de peers observadas desde a partida, só como contadores e horário da última, sem endereços.
+
+Estados: `escutando` (escuta local, sem entrada observada ainda), `sem entrada observada` (6 h ou mais com torrent ativo e nenhuma entrada; compatível com firewall, NAT/CGNAT ou ninguém ter tentado, não prova bloqueio), `entrada observada` (ao menos um peer de endereço público entrou; no contêiner o Docker pode mascarar a origem; entradas de rede local não contam), `sem escuta` (motor parado, por exemplo porta ocupada) e `desconhecido`. A CLI lê um resumo (`peer-port-status.json`, 0600, só contadores) que o aplicativo em execução regrava a cada minuto; sem ele ou com ele velho, o estado é `desconhecido`. Os contadores zeram a cada partida. Não há teste de alcance automático; para conferir de fora, use outra rede por sua conta.
+
 Consulte [segurança e rede](seguranca.md) antes de habilitar LAN. Não use essas opções para hospedar uma conta compartilhada.
 
 ## Administração do painel pela LAN
@@ -173,7 +179,9 @@ A senha fica só como verificador scrypt com sal em `DATA_DIR/panel-admin.json` 
 | `BACKGROUND_IDLE_MINUTES` | `10` | Inatividade antes da conclusão automática; número ≥ 1 |
 | `SEED_REQUIRED_HOURS` | `72` | Meta local; não altera a obrigação imposta pelo tracker |
 | `KEEP_AWAKE` | `auto` | `off` desliga o bloqueio de suspensão; no contêiner o bloqueio não é usado |
-| `BRIDGE_UPLOAD_LIMIT` | `-1` (sem limite) | Limite de upload em bytes/s |
+| `BRIDGE_UPLOAD_LIMIT` | `-1` (sem limite) | Limite de upload em bytes/s. `0` desliga o envio e é respeitado como está: afeta o ratio da regra 13.1 |
+| `BRIDGE_STREAM_UPLOAD_LIMIT` | `-1` (não reduz) | Teto de upload enquanto há reprodução ativa, em bytes/s; `-1` ou 16384 ou mais (não aceita `0`) |
+| `BRIDGE_UPLOAD_RESTORE_SECONDS` | `15` | Espera sem reprodução, depois da carência da sessão, antes de voltar ao teto normal (0 a 300) |
 
 Não reduza a meta local como forma de contornar as regras do ASC. A conciliação continua subordinada ao tracker. Veja [seed](seed.md) para os efeitos de assistir só parte de um filme e de concluir o download.
 
@@ -197,6 +205,19 @@ O padrão não limita nada: o uso local de um aparelho não muda. Os valores nã
 
 **Recusa.** O excesso recebe `429` com `Retry-After` (segundos até a primeira vaga ociosa expirar) e corpo JSON com `limite` (`global` ou `credencial`), `max` e `retryAfter`, **antes** de baixar o `.torrent`, abrir o torrent ou anunciar no tracker, na mesma disciplina da reserva de disco. Não afeta seed nem reproduções já em curso. Não foi verificado se o Stremio respeita `Retry-After`; ele costuma exibir erro de reprodução, e tentar de novo depois resolve.
 
+### Upload durante a reprodução
+
+Sem `BRIDGE_STREAM_UPLOAD_LIMIT` nada muda (padrão). Definido, o upload é reduzido enquanto houver reprodução ativa e volta ao normal depois:
+
+- **Sinal**: as sessões de reprodução acima (um `GET` de vídeo; `HEAD`, seeks e retentativas não contam). O teto reduzido é aplicado antes de transferir o fluxo, uma vez só, não importa quantas TVs ou `Range`.
+- **Teto efetivo**: o menor teto finito entre `BRIDGE_UPLOAD_LIMIT` e `BRIDGE_STREAM_UPLOAD_LIMIT`; o de streaming nunca aumenta o do operador. Exemplo (B/s): normal `-1` e streaming `262144` dão `262144`; normal `131072` e streaming `262144` dão `131072`.
+- **Volta ao normal**: a última sessão encerrada segue pela carência `PLAYBACK_SESSION_GRACE_SECONDS`, depois por mais `BRIDGE_UPLOAD_RESTORE_SECONDS`; uma nova reprodução nesse intervalo cancela a restauração. Estados: `normal`, `streaming`, `restoring`. A reavaliação roda a cada 5 s, então o prazo tem esse erro.
+- **Piso**: o teto de streaming nunca é `0` (mínimo 16384 B/s, 16 KiB/s). Com **seed pendente** (torrent concluído que ainda não cumpriu a regra 13.1 no cofre, ou seed pendente lido no tracker), o teto de streaming não fica abaixo de 65536 B/s (64 KiB/s), sempre limitado pelo teto do operador, e é reavaliado a cada tick. O tempo de seed (72 h) não depende de bytes enviados, mas o ratio 1.0 depende; por isso o piso. Os números são conservadores e **não vêm de medição**.
+- Usa `throttleUpload` do WebTorrent: não recria torrents, não pausa seed e não abre novo snatch. Se o motor recusar o valor, o último teto válido é mantido, o campo `applicationError` mostra `bandwidth_apply_failed` e a aplicação é tentada de novo no tick seguinte. Reiniciar o serviço começa em `normal`; revogar a credencial libera as vagas e a restauração segue normalmente.
+- Não há adaptação automática à banda sobrando nem promessa de que o teto melhora a reprodução: vídeo na LAN e upload para o tracker nem sempre dividem o mesmo enlace. Meça no seu ambiente antes de ajustar.
+
+O estado aparece em `upload` dentro do campo `playback` de `GET /playback`.
+
 Diagnóstico: `GET /playback` na ponte (token administrativo, como as demais rotas administrativas) e o campo `playback` do painel mostram vagas usadas, limites e contagens por credencial (id e nome), sem títulos nem endereços.
 
 ## Disco
@@ -215,6 +236,31 @@ A mesma política decide **todo novo download**: streaming sob demanda (`/s` e `
 - **`HEAD` e listagem de fontes** continuam sem efeito: não medem para reservar, não baixam `.torrent` nem anunciam.
 - **Nada é apagado** por esta política. Liberar espaço continua sendo `AFTER_SEED` e a retenção prevista na issue #27.
 - O painel (e o catálogo "ASC — status") mostra livres, reserva efetiva, espaço comprometido e disponível; o alerta de bloqueio tem histerese (entra ao esgotar a folga e só sai quando sobra a maior de 256 MiB ou 10% da reserva).
+
+## Alertas por webhook
+
+Desligados por padrão. Enviam avisos curtos de operação a um destino HTTP escolhido por você (por exemplo um tópico do [ntfy](https://docs.ntfy.sh/publish/)). Habilitar exige o host do destino em `ALERT_WEBHOOK_ALLOWED_HOSTS`, um destino configurado e `ALERTS_ENABLED=true`. Os valores abaixo valem na hora quando alterados pelo painel.
+
+| Opção | Padrão | Função |
+|---|---|---|
+| `ALERTS_ENABLED` | `false` | Liga a entrega. Recusado sem hosts permitidos ou sem destino |
+| `ALERT_WEBHOOK_URL` | ausente | URL completa do destino. **Segredo**: só pelo ambiente; nunca vai ao `settings.json` |
+| `ALERT_WEBHOOK_URL_FILE` | ausente | Arquivo protegido (0600) com a URL |
+| `ALERT_WEBHOOK_TOKEN` | ausente | Token bearer opcional (segredo, só ambiente) |
+| `ALERT_WEBHOOK_FORMAT` | `json` | `json` ou `text` (somente a mensagem, `text/plain`, ideal para ntfy) |
+| `ALERT_WEBHOOK_ALLOWED_HOSTS` | vazio | Hosts exatos aprovados, sem curinga e sem IPv6 literal |
+| `ALERT_WEBHOOK_ALLOW_PRIVATE` | `false` | Permite destino em rede privada (RFC1918) e `http://` nela |
+| `ALERT_HNR_WITHIN_HOURS` | 48 | Prazo de seed (confirmado pelo tracker) a partir do qual avisar |
+| `ALERT_DISK_FREE_GIB` | 10 | Espaço livre abaixo do qual avisar (0 desliga); recupera 1 GiB acima, por 5 min |
+| `ALERT_TRACKER_FAILURE_MINUTES` | 15 | Tempo desde a primeira falha do tracker sem recuperação |
+| `ALERT_NO_PEERS_MINUTES` | 15 | Download em conclusão sem peers nem progresso |
+| `ALERT_COOLDOWN_MINUTES` | 60 | Intervalo mínimo para repetir o mesmo alerta aberto (dobra a cada desistência, até 8x) |
+
+Sem variável de ambiente, o destino pode ser salvo pelo painel (Configurações, "Destino dos alertas") ou por `npm run alertas -- definir` (a URL é lida da entrada, nunca de argumento) em `DATA_DIR/alert-webhook.json`, modo 0600. O ambiente sempre vence e bloqueia a escrita. Comandos: `npm run alertas -- estado|definir|remover|testar|ativar|desativar`; o painel tem salvar, remover e "Enviar mensagem de teste" (1 por minuto).
+
+Eventos (um por tipo, sem título nem hash): `hnr_deadline` (obrigação de seed perto do prazo ou vencida, prazo confirmado pelo tracker), `disk_low`, `account_inactivity` (perto de 90 dias sem login, regra 2.6), `tracker_unavailable` e `download_no_peers`. Cada um envia "aberto", depois um lembrete após o cooldown enquanto continuar aberto, e "resolvido" uma vez. O estado de deduplicação fica em `DATA_DIR/alerts-state.json` (sem segredos): reiniciar não repete avisos já entregues.
+
+Campos do JSON: `schemaVersion`, `eventId` (aleatório, não deriva de nada), `type`, `severity` (`info`, `warning`, `critical`), `state` (`open`, `resolved`, `test`), `occurredAt`, `message` e, quando faz sentido, `count`. Nada além disso.
 
 ## Logs
 

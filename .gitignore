@@ -9,6 +9,8 @@ admin-key
 panel-admin.json
 panel-admin.json.*
 credentials.json
+alert-webhook.json
+alerts-state.json
 asc-session.json
 seed-vault.json
 meta-cache.json

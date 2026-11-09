@@ -4,6 +4,10 @@ Baixar e reproduzir também participa da distribuição BitTorrent. Freeleech re
 
 Este guia descreve o modelo implementado, baseado no resumo de regras usado pelo projeto. Confira as regras atuais diretamente no ASC; o aplicativo não garante conformidade ou ausência de punições.
 
+## Upload durante a reprodução
+
+Por padrão o upload não muda quando você assiste. Se definir `BRIDGE_STREAM_UPLOAD_LIMIT`, o upload é reduzido enquanto há reprodução ativa e volta ao normal depois. O tempo de seed (72 h) não depende de bytes enviados, mas o ratio 1.0 depende: por isso o teto reduzido nunca é zero (mínimo 16 KiB/s) e, com seed pendente, não fica abaixo de 64 KiB/s. O cofre e a conciliação com o tracker não são alterados. Detalhes em [configuração](configuracao.md#upload-durante-a-reprodução).
+
 ## Ciclo de um torrent
 
 1. **Listagem:** consulta os metadados; não cria download nem anúncio BitTorrent.

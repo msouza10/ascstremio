@@ -45,6 +45,7 @@ const GROUPS = {
   seed: 'Seed, energia e transferência',
   disco: 'Disco',
   reproducao: 'Reproduções simultâneas',
+  alertas: 'Alertas por webhook',
   logs: 'Logs',
 };
 
@@ -182,7 +183,15 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'BRIDGE_UPLOAD_LIMIT', type: 'int', min: -1, default: -1, unit: 'B/s', group: 'seed', access: 'advanced', restart: true,
-    description: 'Limite de upload em bytes por segundo. -1 = sem limite.',
+    description: 'Limite de upload em bytes por segundo. -1 = sem limite. 0 desliga o envio e é respeitado como está (afeta o ratio da regra 13.1).',
+  },
+  {
+    key: 'BRIDGE_STREAM_UPLOAD_LIMIT', type: 'int', min: 16384, special: [-1], default: -1, unit: 'B/s', group: 'seed', access: 'advanced', restart: true,
+    description: 'Teto de upload enquanto há reprodução ativa; vale o menor entre este e BRIDGE_UPLOAD_LIMIT. -1 = não reduz (padrão). Mínimo 16384 (16 KiB/s); com seed pendente o piso efetivo é 65536 (64 KiB/s). Nunca zera o envio.',
+  },
+  {
+    key: 'BRIDGE_UPLOAD_RESTORE_SECONDS', type: 'int', min: 0, max: 300, default: 15, unit: 's', group: 'seed', access: 'advanced', restart: true,
+    description: 'Espera sem reprodução (depois da carência da sessão) antes de voltar ao teto normal de upload. Só vale com BRIDGE_STREAM_UPLOAD_LIMIT.',
   },
   {
     key: 'DISK_RESERVE_GIB', type: 'number', min: 0, max: 1048576, default: 2, unit: 'GiB', group: 'disco', access: 'editable', restart: true,
@@ -203,6 +212,54 @@ const SCHEMA = Object.freeze([
   {
     key: 'PLAYBACK_SESSION_GRACE_SECONDS', type: 'int', min: 5, max: 3600, default: 30, unit: 's', group: 'reproducao', access: 'advanced', restart: true,
     description: 'Tempo sem requisições para uma reprodução expirar e liberar a vaga. Cobre o intervalo entre fechar um Range e abrir outro num seek.',
+  },
+  {
+    key: 'ALERTS_ENABLED', type: 'bool', default: false, group: 'alertas', access: 'editable', restart: false,
+    description: 'Liga os alertas operacionais por webhook (desligado por padrão). Exige ALERT_WEBHOOK_ALLOWED_HOSTS e um destino configurado (painel, npm run alertas ou ambiente).',
+  },
+  {
+    key: 'ALERT_WEBHOOK_URL', type: 'string', default: null, group: 'alertas', access: 'readonly', envOnly: true, secret: true, restart: true,
+    description: 'URL do destino (pode conter token). Segredo: só pelo ambiente; nunca é gravada no settings.json nem exibida. Alternativas: ALERT_WEBHOOK_URL_FILE ou o painel/CLI (arquivo 0600).',
+  },
+  {
+    key: 'ALERT_WEBHOOK_URL_FILE', type: 'path', default: null, group: 'alertas', access: 'readonly', envOnly: true, restart: true,
+    description: 'Arquivo protegido (0600) com a URL completa do destino. Só pelo ambiente.',
+  },
+  {
+    key: 'ALERT_WEBHOOK_TOKEN', type: 'string', default: null, group: 'alertas', access: 'readonly', envOnly: true, secret: true, restart: true,
+    description: 'Token bearer opcional enviado no cabeçalho Authorization. Segredo: só pelo ambiente (ou painel/CLI, em arquivo 0600).',
+  },
+  {
+    key: 'ALERT_WEBHOOK_FORMAT', type: 'enum', values: ['json', 'text'], default: 'json', group: 'alertas', access: 'editable', restart: false,
+    description: 'json envia o evento estruturado; text envia só a mensagem (text/plain), adequado ao tópico do ntfy.',
+  },
+  {
+    key: 'ALERT_WEBHOOK_ALLOWED_HOSTS', type: 'hostlist', default: '', group: 'alertas', access: 'editable', restart: false,
+    description: 'Hosts exatos aprovados para o destino (obrigatório ao habilitar). Sem curinga.',
+  },
+  {
+    key: 'ALERT_WEBHOOK_ALLOW_PRIVATE', type: 'bool', default: false, group: 'alertas', access: 'advanced', restart: false, risky: false,
+    description: 'Permite destino em rede privada (RFC1918) e http:// nela. Loopback, link-local, metadata e o próprio aplicativo continuam proibidos.',
+  },
+  {
+    key: 'ALERT_HNR_WITHIN_HOURS', type: 'number', min: 1, max: 720, default: 48, unit: 'h', group: 'alertas', access: 'advanced', restart: false,
+    description: 'Alerta quando o prazo de seed confirmado pelo tracker está a este tempo ou menos.',
+  },
+  {
+    key: 'ALERT_DISK_FREE_GIB', type: 'number', min: 0, max: 1048576, default: 10, unit: 'GiB', group: 'alertas', access: 'advanced', restart: false,
+    description: 'Alerta de disco baixo abaixo deste espaço livre (0 desliga). Distinto da reserva de admissão.',
+  },
+  {
+    key: 'ALERT_TRACKER_FAILURE_MINUTES', type: 'number', min: 1, max: 1440, default: 15, unit: 'min', group: 'alertas', access: 'advanced', restart: false,
+    description: 'Tempo desde a primeira falha explícita do tracker sem recuperação. Não aumenta as consultas ao ASC.',
+  },
+  {
+    key: 'ALERT_NO_PEERS_MINUTES', type: 'number', min: 1, max: 1440, default: 15, unit: 'min', group: 'alertas', access: 'advanced', restart: false,
+    description: 'Tempo de um download em conclusão sem peers nem progresso. Seed ocioso não conta.',
+  },
+  {
+    key: 'ALERT_COOLDOWN_MINUTES', type: 'number', min: 5, max: 10080, default: 60, unit: 'min', group: 'alertas', access: 'advanced', restart: false,
+    description: 'Intervalo mínimo para repetir o mesmo alerta enquanto a condição continua aberta.',
   },
   {
     key: 'LOG_LEVEL', type: 'enum', values: ['debug', 'info', 'warn', 'error'], default: 'debug', group: 'logs', access: 'editable', restart: false,
@@ -237,7 +294,8 @@ function coerce(entry, raw, fromEnv) {
       if (!Number.isFinite(n) || (type === 'int' && !Number.isInteger(n))) {
         return fail(type === 'int' ? 'deve ser um inteiro.' : 'deve ser um número.');
       }
-      if ((entry.min !== undefined && n < entry.min) || (entry.max !== undefined && n > entry.max)) {
+      const especial = (entry.special ?? []).includes(n); // valor sentinela permitido fora da faixa (ex.: -1)
+      if (!especial && ((entry.min !== undefined && n < entry.min) || (entry.max !== undefined && n > entry.max))) {
         return fail(`deve ser um ${type === 'int' ? 'inteiro' : 'número'}${range()}.`);
       }
       return { value: n };
@@ -466,6 +524,15 @@ function resolve({ dataDir = resolveDataDir(process.env), env = process.env, fil
   warnings.push(...plan.warnings);
   if (mode === 'lan') {
     warnings.push('Modo LAN: addon e ponte escutam fora do loopback; o acesso exige a credencial de instalação (sem TLS: o token trafega em HTTP na rede local). Use só em rede doméstica confiável e para os seus próprios aparelhos; o painel continua restrito a este computador, salvo a administração pela LAN (opcional, CONFIG_ALLOW_LAN).');
+  }
+
+  if (values.ALERTS_ENABLED === true) {
+    if (!String(values.ALERT_WEBHOOK_ALLOWED_HOSTS || '').trim()) {
+      problems.push('ALERTS_ENABLED: informe ALERT_WEBHOOK_ALLOWED_HOSTS com o host exato do destino antes de habilitar.');
+    }
+    if (!require('./alerts').destinationPresent({ dataDir, env })) {
+      problems.push('ALERTS_ENABLED: configure o destino antes de habilitar (npm run alertas -- definir, painel ou ALERT_WEBHOOK_URL).');
+    }
   }
 
   const bindHost = container || mode === 'lan' ? '0.0.0.0' : '127.0.0.1';

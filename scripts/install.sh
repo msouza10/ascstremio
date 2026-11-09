@@ -234,6 +234,9 @@ if [ ! -f "$ENV_FILE" ] && [ "$MODE" != check ]; then
 # Limite de upload da ponte em bytes/s (padrão: sem limite)
 #BRIDGE_UPLOAD_LIMIT=
 
+# Teto de upload (bytes/s, mínimo 16384) enquanto há reprodução; padrão: não reduz
+#BRIDGE_STREAM_UPLOAD_LIMIT=
+
 # Libera a ponte para a rede local (TV/celular). Sem autenticação: use só em rede confiável.
 #BRIDGE_ALLOW_LAN=1
 EOF

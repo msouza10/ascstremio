@@ -75,6 +75,7 @@ A redação automática não remove necessariamente dados pessoais, títulos ou 
 | Play retorna 507/503 | Sem folga além da reserva de disco (507) ou espaço não medido (503); veja [Disco](configuracao.md#disco) e ajuste `DISK_RESERVE_GIB`/`DISK_RESERVE_PERCENT` ou libere espaço |
 | Disco não foi liberado | Confirmação do tracker pendente, falha de sessão/rede ou `AFTER_SEED=stop/keep` |
 | Conta ainda não lida | Aguarde a consulta e examine sessão/rede; ausência de dados não significa tudo em dia |
+| Alertas não chegam | `npm run alertas -- estado` mostra destino, último envio e último erro (sem a URL). Confira o host em `ALERT_WEBHOOK_ALLOWED_HOSTS`, `ALERT_WEBHOOK_ALLOW_PRIVATE` para rede privada, e teste pelo painel |
 | Seed para quando o PC suspende | Verifique `KEEP_AWAKE`, ferramenta do sistema e energia do host, especialmente em contêiner |
 
 Para abrir uma issue, informe versão, sistema, Node (se execução manual), método de instalação e passos sem dados reais. Informe também se mudou LAN, portas ou diretórios. Nunca inclua senha, passkey, cookie, URL de instalação do addon (`/<credencial>/manifest.json`) ou URL de vídeo com `?k=`.
