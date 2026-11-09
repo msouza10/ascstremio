@@ -20,12 +20,14 @@
     try { res = await fetch(`/api/${route}`, opts); } catch { throw new Error('Falha ao falar com o addon local.'); }
     let data = {};
     try { data = await res.json(); } catch { /* corpo vazio */ }
-    if (!res.ok) { const err = new Error(data.error || 'Não foi possível concluir.'); err.status = res.status; throw err; }
+    if (!res.ok) { const err = new Error(data.error || 'Não foi possível concluir.'); err.status = res.status; err.data = data; throw err; }
     return data;
   }
 
   // ------------------------------------------------------------- rotas
   const ROUTES = [
+    { re: /^\/configuracoes$/, key: () => 'configuracoes', title: 'Configurações', make: () => window.Views.configuracoes() },
+    { re: /^\/assistente$/, key: () => 'assistente', title: 'Assistente', make: () => window.Views.assistente() },
     { re: /^\/$/, key: () => 'overview', title: 'Visão geral', make: () => window.Views.overview() },
     { re: /^\/filmes$/, key: () => 'filmes', title: 'Filmes', make: () => window.Views.filmes(location.search) },
     { re: /^\/filmes\/([^/]+)$/, key: (m) => `filme:${m[1]}`, title: 'Filme', make: (m) => window.Views.filmeDetalhe(decodeURIComponent(m[1])) },
@@ -185,7 +187,13 @@
   async function session(action, body) {
     const data = await call('POST', action, body ?? {});
     applyStatus(data);
-    if (action === 'login' || (action === 'verify' && data.connected)) nav('/', true);
+    if (action === 'login' || (action === 'verify' && data.connected)) {
+      // Primeiro login com o assistente ainda não concluído nem adiado: oferece-o uma vez.
+      // Falha ao consultar nunca atrapalha o login (a conclusão fica em wizard.json, não na sessão).
+      let offer = false;
+      if (action === 'login') { try { offer = window.SettingsModel.shouldOfferWizard(await call('GET', 'settings')); } catch { /* segue para a visão geral */ } }
+      nav(offer ? '/assistente' : '/', true);
+    }
     else if (action === 'logout') nav('/entrar', true);
     else render();
     return data;
