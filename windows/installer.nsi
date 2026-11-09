@@ -45,5 +45,5 @@ Section "Uninstall"
   RMDir /r "$INSTDIR"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\BrazukaASC"
   ; Passkey, sessão e cofre de seed em %LOCALAPPDATA%\BrazukaASC ficam de propósito.
-  MessageBox MB_OK "Seus dados (passkey, sessão e cofre de seed) foram mantidos em $LOCALAPPDATA\BrazukaASC. Apague essa pasta se quiser removê-los."
+  MessageBox MB_OK "Seus dados (passkey, sessão e cofre de seed) foram mantidos em $LOCALAPPDATA\BrazukaASC. Apague essa pasta se quiser removê-los." /SD IDOK
 SectionEnd
