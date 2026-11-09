@@ -276,7 +276,7 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
   }
 
   // Fontes locais COMPLETAS em disco que o cache associa ao filme. Não toca na rede nem no
-  // .torrent do site; incompleto ou removido não entra (o play baixaria de novo).
+  // .torrent do site; incompleto, não concluído no cofre ou removido não entra (o play baixaria de novo).
   function localStreams(video) {
     const cached = cache?.get(video.imdbId);
     if (!cached) return [];
@@ -284,7 +284,10 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     for (const release of cached.releases) {
       const local = bridge.entryByAscId?.(String(release.id));
       const main = local ? mainVideo(local.files) : null;
-      if (!local || !main || bridge.diskState?.(local.infoHash) !== 'full') continue;
+      if (!local || !main) continue;
+      // Tamanho aparente cheio não basta (arquivo esparso de streaming levado até o fim engana): exige
+      // também que o cofre registre a conclusão, como a admissão de downloads da ponte (admitTorrent).
+      if (bridge.diskState?.(local.infoHash) !== 'full' || !bridge.vault?.get?.(local.infoHash)?.completedAt) continue;
       const row = { badges: release.badges };
       const g = groups(row);
       const quando = new Date(cached.at).toLocaleDateString('pt-BR');

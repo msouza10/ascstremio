@@ -24,9 +24,10 @@ function cenario(t, { disco = { 1: 'full' }, rows = [linha(1), linha(2)] } = {})
   const file = path.join(dir, 'meta-cache.json');
   const cache = new MetaCache({ file, now }).load();
   const entries = new Map();
+  const concluidos = new Set([hashDe(1), hashDe(2)]);
   const bridge = {
     entries,
-    vault: { get: () => null },
+    vault: { get: (hash) => (concluidos.has(hash) ? { completedAt: 1 } : null) },
     lazyUrl: (id) => `http://127.0.0.1:7010/a/${id}`,
     urlFor: (hash, idx) => `http://127.0.0.1:7010/s/${hash}/${idx}?k=TOKEN`,
     diskState: (hash) => disco[Number(hash.replace(/^b+/, ''))] ?? 'none',
@@ -46,7 +47,7 @@ function cenario(t, { disco = { 1: 'full' }, rows = [linha(1), linha(2)] } = {})
   };
   const provider = createAscProvider(asc, bridge, dir, { cache, now });
   const recarregar = () => createAscProvider(asc, bridge, dir, { cache: new MetaCache({ file, now }).load(), now });
-  return { provider, cache, estado, relogio, bridge, dir, file, now, recarregar, asc };
+  return { provider, cache, estado, concluidos, relogio, bridge, dir, file, now, recarregar, asc };
 }
 const video = { type: 'movie', imdbId: IMDB };
 const rede = () => new AscError('Não foi possível conectar ao ASC. Tente novamente.', 'network');
@@ -129,6 +130,17 @@ test('filme nunca consultado ou arquivo removido: nada é anunciado', async (t) 
   assert.deepEqual((await c.provider.lookup(video)).streams, [], 'release que saiu da biblioteca não aparece');
   // série segue sem fontes
   assert.deepEqual((await c.provider.lookup({ type: 'series', imdbId: IMDB, season: 1, episode: 1 })).streams, []);
+});
+
+test('tamanho cheio sem conclusão registrada no cofre (arquivo esparso de streaming) não vira fonte offline', async (t) => {
+  const c = cenario(t);
+  await c.provider.lookup(video);
+  c.estado.falha = rede();
+  c.concluidos.delete(hashDe(1));
+  assert.deepEqual((await c.provider.lookup(video)).streams, []);
+  c.concluidos.add(hashDe(1));
+  c.relogio.agora += 31_000;
+  assert.equal((await c.provider.lookup(video)).streams.length, 1);
 });
 
 test('arquivo removido do disco (sem dados) deixa de ser anunciado', async (t) => {

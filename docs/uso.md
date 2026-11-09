@@ -73,7 +73,7 @@ Em outro aparelho, `127.0.0.1` aponta para esse aparelho. Alterar as URLs requer
 
 Se o site estiver fora do ar, a rede cair ou a sessão expirar, a busca por IMDb não devolve mais lista vazia: as fontes mostram um aviso **ASC indisponível** com o motivo (sem conexão com o site, sessão ausente ou expirada, resposta recusada) e, abaixo, os arquivos **completos** que já estão neste computador para aquele filme (marcados com 📁 Local). Elas tocam direto pela ponte, sem consultar o ASC nem baixar `.torrent`.
 
-- O mapeamento filme -> release vem de `meta-cache.json`, preenchido quando a busca online funcionou. Filme nunca consultado, arquivo incompleto, removido ou fora da biblioteca não é oferecido. Os dados guardados valem por 90 dias; depois de 7 dias aparecem como "podem estar desatualizados".
+- O mapeamento filme -> release vem de `meta-cache.json`, preenchido quando a busca online funcionou. Filme nunca consultado, arquivo incompleto, removido, fora da biblioteca ou sem conclusão registrada no cofre de seed não é oferecido. Os dados guardados valem por 90 dias; depois de 7 dias aparecem como "podem estar desatualizados".
 - O cache não diz nada sobre seeders, freeleech ou obrigação de seed: isso só vale com o tracker respondendo. Ele também não autoriza baixar um release novo.
 - Com a sessão expirada o programa não tenta entrar sozinho nem repete a consulta: entre de novo no painel. Se a falha for de rede ou do site, a consulta é repetida no máximo a cada 30 segundos.
 - Uma busca online que responde sem resultados continua sendo "sem resultados" (não é indisponibilidade).
