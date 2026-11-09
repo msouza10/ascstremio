@@ -1,9 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const { AscClient } = require('../src/asc-client');
+const { tmpdir } = require('./tmp-helper');
 
 function response(body, status = 200, headers = {}) {
   return new Response(body, { status, headers });
@@ -11,7 +11,7 @@ function response(body, status = 200, headers = {}) {
 const html = props => `<script type="application/json" data-page="app">${JSON.stringify({ props })}</script>`;
 
 test('login captura CSRF, persiste cookie rotacionado, nunca a senha; restaura sessão', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'asc-auth-'));
+  const dir = tmpdir('asc-auth-');
   const file = path.join(dir, 'session.json');
   const calls = [];
   const asc = new AscClient({ stateFile: file, delay: 0, fetchImpl: async (url, options) => {
@@ -56,7 +56,7 @@ test('sessão expirada é erro, não lista vazia', async () => {
 });
 
 test('busca verifica freeleech estrito e envia filtro; não aceita campo desconhecido', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'asc-search-'));
+  const dir = tmpdir('asc-search-');
   const asc = new AscClient({ stateFile: path.join(dir, 'session.json'), delay: 0, fetchImpl: async url => {
     assert.equal(new URL(url).searchParams.get('freeleech'), '1');
     return response(html({ torrents: { data: [
@@ -89,7 +89,7 @@ test('aviso de inatividade: silencioso até 60 dias, alerta depois, e cobra data
 });
 
 test('login grava lastLoginAt e falha de login não o altera', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'asc-login-at-'));
+  const dir = tmpdir('asc-login-at-');
   const file = path.join(dir, 'session.json');
   let calls = 0;
   const asc = new AscClient({ stateFile: file, delay: 0, fetchImpl: async () => {
