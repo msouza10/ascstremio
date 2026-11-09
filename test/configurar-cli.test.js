@@ -338,3 +338,20 @@ test('modo guiado: quem editou o arquivo por fora entre a leitura e a gravação
   assert.match(r.out, /Recusado: A configuração mudou/);
   assert.deepEqual(JSON.parse(fs.readFileSync(arquivo(dir), 'utf8')).values, { PORT: 8500 });
 });
+
+test('recuperar relê sob a trava: arquivo corrigido ou trocado por outro processo não é isolado', () => {
+  const admin = require('../src/config-admin');
+  const dir = tmpdir('cfg-s-');
+  const env = { DATA_DIR: dir };
+  fs.writeFileSync(arquivo(dir), 'lixo 1');
+  const assinatura = admin.inspect({ env }).signature;
+  // outro processo grava uma configuração válida depois da decisão
+  fs.writeFileSync(arquivo(dir), JSON.stringify({ version: 1, revision: 1, values: { AFTER_SEED: 'keep' } }));
+  assert.throws(() => admin.recover({ env, expectedSignature: assinatura }), { code: 'nothing' });
+  assert.ok(fs.existsSync(arquivo(dir)));
+  // ainda quebrado, mas com outro conteúdo que o usuário não viu
+  fs.writeFileSync(arquivo(dir), 'lixo 2');
+  assert.throws(() => admin.recover({ env, expectedSignature: assinatura }), { code: 'changed' });
+  assert.equal(fs.readFileSync(arquivo(dir), 'utf8'), 'lixo 2');
+  assert.ok(admin.recover({ env, expectedSignature: admin.inspect({ env }).signature }).backup);
+});

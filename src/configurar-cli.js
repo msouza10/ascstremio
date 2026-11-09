@@ -297,7 +297,7 @@ async function guidedRecover(io, ask, env) {
   if (r === null) return null;
   if (r.toLowerCase() === 'sim') {
     try {
-      const res = admin.recover({ env });
+      const res = admin.recover({ env, expectedSignature: st.signature });
       io.out(`Arquivo isolado em ${res.backup}.`);
     } catch (err) { for (const p of problemsOf(err)) io.out(`Recusado: ${p}`); }
   }
@@ -430,7 +430,7 @@ async function run(argv, opts = {}) {
         reader.close();
         if (!r || r.toLowerCase() !== 'sim') { io.out('Cancelado; nada foi alterado.'); return EXIT.ok; }
       }
-      const res = admin.recover({ env });
+      const res = admin.recover({ env, expectedSignature: st.signature });
       if (json) io.out(JSON.stringify({ ok: true, backup: res.backup }));
       else io.out(`Arquivo isolado em ${res.backup}. A próxima partida usa ambiente + padrões.`);
       return EXIT.ok;

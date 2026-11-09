@@ -15,6 +15,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const settings = require('./settings');
 const { acquireInstance, LockError, LOCK_NAME } = require('./instance-lock');
 
@@ -75,6 +76,17 @@ function context({ env = process.env } = {}) {
 
 const ORIGEM = { env: 'ambiente', file: 'arquivo', default: 'padrão' };
 
+// Assinatura do conteúdo do arquivo (null se ausente): permite recusar uma ação decidida sobre
+// um conteúdo que mudou antes de a trava ser adquirida.
+function fileSignature(file) {
+  try { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); } catch { return null; }
+}
+
+function fileHasProblem(snapshot) {
+  const prefixo = `${settings.FILE_NAME}: `;
+  return (!snapshot.fileExists && fs.existsSync(snapshot.file)) || snapshot.problems.some((p) => p.startsWith(prefixo));
+}
+
 // Estado completo para exibir: opções (sem segredos), problemas, avisos, instância.
 function inspect(opts = {}) {
   const ctx = context(opts);
@@ -93,6 +105,7 @@ function inspect(opts = {}) {
     options,
     instance: instanceStatus(ctx.dataDir),
     fileBroken,
+    signature: fileSignature(snapshot.file),
   };
 }
 
@@ -162,24 +175,27 @@ function change({ env = process.env, changes, expectedRevision } = {}) {
 // Arquivo settings.json ilegível, de versão futura ou com conteúdo inválido: renomeia (nunca
 // apaga) para settings.json.quebrado-<data>, para a próxima partida usar ambiente + padrões.
 // Problemas vindos do ambiente não são tocados: a correção é no service.env/Compose.
-function recover({ env = process.env } = {}) {
+function recover({ env = process.env, expectedSignature } = {}) {
   const ctx = context({ env });
   const snapshot = settings.resolve({ dataDir: ctx.dataDir, env: ctx.env });
-  const prefixo = `${settings.FILE_NAME}: `;
-  const doArquivo = !snapshot.fileExists && fs.existsSync(snapshot.file)
-    ? true
-    : snapshot.problems.some((p) => p.startsWith(prefixo));
-  if (!doArquivo) {
-    throw new AdminError('nothing', 'O arquivo de configuração não tem problema; nada a recuperar.'
-      + (snapshot.problems.length ? ' Os problemas restantes vêm do ambiente: corrija no service.env/Compose.' : ''));
-  }
+  const nada = (snap) => new AdminError('nothing', 'O arquivo de configuração não tem problema; nada a recuperar.'
+    + (snap.problems.length ? ' Os problemas restantes vêm do ambiente: corrija no service.env/Compose.' : ''));
+  if (!fileHasProblem(snapshot)) throw nada(snapshot);
   return withInstance(ctx, snapshot, null, () => {
-    const marca = new Date().toISOString().replace(/[:.]/g, '-');
-    const destino = `${snapshot.file}.quebrado-${marca}`;
-    try { fs.renameSync(snapshot.file, destino); } catch (err) {
-      throw new AdminError('io', `Não foi possível mover ${snapshot.file}: ${err.message}`);
+    // A decisão acima foi tomada sem a trava: sob ela, confere de novo para não isolar uma
+    // configuração válida gravada por outro processo no intervalo.
+    const atual = settings.resolve({ dataDir: ctx.dataDir, env: ctx.env });
+    if (!fileHasProblem(atual)) throw nada(atual);
+    const assinatura = fileSignature(atual.file);
+    if (assinatura !== (expectedSignature ?? fileSignature(snapshot.file))) {
+      throw new AdminError('changed', 'O arquivo de configuração mudou desde que foi lido; nada foi alterado. Confira com "diagnosticar" e tente de novo.');
     }
-    return { moved: snapshot.file, backup: destino, after: settings.resolve({ dataDir: ctx.dataDir, env: ctx.env }) };
+    const marca = new Date().toISOString().replace(/[:.]/g, '-');
+    const destino = `${atual.file}.quebrado-${marca}`;
+    try { fs.renameSync(atual.file, destino); } catch (err) {
+      throw new AdminError('io', `Não foi possível mover ${atual.file}: ${err.message}`);
+    }
+    return { moved: atual.file, backup: destino, after: settings.resolve({ dataDir: ctx.dataDir, env: ctx.env }) };
   });
 }
 
@@ -188,6 +204,7 @@ module.exports = {
   SERVICE_ENV,
   readServiceEnv,
   instanceStatus,
+  fileSignature,
   context,
   inspect,
   typed,
