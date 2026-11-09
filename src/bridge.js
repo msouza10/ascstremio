@@ -20,6 +20,8 @@ const { DiskGuard, DEFAULT_RESERVE_BYTES } = require('./disk-policy');
 const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { logger } = require('./logger');
+const { rankPending, runLimited } = require('./resume-policy');
+const { monitorEventLoopDelay, performance } = require('perf_hooks');
 const log = logger.child('ponte');
 const tlog = logger.child('torrent');
 const short = (hash) => `${String(hash).slice(0, 8)}…`;
@@ -99,6 +101,8 @@ class Bridge {
     afterSeed = 'delete',
     keepAwake = null,
     resumeOnStart = true,
+    resumeConcurrency = 1, // retomadas abertas ao mesmo tempo (RESUME_CONCURRENCY); 1 = uma por vez, como sempre foi
+    monotonic = () => performance.now(), // relógio monotônico da medição de retomada (injetável nos testes)
     ascResolver = null,
     ascSizeHint = null, // (ascId) => bytes da listagem, para reservar espaço antes de baixar o .torrent
   }) {
@@ -130,6 +134,12 @@ class Bridge {
     // false = start() não espera os torrents pendentes abrirem (quem chama faz
     // resumePending() depois); a verificação de dezenas de GB atrasaria o painel.
     this.resumeOnStart = resumeOnStart;
+    this.resumeConcurrency = Math.max(1, Math.floor(resumeConcurrency) || 1);
+    this.monotonic = monotonic;
+    this.clock = clock;
+    this.resumeRun = null; // retomada em andamento: chamadas concorrentes se juntam a ela
+    this.resumeAgain = false;
+    this.resumeStats = null;
     // `async (ascId) => ({ infoHash, fileIdx })`: baixa o .torrent do release SÓ no
     // momento do play (GET em /a/<id>) e o registra na biblioteca. Vem do provedor ASC.
     this.ascResolver = ascResolver;
@@ -344,33 +354,132 @@ class Bridge {
   // Retoma pendências: se o processo caiu no meio das 72 h, volta a semear
   // sem intervenção, em vez de deixar o prazo de 12 dias correr. Idempotente:
   // chamada de novo depois de conciliar com o tracker, que pode revelar
-  // obrigações que o cofre ainda não conhecia.
-  async resumePending() {
+  // obrigações que o cofre ainda não conhecia. Chamada durante uma retomada não abre uma
+  // segunda fila: junta-se à que roda e pede uma nova passada (com a ordem refeita) ao final.
+  resumePending() {
+    if (this.resumeRun) {
+      this.resumeAgain = true;
+      return this.resumeRun;
+    }
+    this.resumeRun = (async () => {
+      try {
+        do {
+          this.resumeAgain = false;
+          await this.resumeOnce();
+        } while (this.resumeAgain);
+      } finally {
+        this.resumeRun = null;
+      }
+    })();
+    return this.resumeRun;
+  }
+
+  // Uma passada: ordena por risco de seed (src/resume-policy.js) e abre os torrents com no máximo
+  // `resumeConcurrency` ao mesmo tempo. Cada abertura passa por getTorrent (admissão de disco
+  // inclusive) e é medida; a falha de uma não interrompe as outras.
+  async resumeOnce() {
     const pendencias = this.vault.list().filter((e) => (
       (e.completedAt && !e.satisfiedAt) || (e.backgroundComplete && !e.completedAt)
-    ));
-    for (const pendencia of pendencias) {
-      if (!this.entries.has(pendencia.infoHash)) continue;
-      if (this.client.torrents.some((t) => t.infoHash === pendencia.infoHash)) continue;
-      // Obrigação concluída mas sem o arquivo completo: não anuncia (viraria um
-      // download novo). Aparece no painel como "Sem arquivo para semear".
-      if (pendencia.completedAt && !pendencia.backgroundComplete && this.diskState(pendencia.infoHash) !== 'full') {
-        if (!pendencia.noDataWarned) {
-          console.warn(`[vault] sem o arquivo completo de "${String(pendencia.name).slice(0, 40)}": não dá para semear`);
-          pendencia.noDataWarned = true;
+    ) && this.entries.has(e.infoHash));
+    const ranked = rankPending(pendencias, { vault: this.vault, now: this.clock() });
+    if (!ranked.length) return;
+
+    const prev = this.resumeStats;
+    const stats = {
+      running: true,
+      runs: (prev?.runs ?? 0) + 1,
+      concurrency: this.resumeConcurrency,
+      startedAt: new Date(this.clock()).toISOString(),
+      finishedAt: null,
+      uptimeAtStartSeconds: Math.round(process.uptime()),
+      queued: ranked.length,
+      opened: 0, failed: 0, deferred: 0, noData: 0, skipped: 0,
+      bytes: 0, totalMs: null, firstOpenMs: null, slowestMs: 0,
+      loopLagMaxMs: null,
+      rssStartMB: Math.round(process.memoryUsage().rss / 1048576), rssPeakMB: 0,
+      inFlight: new Map(),
+      items: [],
+    };
+    stats.rssPeakMB = stats.rssStartMB;
+    this.resumeStats = stats;
+    const lag = monitorEventLoopDelay({ resolution: 20 });
+    lag.enable();
+    const t0 = this.monotonic();
+    const peak = () => { stats.rssPeakMB = Math.max(stats.rssPeakMB, Math.round(process.memoryUsage().rss / 1048576)); };
+    log.info(`retomada: ${ranked.length} pendência(s), até ${this.resumeConcurrency} por vez`, {
+      ordem: ranked.slice(0, 10).map((r) => `${short(r.infoHash)}:${r.className}`),
+    });
+
+    try {
+      await runLimited(ranked, this.resumeConcurrency, async (item) => {
+        const pendencia = item.entry;
+        const hash = pendencia.infoHash;
+        // Reavalia na vez dela: pode ter sido aberto por um play ou por outra passada.
+        if (this.client.torrents.some((t) => t.infoHash === hash) || this.loading.has(hash)) { stats.skipped += 1; return; }
+        // Obrigação concluída mas sem o arquivo completo: não anuncia (viraria um
+        // download novo). Aparece no painel como "Sem arquivo para semear".
+        if (pendencia.completedAt && !pendencia.backgroundComplete && this.diskState(hash) !== 'full') {
+          if (!pendencia.noDataWarned) {
+            console.warn(`[vault] sem o arquivo completo de "${String(pendencia.name).slice(0, 40)}": não dá para semear`);
+            pendencia.noDataWarned = true;
+          }
+          stats.noData += 1;
+          return;
         }
-        continue;
-      }
-      try {
-        await this.getTorrent(pendencia.infoHash);
-        console.log(`[vault] retomando seed: ${String(pendencia.name).slice(0, 50)}`);
-      } catch (err) {
-        // Recusa de disco não derruba nada: o download não recomeça e a próxima rodada tenta de novo.
-        console.error(err?.expose
-          ? `[vault] retomada adiada: ${err.message}`
-          : '[vault] não foi possível retomar um seed pendente');
-      }
+        const started = this.monotonic();
+        stats.inFlight.set(hash, started);
+        const record = { hash: short(hash), classe: item.className, horasAtePrazo: item.hoursToDeadline, prazo: item.deadlineSource };
+        try {
+          const torrent = await this.getTorrent(hash);
+          record.resultado = 'ok';
+          record.bytes = torrent?.length ?? null;
+          stats.opened += 1;
+          stats.bytes += record.bytes || 0;
+          console.log(`[vault] retomando seed: ${String(pendencia.name).slice(0, 50)}`);
+        } catch (err) {
+          // Recusa de disco não derruba nada: o download não recomeça e a próxima rodada tenta de novo.
+          record.resultado = err?.expose ? 'adiado' : 'erro';
+          if (err?.expose) stats.deferred += 1; else stats.failed += 1;
+          console.error(err?.expose
+            ? `[vault] retomada adiada: ${err.message}`
+            : '[vault] não foi possível retomar um seed pendente');
+        } finally {
+          stats.inFlight.delete(hash);
+          record.ms = Math.round(this.monotonic() - started);
+          stats.slowestMs = Math.max(stats.slowestMs, record.ms);
+          if (stats.firstOpenMs === null && record.resultado === 'ok') stats.firstOpenMs = Math.round(this.monotonic() - t0);
+          if (stats.items.length < 100) stats.items.push(record);
+          peak();
+          log.info(`retomada: ${record.hash} ${record.resultado} em ${record.ms} ms`, {
+            classe: record.classe, bytes: record.bytes ?? null, prazo: record.prazo,
+          });
+        }
+      });
+    } finally {
+      lag.disable();
+      stats.totalMs = Math.round(this.monotonic() - t0);
+      stats.loopLagMaxMs = Number((lag.max / 1e6).toFixed(1));
+      stats.rssEndMB = Math.round(process.memoryUsage().rss / 1048576);
+      stats.running = false;
+      stats.finishedAt = new Date(this.clock()).toISOString();
+      log.info(`retomada concluída em ${stats.totalMs} ms`, {
+        abertos: stats.opened, falhas: stats.failed, adiados: stats.deferred, semArquivo: stats.noData,
+        bytes: stats.bytes, maiorMs: stats.slowestMs, atrasoMaxLoopMs: stats.loopLagMaxMs,
+      });
     }
+  }
+
+  // Medição da retomada para o painel: sem caminhos, nomes ou segredos (hash curto e números).
+  // Os bytes são o TAMANHO dos torrents verificados (limite superior do que foi lido do disco).
+  resumeSnapshot(now = this.monotonic()) {
+    const s = this.resumeStats;
+    if (!s) return null;
+    const { inFlight, ...rest } = s;
+    return {
+      ...rest,
+      items: s.items.map((i) => ({ ...i })),
+      inFlight: [...inFlight].map(([hash, at]) => ({ hash: short(hash), ms: Math.round(now - at) })),
+    };
   }
 
   // O que ainda falta gravar de um download admitido, para o orçamento de disco. Número = falta
@@ -728,8 +837,10 @@ class Bridge {
         streamUploadLimit: this.uploadPolicy.stream,
         diskReserveBytes: this.minFreeBytes,
         diskReservePercent: this.reservePercent,
+        resumeConcurrency: this.resumeConcurrency,
       },
       playback: this.playbackSnapshot(),
+      resume: this.resumeSnapshot(),
       account: this.account
         ? {
           hitAndRuns: this.account.hitAndRuns,

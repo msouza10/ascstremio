@@ -73,6 +73,7 @@ A redação automática não remove necessariamente dados pessoais, títulos ou 
 | Play retorna 504 | Primeiro trecho não chegou no prazo; pode haver peers indisponíveis ou falta de conectividade |
 | Vídeo sem áudio/imagem no player | Compatibilidade do contêiner/codec do cliente; o servidor não transcodifica |
 | Play retorna 507/503 | Sem folga além da reserva de disco (507) ou espaço não medido (503); veja [Disco](configuracao.md#disco) e ajuste `DISK_RESERVE_GIB`/`DISK_RESERVE_PERCENT` ou libere espaço |
+| Retomada lenta na partida | O painel mostra o custo por torrent (`resume`) e o log traz linhas `retomada: …`. A verificação de arquivos grandes lê o torrent inteiro do disco. A ordem é por prazo de seed (mais urgente primeiro). Se o disco for rápido e houver vários torrents grandes, teste `RESUME_CONCURRENCY` 2 e compare o tempo total e o atraso do laço de eventos antes de manter |
 | Disco não foi liberado | Confirmação do tracker pendente, falha de sessão/rede ou `AFTER_SEED=stop/keep` |
 | Conta ainda não lida | Aguarde a consulta e examine sessão/rede; ausência de dados não significa tudo em dia |
 | Alertas não chegam | `npm run alertas -- estado` mostra destino, último envio e último erro (sem a URL). Confira o host em `ALERT_WEBHOOK_ALLOWED_HOSTS`, `ALERT_WEBHOOK_ALLOW_PRIVATE` para rede privada, e teste pelo painel |

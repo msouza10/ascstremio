@@ -128,7 +128,7 @@ async function main() {
     node: process.version, pid: process.pid, host, bridgePort, addonPort, configPort, modo: cfg.mode,
     afterSeed, backgroundMode, idleMinutes, keepAwake: v.KEEP_AWAKE,
     reservaDiscoGiB: v.DISK_RESERVE_GIB, reservaDiscoPercent: v.DISK_RESERVE_PERCENT,
-    limiteReproducoes: v.PLAYBACK_MAX_SESSIONS, limiteReproducoesPorCredencial: v.PLAYBACK_MAX_PER_CREDENTIAL,
+    limiteReproducoes: v.PLAYBACK_MAX_SESSIONS, limiteReproducoesPorCredencial: v.PLAYBACK_MAX_PER_CREDENTIAL, retomadasEmParalelo: v.RESUME_CONCURRENCY,
     nivelDeLog: logger.level, uploadLimit, uploadLimitReproducao: v.BRIDGE_STREAM_UPLOAD_LIMIT, passkeyConfigurada: Boolean(passkey),
   });
 
@@ -151,6 +151,7 @@ async function main() {
     minFreeBytes: Math.round(v.DISK_RESERVE_GIB * 1024 ** 3), reservePercent: v.DISK_RESERVE_PERCENT,
     maxPlaybacks: v.PLAYBACK_MAX_SESSIONS, maxPlaybacksPerCredential: v.PLAYBACK_MAX_PER_CREDENTIAL,
     playbackGraceMs: v.PLAYBACK_SESSION_GRACE_SECONDS * 1000,
+    resumeConcurrency: v.RESUME_CONCURRENCY,
     resumeOnStart: false, // painel e addon sobem primeiro; os torrents retomam em seguida
     keepAwake: new KeepAwake({ mode: v.KEEP_AWAKE }),
     accountNotice: () => asc.inactivityNotice(),
