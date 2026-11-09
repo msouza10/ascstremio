@@ -11,7 +11,7 @@ A instalação é pessoal e local. Não publique addon, ponte ou painel na inter
 | Painel HTTP `7020` | `127.0.0.1` | `0.0.0.0` interno | `127.0.0.1:7020` |
 | Peers BitTorrent | Porta escolhida pelo sistema, recebimento em interfaces de rede | Porta `7030` | TCP `7030` em todas as interfaces, conforme firewall |
 
-As portas podem mudar por configuração. A publicação TCP de peers é distinta dos endpoints HTTP e não fornece acesso direto ao painel. Remover a publicação de peers reduz a conectividade de entrada; não transforma o cliente em somente download. UPnP e NAT-PMP estão desligados: o aplicativo não abre portas no roteador automaticamente.
+As portas podem mudar por configuração. A publicação TCP de peers é distinta dos endpoints HTTP e não fornece acesso direto ao painel. Remover a publicação de peers reduz a conectividade de entrada; não transforma o cliente em somente download. UPnP e NAT-PMP estão desligados: o aplicativo não abre portas no roteador automaticamente. O diagnóstico `npm run rede -- peers` só prova o que o processo observa (escuta local e conexões de entrada recebidas); não testa alcance pela internet, não contata serviços externos e não vê firewall, roteador, CGNAT nem a publicação do contêiner. Abra, se quiser, somente a porta de peers; nunca addon, ponte ou painel.
 
 ## Rede local e contêineres
 

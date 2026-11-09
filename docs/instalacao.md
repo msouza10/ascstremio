@@ -162,7 +162,7 @@ docker compose up -d --build
 
 **Os volumes podem ter nomes diferentes:** `scripts/docker.sh` e o exemplo de imagem pronta usam `ascstremio-data`; o Compose do repositório normalmente acrescenta o nome do projeto. Confirme o volume usado antes de gravar a passkey ou migrar dados. Não use a mesma pasta/volume simultaneamente em duas instâncias.
 
-As portas HTTP 7000/7010/7020 ficam em `127.0.0.1` do host. A porta TCP 7030 de peers é publicada em todas as interfaces; remova essa publicação se não quiser conexões de entrada. Mantenha painel e administração locais; leia [segurança](seguranca.md) antes de mudar a rede. O contêiner não bloqueia a suspensão do hospedeiro.
+As portas HTTP 7000/7010/7020 ficam em `127.0.0.1` do host. A porta TCP 7030 de peers é publicada em todas as interfaces; remova essa publicação se não quiser conexões de entrada. A porta de fora tem de ser igual à de dentro (`7030:7030`), pois é a de dentro que o tracker recebe; o programa não consegue verificar a publicação de dentro do contêiner (confira com `docker port`). Em instalação nativa, receber conexões de entrada exige fixar `TORRENT_PORT`, liberá-la no firewall e encaminhá-la no roteador; atrás de CGNAT isso não é possível sem o provedor. Veja `npm run rede -- peers` e [configuração](configuracao.md#porta-de-peers-diagnóstico). Mantenha painel e administração locais; leia [segurança](seguranca.md) antes de mudar a rede. O contêiner não bloqueia a suspensão do hospedeiro.
 
 ## Windows
 

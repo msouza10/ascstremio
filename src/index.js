@@ -127,7 +127,7 @@ async function main() {
     afterSeed, backgroundMode, idleMinutes, keepAwake: v.KEEP_AWAKE,
     reservaDiscoGiB: v.DISK_RESERVE_GIB, reservaDiscoPercent: v.DISK_RESERVE_PERCENT,
     limiteReproducoes: v.PLAYBACK_MAX_SESSIONS, limiteReproducoesPorCredencial: v.PLAYBACK_MAX_PER_CREDENTIAL,
-    nivelDeLog: logger.level, uploadLimit, passkeyConfigurada: Boolean(passkey),
+    nivelDeLog: logger.level, uploadLimit, uploadLimitReproducao: v.BRIDGE_STREAM_UPLOAD_LIMIT, passkeyConfigurada: Boolean(passkey),
   });
 
   // Credenciais de reprodução (token por instalação, só o verificador em disco). A antiga
@@ -143,7 +143,8 @@ async function main() {
   logger.addSecret(adminKey);
   const bridge = new Bridge({
     torrentDir, storeDir, port: bridgePort, host, publicUrl, passkey, strictHost: true,
-    credentials, adminKey, uploadLimit, announceBase, vault,
+    credentials, adminKey, uploadLimit, announceBase,
+    streamUploadLimit: v.BRIDGE_STREAM_UPLOAD_LIMIT, uploadRestoreMs: v.BRIDGE_UPLOAD_RESTORE_SECONDS * 1000, vault,
     backgroundMode, idleMs: idleMinutes * 60 * 1000, afterSeed,
     minFreeBytes: Math.round(v.DISK_RESERVE_GIB * 1024 ** 3), reservePercent: v.DISK_RESERVE_PERCENT,
     maxPlaybacks: v.PLAYBACK_MAX_SESSIONS, maxPlaybacksPerCredential: v.PLAYBACK_MAX_PER_CREDENTIAL,
@@ -157,6 +158,17 @@ async function main() {
     ? '[ponte] passkey carregada em memória (não existe nos .torrent)'
     : '[ponte] sem passkey: torrents privados ficarão sem peers (veja PASSKEY_FILE)');
   await bridge.start();
+  // Porta de peers (issue #34): só observa o motor já aberto (escuta e conexões de ENTRADA, em
+  // contadores sem endereço). Não abre porta, não abre torrent e não consulta serviço externo.
+  const peerObserver = network.createPeerObserver();
+  peerObserver.attach(bridge.client);
+  const peerPortNow = () => network.evaluatePeerPort({
+    engine: network.engineState(bridge.client), observed: peerObserver.snapshot(),
+    configuredPort: v.TORRENT_PORT, container: cfg.container,
+  });
+  const gravaPeers = () => network.writePeerStatus(DATA_DIR, { engine: network.engineState(bridge.client), observed: peerObserver.snapshot() });
+  gravaPeers();
+  setInterval(gravaPeers, 60_000).unref();
   if (backgroundMode === 'auto') {
     console.log(`[conclusão] automática: freeleech parados há ${idleMinutes} min são concluídos em segundo plano`);
   }
@@ -183,6 +195,7 @@ async function main() {
     dataDir: DATA_DIR, bootEnv, running: cfg.values, credentials,
     addonBase: net.urls.addon,
     playback: () => bridge.playbackSnapshot(),
+    peerPort: peerPortNow,
     addSecret: (secret) => logger.addSecret(secret),
     applyLive: (key, value) => {
       if (key === 'LOG_LEVEL') return logger.setLevel(value);
