@@ -149,7 +149,8 @@ async function call(b, url, { method = 'GET', headers = {}, remote = '127.0.0.1'
   const out = { status: 0, body: '', destroyed: false };
   const res = {
     setHeader() {}, once() {}, on() {}, off() {}, statusCode: 0, writableFinished: true,
-    writeHead(s) { out.status = s; }, end(chunk) { out.body = String(chunk ?? ''); }, destroy() { out.destroyed = true; },
+    writeHead(s) { out.status = s; }, end(chunk) { out.body = String(chunk ?? ''); },
+    destroy() { out.destroyed = true; this.destroyed = true; },
   };
   await b.handle({ method, url, headers: { host: '127.0.0.1:7096', ...headers }, socket: { remoteAddress: remote } }, res);
   return out;
@@ -206,6 +207,26 @@ test('ponte: revogar derruba as respostas de vídeo já abertas só dessa creden
   store.revoke(a.credential.id);
   assert.equal(ra.closed, true);
   assert.equal(rc.closed, false);
+});
+
+test('ponte: revogar durante a espera do torrent não deixa stream contado nem abre o torrent', async () => {
+  const store = newStore();
+  const b = newBridge(store);
+  const { credential, token } = store.create({ name: 'tv' });
+  let abriu = false;
+  b.ascResolver = async () => { store.revoke(credential.id); return { infoHash: HASH, fileIdx: 0 }; };
+  b.getTorrent = async () => { abriu = true; return null; };
+  const r = await call(b, `/a/12?k=${token}`);
+  assert.equal(r.destroyed, true);
+  assert.equal(abriu, false, 'não abre o torrent para uma credencial revogada');
+  assert.equal(b.streams.size, 0);
+
+  // Mesma corrida, agora na espera de getTorrent (fonte já local): o contador não pode ficar em 1.
+  const outra = store.create({ name: 'sala' });
+  b.getTorrent = async () => { store.revoke(outra.credential.id); return { files: [] }; };
+  const r2 = await call(b, `/s/${HASH}/0?k=${outra.token}`);
+  assert.equal(r2.destroyed, true);
+  assert.equal(b.streams.size, 0);
 });
 
 test('administração das credenciais: token administrativo, sem Origin; a credencial de reprodução não vale', async () => {

@@ -1075,6 +1075,8 @@ class Bridge {
           res.end(JSON.stringify({ error: err?.message || 'Não foi possível preparar o filme.' }));
           return;
         }
+        // Credencial revogada (ou cliente que saiu) enquanto o .torrent era preparado: não abre o torrent.
+        if (res.destroyed) return;
       }
     }
 
@@ -1107,6 +1109,9 @@ class Bridge {
     }
 
     const torrent = await this.getTorrent(infoHash);
+    // A resposta pode ter sido encerrada durante a espera (revogação ou cliente que saiu): o 'close'
+    // já passou e não limparia o contador de streams abertos, que travaria conclusão e ociosidade.
+    if (res.destroyed) return;
     // Conta streams abertos: a conclusão em segundo plano só começa com o
     // player parado (e nunca disputa banda com ele).
     this.streams.set(infoHash, (this.streams.get(infoHash) ?? 0) + 1);
