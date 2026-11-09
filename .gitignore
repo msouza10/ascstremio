@@ -2,10 +2,11 @@
 private/
 data/
 *.torrent
-passkey*
-bridge-key*
-asc-session*
-seed-vault*
+passkey.txt
+*.passkey
+bridge-key
+asc-session.json
+seed-vault.json
 service.env
 service.log
 .env
