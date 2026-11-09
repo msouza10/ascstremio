@@ -28,7 +28,16 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci --no-audit --no-fund
+      # Binários nativos (node-datachannel) vêm do GitHub Releases: cache + nova tentativa
+      # evitam que uma falha passageira de lá (504) derrube a esteira.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm/_prebuilds
+          key: prebuilds-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: npm ci (com novas tentativas)
+        shell: bash
+        run: |
+          for i in 1 2 3 4; do npm ci --no-audit --no-fund && exit 0; echo "tentativa $i falhou; aguardando"; sleep $((i * 20)); done; exit 1
       - run: npm run check
 
   commits:
