@@ -113,6 +113,18 @@ class SeedVault {
     return entry;
   }
 
+  // Último uso (reprodução) do título, para a retenção por idade. Atualiza em memória sempre e
+  // grava no máximo uma vez por minuto: um seek não pode virar uma escrita do cofre inteiro.
+  markUsed(infoHash) {
+    const entry = this.entries.get(infoHash);
+    if (!entry) return null;
+    const agora = this.now();
+    const antes = entry.lastUsedAt ?? 0;
+    entry.lastUsedAt = agora;
+    if (agora - antes >= 60_000) this.save();
+    return entry;
+  }
+
   // Só chamado quando o motor confirma 100% — é o gatilho da regra 13.1.
   markCompleted(infoHash) {
     const entry = this.entries.get(infoHash) ?? this.markSeen(infoHash);

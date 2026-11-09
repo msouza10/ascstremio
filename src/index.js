@@ -155,7 +155,11 @@ async function main() {
     resumeOnStart: false, // painel e addon sobem primeiro; os torrents retomam em seguida
     keepAwake: new KeepAwake({ mode: v.KEEP_AWAKE }),
     accountNotice: () => asc.inactivityNotice(),
-    trackerCheck: (hashes) => hnr.reconcile({ asc, vault, only: hashes }),
+    trackerCheck: (hashes, opts = {}) => hnr.reconcile({ asc, vault, only: hashes, ...opts }),
+    retention: {
+      mode: v.RETENTION_MODE, budgetBytes: Math.round(v.RETENTION_BUDGET_GIB * 1024 ** 3),
+      maxTitles: v.RETENTION_MAX_TITLES, minAgeDays: v.RETENTION_MIN_AGE_DAYS,
+    },
   });
   console.log(passkey
     ? '[ponte] passkey carregada em memória (não existe nos .torrent)'

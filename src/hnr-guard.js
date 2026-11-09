@@ -61,15 +61,21 @@ function ascIdFromPath(torrentPath) {
   return m ? m[1] : null;
 }
 
+// O tracker confirmou o cumprimento (13.1)? É a condição única para liberar disco ou rede:
+// releaseSatisfied() e a retenção por orçamento usam esta mesma função.
+function trackerConfirmed(entry) {
+  return Boolean(entry?.satisfiedAt && entry.tracker?.satisfied);
+}
+
 // Concilia o cofre com o tracker. Devolve contagens, sem logar nada sensível.
-async function reconcile({ asc, vault, only = null }) {
+async function reconcile({ asc, vault, only = null, force = false }) {
   const result = { checked: 0, failed: 0, semRegistro: 0, ajustados: 0 };
   for (const entry of vault.list()) {
     if (only && !only.includes(entry.infoHash)) continue;
     const id = ascIdFromPath(entry.torrentPath);
     if (!id) continue;
-    // Já confirmado pelo tracker: não há o que revalidar.
-    if (entry.tracker?.satisfied && entry.satisfiedAt) continue;
+    // Já confirmado pelo tracker: não há o que revalidar (a retenção, antes de remover, força a releitura).
+    if (!force && entry.tracker?.satisfied && entry.satisfiedAt) continue;
     try {
       log.debug(`conferindo o torrent ${id} no tracker`);
       const page = await asc.history(id);
@@ -176,6 +182,7 @@ module.exports = {
   toMs,
   normalizeHistory,
   ascIdFromPath,
+  trackerConfirmed,
   reconcile,
   syncActivity,
   warnings,

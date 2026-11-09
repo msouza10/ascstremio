@@ -19,6 +19,7 @@ const hnr = require('./hnr-guard');
 const { DiskGuard, DEFAULT_RESERVE_BYTES } = require('./disk-policy');
 const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
+const { Retention } = require('./retention-service');
 const { logger } = require('./logger');
 const { rankPending, runLimited } = require('./resume-policy');
 const { monitorEventLoopDelay, performance } = require('perf_hooks');
@@ -99,6 +100,7 @@ class Bridge {
     clock = Date.now, // relógio da quota (injetável nos testes)
     freeSpace = null, // injeção para testes: (dir) => livres | { free, total }
     afterSeed = 'delete',
+    retention = null, // { mode, budgetBytes, maxTitles, minAgeDays } (RETENTION_*); sem isto, desligada
     keepAwake = null,
     resumeOnStart = true,
     resumeConcurrency = 1, // retomadas abertas ao mesmo tempo (RESUME_CONCURRENCY); 1 = uma por vez, como sempre foi
@@ -129,6 +131,8 @@ class Bridge {
     // confirma: delete = encerra e apaga os dados; stop = encerra e mantém os
     // dados; keep = continua semeando.
     this.afterSeed = afterSeed;
+    // Retenção por orçamento (issue #27): desligada por padrão; ver src/retention-service.js.
+    this.retention = new Retention(this, retention ?? {});
     // Opcional: objeto com update(boolean) que impede a suspensão do PC.
     this.keepAwake = keepAwake;
     // false = start() não espera os torrents pendentes abrirem (quem chama faz
@@ -580,8 +584,8 @@ class Bridge {
     for (const torrent of [...this.client.torrents]) {
       const hash = torrent.infoHash;
       const entry = this.vault.get(hash);
-      if (!entry?.satisfiedAt || !entry.tracker?.satisfied) continue;
-      if ((this.streams.get(hash) ?? 0) > 0) continue;
+      if (!hnr.trackerConfirmed(entry)) continue;
+      if ((this.streams.get(hash) ?? 0) > 0 || this.retention.isRetiring(hash)) continue;
       await new Promise((resolve) => {
         torrent.destroy({ destroyStore: this.afterSeed === 'delete' }, () => resolve());
       });
@@ -998,6 +1002,13 @@ class Bridge {
   }
 
   async getTorrent(infoHash) {
+    // Título em remoção pela retenção: nada o reabre até terminar (evita corrida play x apagar).
+    if (this.retention.isRetiring(infoHash)) {
+      const err = new Error('Título em manutenção (retenção de disco); tente de novo em instantes.');
+      err.status = 503;
+      err.expose = true;
+      throw err;
+    }
     if (this.loading.has(infoHash)) return this.loading.get(infoHash);
 
     const already = await this.client.get(infoHash);
@@ -1179,7 +1190,7 @@ class Bridge {
     // sem Origin (navegadores o enviam em POST/fetch entre origens) e, fora do
     // contêiner, vindas de loopback. No contêiner o endereço de origem é o do gateway
     // ou de outro contêiner, então só o token vale; ele é independente da chave ?k=.
-    const admin = ['/cleanup', '/seed-status', '/status', '/complete', '/credentials', '/credentials/revoke', '/credentials/rotate', '/playback'].includes(url.pathname);
+    const admin = ['/cleanup', '/seed-status', '/status', '/complete', '/credentials', '/credentials/revoke', '/credentials/rotate', '/playback', '/retention', '/retention/run'].includes(url.pathname);
     if (admin && (!this.adminOk(req) || req.headers?.origin || !(inContainer() || isLoopbackRequest(req)))) {
       log.warn(`rota administrativa recusada: ${req.method} ${url.pathname} (origem ${req.socket?.remoteAddress ?? '?'}${req.headers?.origin ? `, Origin ${req.headers.origin}` : ''})`);
       res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -1228,6 +1239,27 @@ class Bridge {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       log.info(`cleanup concluído: ${targets.length} torrent(s) removido(s)`);
       res.end(JSON.stringify({ removed: targets.length }));
+      return;
+    }
+
+    // Retenção por orçamento (issue #27). GET = prévia (só leitura). POST /retention/run?plan=<id>
+    // = execução confirmada do plano que a prévia emitiu; o tracker é relido antes de qualquer remoção.
+    if (url.pathname === '/retention' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(this.retention.preview(), null, 2));
+      return;
+    }
+    if (url.pathname === '/retention/run' && req.method === 'POST') {
+      log.info('retenção: execução pedida');
+      try {
+        const out = await this.retention.run(url.searchParams.get('plan'));
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(out, null, 2));
+      } catch (err) {
+        if (!err.body) throw err;
+        res.writeHead(err.status || 409, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: err.message, ...err.body }));
+      }
       return;
     }
 
@@ -1404,10 +1436,12 @@ class Bridge {
     // Conta streams abertos: a conclusão em segundo plano só começa com o
     // player parado (e nunca disputa banda com ele).
     this.streams.set(infoHash, (this.streams.get(infoHash) ?? 0) + 1);
+    this.vault.markUsed(infoHash); // último uso, para a retenção por idade
     log.debug(`stream aberto em ${short(infoHash)} (${this.streams.get(infoHash)} aberto(s))`);
     res.once('close', () => {
       this.streams.set(infoHash, Math.max(0, (this.streams.get(infoHash) ?? 1) - 1));
       this.lastStreamEnd.set(infoHash, Date.now());
+      this.vault.markUsed(infoHash);
       log.debug(`stream encerrado em ${short(infoHash)} (${this.streams.get(infoHash)} aberto(s))`);
     });
     const file = torrent?.files?.[fileIdx];

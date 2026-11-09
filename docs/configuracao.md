@@ -227,6 +227,10 @@ Diagnóstico: `GET /playback` na ponte (token administrativo, como as demais rot
 |---|---|---|
 | `DISK_RESERVE_GIB` | `2` | Reserva absoluta de espaço livre, em GiB (número ≥ 0; `0` desliga esta parte) |
 | `DISK_RESERVE_PERCENT` | `0` (desligado) | Reserva em percentual do tamanho do volume, de 0 a 90 |
+| `RETENTION_MODE` | `off` | `off` desliga a retenção; `preview` habilita a prévia e a execução manual confirmada (veja abaixo) |
+| `RETENTION_BUDGET_GIB` | `0` (sem limite) | Orçamento de disco dos filmes da biblioteca, em GiB |
+| `RETENTION_MAX_TITLES` | `0` (sem limite) | Máximo de títulos da biblioteca com dados em disco |
+| `RETENTION_MIN_AGE_DAYS` | `30` | Dias sem uso antes de um título poder ser candidato (1 a 3650) |
 
 A reserva vale para o volume de `BRIDGE_STORE` (inclusive disco externo ou montagem; se a pasta ainda não existe, mede o volume onde ela será criada). Quando as duas coexistem, **vale a maior**. Se o percentual está ligado e o sistema não informa o tamanho do volume, a reserva não pode ser honrada e o estado é "desconhecido".
 
@@ -235,8 +239,12 @@ A mesma política decide **todo novo download**: streaming sob demanda (`/s` e `
 - **Recusa antes de qualquer efeito:** sem folga, o player recebe `507` e o painel mostra o motivo, sem baixar o `.torrent` (snatch), abrir o torrent nem anunciar. Em `/a/<id>` o tamanho vem da listagem; sem ele, exige ao menos a reserva livre e confere o tamanho real ao abrir o torrent.
 - **Falha na medição (`statfs`):** o estado é "desconhecido" e novos downloads são recusados (`503`, com `Retry-After`), nunca tratados como espaço infinito. O que já está completo em disco continua abrindo e semeando, e nenhum torrent existente é encerrado por isso.
 - **`HEAD` e listagem de fontes** continuam sem efeito: não medem para reservar, não baixam `.torrent` nem anunciam.
-- **Nada é apagado** por esta política. Liberar espaço continua sendo `AFTER_SEED` e a retenção prevista na issue #27.
+- **Nada é apagado** pela reserva. Liberar espaço é `AFTER_SEED` ou a retenção opcional descrita a seguir.
 - O painel (e o catálogo "ASC — status") mostra livres, reserva efetiva, espaço comprometido e disponível; o alerta de bloqueio tem histerese (entra ao esgotar a folga e só sai quando sobra a maior de 256 MiB ou 10% da reserva).
+
+### Retenção por orçamento (opcional)
+
+Desligada por padrão (`RETENTION_MODE=off`); com ela desligada o comportamento de `AFTER_SEED` não muda. Com `preview`, o aplicativo **não remove nada sozinho**: ele só calcula uma prévia e executa uma lista que você confirmou. Os limites `RETENTION_BUDGET_GIB` e `RETENTION_MAX_TITLES` valem em conjunto (a retenção continua até respeitar os dois); sem nenhum deles, nada é selecionado. `RETENTION_MIN_AGE_DAYS` é um piso de proteção, não um gatilho: sozinho não remove nada. O orçamento conta o espaço realmente alocado dos títulos da biblioteca; arquivos fora dela (órfãos) aparecem como aviso e nunca são removidos. Uso e regras completas em [manutenção](manutencao.md#retenção-por-orçamento) e [seed](seed.md#retenção-por-orçamento-opcional).
 
 ## Alertas por webhook
 

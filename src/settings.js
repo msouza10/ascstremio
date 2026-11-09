@@ -206,6 +206,22 @@ const SCHEMA = Object.freeze([
     description: 'Reserva em percentual do tamanho do volume de BRIDGE_STORE. 0 desliga. Vale a maior entre esta e DISK_RESERVE_GIB; sem conseguir medir o volume, novos downloads são recusados.',
   },
   {
+    key: 'RETENTION_MODE', type: 'enum', values: ['off', 'preview'], default: 'off', group: 'disco', access: 'editable', restart: true,
+    description: 'Retenção por orçamento (issue #27). off = desligada (padrão). preview = habilita a prévia e a execução MANUAL e confirmada (npm run retencao); nada é removido sozinho. Só candidatos que o tracker confirmou cumpridos, sem uso e parados há RETENTION_MIN_AGE_DAYS.',
+  },
+  {
+    key: 'RETENTION_BUDGET_GIB', type: 'number', min: 0, max: 1048576, default: 0, unit: 'GiB', group: 'disco', access: 'editable', restart: true,
+    description: 'Orçamento de disco dos filmes da biblioteca. Acima dele, a prévia lista os mais antigos por último uso que já cumpriram o seed. 0 = sem orçamento de espaço.',
+  },
+  {
+    key: 'RETENTION_MAX_TITLES', type: 'int', min: 0, max: 100000, default: 0, unit: 'títulos', group: 'disco', access: 'editable', restart: true,
+    description: 'Máximo de títulos da biblioteca com dados em disco. 0 = sem limite. Vale em conjunto com RETENTION_BUDGET_GIB; sem nenhum dos dois a retenção não seleciona nada.',
+  },
+  {
+    key: 'RETENTION_MIN_AGE_DAYS', type: 'int', min: 1, max: 3650, default: 30, unit: 'dias', group: 'disco', access: 'editable', restart: true,
+    description: 'Um título só é candidato depois de tantos dias sem uso (reprodução) desde o último uso ou, sem reprodução registrada, desde que o tracker confirmou o seed.',
+  },
+  {
     key: 'PLAYBACK_MAX_SESSIONS', type: 'int', min: 0, max: 1000, default: 0, unit: 'sessões', group: 'reproducao', access: 'editable', restart: true,
     description: 'Máximo de reproduções simultâneas no total (uma por credencial e filme; HEAD, seeks e reconexões não contam). 0 = sem limite. O excesso recebe 429 com Retry-After antes de qualquer download.',
   },

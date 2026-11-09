@@ -67,6 +67,15 @@ Por padrão, a conclusão automática está desligada. `BACKGROUND_COMPLETE=auto
 
 Reabrir um filme cujos dados foram apagados baixa novamente e pode criar nova obrigação. O aplicativo tenta avisar nas fontes. Não apague manualmente cache, cofre ou torrents pendentes para liberar espaço: isso remove meios de cumprir o seed, sem cancelar a cobrança no ASC.
 
+### Retenção por orçamento (opcional)
+
+`RETENTION_MODE=preview` (padrão `off`) acrescenta uma limpeza **manual e confirmada** por espaço ou número de títulos, que complementa `AFTER_SEED` sem substituí-lo e sem outro caminho de liberação:
+
+- Prioridade: o tracker manda. Só entra na lista o título que o tracker confirmou cumprido (a mesma condição de `AFTER_SEED`), sem hit-and-run e que o tracker não lista mais como pendente. `AFTER_SEED=delete` já apaga ao cumprir (a retenção só vê sobras); com `stop` ou `keep` os arquivos ficam e a retenção é o que os remove depois, por idade de uso, quando você a executa. Com `keep`, ela encerra o seed já cumprido do título removido.
+- Ordem: mais antigo por último uso (reprodução registrada; sem ela, a confirmação do tracker) primeiro.
+- Nunca remove: título incompleto ou com obrigação aberta, em reprodução ou com sessão recente, abrindo/concluindo, confirmado há menos de 24 h ou usado há menos de `RETENTION_MIN_AGE_DAYS`, com arquivo compartilhado com outro título, com symlink ou link físico, fora de `BRIDGE_STORE`. Não toca em `.torrent`, cofre, credenciais nem em arquivos fora da biblioteca.
+- Reassistir um título removido baixa tudo de novo e abre nova obrigação de 72 h (e, fora do freeleech, pesa no ratio).
+
 Não existe atalho para pular a conferência de seed: `/cleanup` sempre consulta o tracker e recusa (409) o que ainda está devido. Se o tracker não puder ser consultado, nada é liberado.
 
 ## Suspensão e desligamento
