@@ -44,3 +44,14 @@ test('publicação aceita guias explícitos e barra notas privadas inclusive no 
   fs.writeFileSync(path.join(app, 'private', 'conta.txt'), 'dados simulados');
   assert.equal(scan().status, 1, 'a inspeção sem Git não pode ocultar private/');
 });
+
+// A licença precisa acompanhar o código em cada formato entregue (tarball, instalador e imagem).
+test('a licença MIT está versionada e entra no pacote, no instalador e na imagem', () => {
+  const raiz = path.resolve(__dirname, '..');
+  const ler = (...partes) => fs.readFileSync(path.join(raiz, ...partes), 'utf8');
+  assert.match(ler('LICENSE'), /^MIT License/);
+  assert.equal(JSON.parse(ler('package.json')).license, 'MIT');
+  for (const arquivo of [['scripts', 'build-release.sh'], ['windows', 'build.sh'], ['Dockerfile']]) {
+    assert.match(ler(...arquivo), /\bLICENSE\b/, `${arquivo.join('/')} não copia o LICENSE`);
+  }
+});
