@@ -43,10 +43,12 @@ async function main(argv, env = process.env, out = console.log) {
       return r.ok ? 0 : 1;
     }
     case 'remover': {
+      // Desabilita antes (habilitado sem destino impediria a próxima partida).
+      try { settings.update({ dataDir, env, changes: { ALERTS_ENABLED: null }, expectedRevision: snap.revision }); } catch { /* ambiente define o valor */ }
+      mgr.cfg.enabled = settings.resolve({ dataDir, env }).values.ALERTS_ENABLED === true;
       const r = mgr.removeDestination();
       if (!r.ok) { out(r.error); return 1; }
-      try { settings.update({ dataDir, env, changes: { ALERTS_ENABLED: null }, expectedRevision: snap.revision }); } catch { /* ambiente define o valor */ }
-      out('Destino removido; ALERTS_ENABLED voltou ao padrão (desligado) quando veio do arquivo.');
+      out('Destino removido; os alertas ficaram desabilitados.');
       return 0;
     }
     case 'testar': {

@@ -256,6 +256,7 @@ test('trocar ou remover o destino cancela o que estava pendente', async () => {
   behavior.fail = null; clock.t += 30_000; await mgr.pump();
   assert.equal(mgr.queue.length, 0);
   assert.equal(sent.length, 0);
+  mgr.setConfig({ ALERTS_ENABLED: false });
   assert.equal(mgr.removeDestination().ok, true);
   assert.equal(mgr.status().configured, false);
 });
@@ -323,4 +324,27 @@ test('configProblem recusa habilitar sem hosts ou sem destino; settings.resolve 
   assert.equal(snapOk.ok, true, snapOk.problems.join());
   // a URL é segredo: não pode ir ao settings.json
   assert.throws(() => settings.update({ dataDir, env: {}, changes: { ALERT_WEBHOOK_URL: SECRET_URL }, expectedRevision: 0 }), /segredos nunca/);
+});
+
+test('disco desconhecido mantém o alerta aberto; abertura pendente obsoleta é cancelada; remover exige desabilitar', async () => {
+  const { mgr, sent, clock, behavior } = setup();
+  mgr.observeSnapshot(diskLow()); await mgr.pump();
+  assert.equal(sent.length, 1);
+  const desconhecido = snap({ summary: { freeBytes: null } });
+  for (let i = 0; i < 4; i += 1) { clock.t += 3 * MIN; mgr.observeSnapshot(desconhecido); await mgr.pump(); }
+  assert.equal(sent.length, 1, 'sem leitura válida não há recuperação');
+
+  const b = setup();
+  b.behavior.fail = new A.AlertSendError('network', { retryable: true });
+  b.mgr.observeSnapshot(diskLow()); await b.mgr.pump();
+  assert.equal(b.mgr.queue.length, 1);
+  b.mgr.observeSnapshot(snap());
+  assert.equal(b.mgr.queue.length, 0, 'aviso obsoleto cancelado');
+  b.behavior.fail = null; b.clock.t += 60 * MIN; await b.mgr.pump();
+  assert.equal(b.sent.length, 0);
+
+  assert.equal(mgr.removeDestination().status, 409);
+  mgr.setConfig({ ALERTS_ENABLED: false });
+  assert.equal(mgr.removeDestination().ok, true);
+  void behavior;
 });

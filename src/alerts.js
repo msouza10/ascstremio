@@ -419,7 +419,10 @@ function evaluate(snapshot, cfg, { wasOpen = {}, trackerSince = null, noPeersSin
   const free = snapshot?.summary?.freeBytes;
   const limit = cfg.diskFreeGiB * 1024 ** 3;
   out.disk_low = {
-    active: cfg.diskFreeGiB > 0 && Number.isFinite(free) && (wasOpen.disk_low ? free < limit + DISK_HYSTERESIS_BYTES : free < limit),
+    // Medição desconhecida mantém o alerta aberto (não confirma recuperação sem leitura válida).
+    active: cfg.diskFreeGiB > 0 && (Number.isFinite(free)
+      ? (wasOpen.disk_low ? free < limit + DISK_HYSTERESIS_BYTES : free < limit)
+      : Boolean(wasOpen.disk_low)),
     severity: 'warning',
   };
 
@@ -594,7 +597,12 @@ class AlertManager {
         }
       } else {
         rt.activeSince = null;
-        if (!s.notified) { rt.clearSince = null; continue; }
+        if (!s.notified) {
+          // Abertura ainda não entregue e condição já resolvida: o aviso pendente ficou obsoleto.
+          this.queue = this.queue.filter((i) => !(i.type === type && i.state === 'open'));
+          rt.clearSince = null;
+          continue;
+        }
         if (rt.clearSince === null) rt.clearSince = now;
         if (now - rt.clearSince < (SUSTAIN.recoverMs[type] ?? 0)) continue;
         const due = s.lastResolveAt === null || now - s.lastResolveAt >= cooldown;
@@ -772,6 +780,8 @@ class AlertManager {
   }
 
   removeDestination() {
+    // Habilitado sem destino impediria a próxima partida (settings.resolve): desabilite primeiro.
+    if (this.cfg.enabled) return { ok: false, status: 409, error: 'Desabilite os alertas (ALERTS_ENABLED) antes de remover o destino.' };
     if (String(this.env.ALERT_WEBHOOK_URL ?? '').trim() || String(this.env.ALERT_WEBHOOK_URL_FILE ?? '').trim()) {
       return { ok: false, status: 409, error: 'O destino é definido pelo ambiente; remova-o de lá.' };
     }
