@@ -13,17 +13,17 @@ const { createAscProvider } = require('./asc-provider');
 const { readPasskey, DEFAULT_ANNOUNCE_BASE } = require('./passkey');
 const { SeedVault } = require('./seedvault');
 const crypto = require('crypto');
-const { bridgeHost, inContainer, hostAllowed } = require('./safety');
+const { inContainer, hostAllowed } = require('./safety');
+const settings = require('./settings');
 const hnr = require('./hnr-guard');
 const { posterRoute } = require('./stremio-status');
 const { KeepAwake } = require('./keepawake');
 const { logger, initFiles } = require('./logger');
-const { acquireInstance } =require('./instance-lock');
+const { acquireInstance }  = require('./instance-lock');
 
-const ROOT = path.join(__dirname, '..');
 // Onde ficam passkey, sessão, cofre, logs, .torrent e cache. Fora do código para
 // sobreviver a atualizações (instalador, contêiner, Windows em %LOCALAPPDATA%).
-const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT, 'private'));
+const DATA_DIR = settings.resolveDataDir(process.env);
 
 // Chave das URLs de stream: aleatória, guardada em DATA_DIR (0600) para sobreviver a reinícios.
 function loadAccessKey(file) {
@@ -34,16 +34,6 @@ function loadAccessKey(file) {
   const key = crypto.randomBytes(16).toString('hex');
   fs.writeFileSync(file, key, { mode: 0o600 });
   return key;
-}
-
-function envInt(name, fallback) {
-  const raw = process.env[name];
-  if (raw === undefined || raw === '') return fallback;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1 || value > 65535) {
-    throw new Error(`${name} deve ser um inteiro entre 1 e 65535.`);
-  }
-  return value;
 }
 
 // Endereço que o Stremio deve usar para chegar aqui. No contêiner o IP interno não
@@ -69,41 +59,62 @@ async function main() {
   // com a passkey e cookies redigidos. Arquivos em private/logs/ (0600).
   fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   try { fs.chmodSync(DATA_DIR, 0o700); } catch { /* Windows/volume sem chmod */ }
-  // Antes de logs, cofre e motor: só um processo por instalação pode escrever o estado
-  // (portas diferentes não bastam). Liberada ao sair; ver src/instance-lock.js.
-  const torrentDir = process.env.ASC_TORRENT_DIR || path.join(DATA_DIR, 'torrents');
-  const storeDir = process.env.BRIDGE_STORE || path.join(DATA_DIR, 'cache');
-  const instance = acquireInstance({ dataDir: DATA_DIR, torrentDir, storeDir });
+  // Antes de qualquer leitura ou gravação (settings.json, logs, cofre, motor): só um processo
+  // por instalação pode escrever o estado (portas diferentes não bastam). Liberada ao sair;
+  // ver src/instance-lock.js. Nesta primeira fase só o ambiente é conhecido.
+  const envTorrentDir = process.env.ASC_TORRENT_DIR || path.join(DATA_DIR, 'torrents');
+  const envStoreDir = process.env.BRIDGE_STORE || path.join(DATA_DIR, 'cache');
+  let instance = acquireInstance({ dataDir: DATA_DIR, torrentDir: envTorrentDir, storeDir: envStoreDir });
   process.on('exit', () => instance.release());
-  initFiles(path.join(DATA_DIR, 'logs'), { retentionDays: Number(process.env.LOG_RETENTION_DAYS) || 14 });
+  // Configuração central (src/settings.js): ambiente > DATA_DIR/settings.json > padrão.
+  // Valor inválido, arquivo corrompido ou combinação insegura recusam a partida.
+  const cfg = settings.load({ dataDir: DATA_DIR });
+  const v = cfg.values;
+  // ASC_TORRENT_DIR/BRIDGE_STORE vindos do settings.json também precisam de trava: se diferem
+  // do que o ambiente já travou, refaz a trava com o conjunto final (e confere que o arquivo
+  // não mudou nesse intervalo).
+  if (v.ASC_TORRENT_DIR !== envTorrentDir || v.BRIDGE_STORE !== envStoreDir) {
+    instance.release();
+    instance = acquireInstance({ dataDir: DATA_DIR, torrentDir: v.ASC_TORRENT_DIR, storeDir: v.BRIDGE_STORE });
+    if (settings.resolve({ dataDir: DATA_DIR }).revision !== cfg.revision) {
+      throw new Error('settings.json mudou durante a partida. Inicie de novo.');
+    }
+  }
+  // Leitores antigos (safety, bridge, keepawake) consultam process.env: recebem só o que veio do arquivo.
+  settings.applyToEnv(cfg);
+  logger.setLevel(v.LOG_LEVEL);
+  initFiles(path.join(DATA_DIR, 'logs'), { retentionDays: v.LOG_RETENTION_DAYS });
   logger.captureConsole();
   process.on('uncaughtException', (err) => { log.error('exceção não tratada: encerrando', { stack: err?.stack ?? String(err) }); process.exit(1); });
   process.on('unhandledRejection', (reason) => { log.error('promessa rejeitada sem tratamento: encerrando', { motivo: reason?.stack ?? String(reason) }); process.exit(1); });
+  for (const aviso of cfg.warnings) log.warn(aviso);
 
-  const bridgePort = envInt('BRIDGE_PORT', 7010);
-  const addonPort = envInt('PORT', 7000);
+  const torrentDir = v.ASC_TORRENT_DIR;
+  const storeDir = v.BRIDGE_STORE;
+  const bridgePort = v.BRIDGE_PORT;
+  const addonPort = v.PORT;
+  const configPort = v.CONFIG_PORT;
 
   // A URL precisa ser alcançável pelo aparelho onde o Stremio roda: em TV ou
   // celular, 127.0.0.1 aponta para o próprio aparelho, não para este host.
   // Por padrão a ponte só escuta em loopback (conta pessoal, regra 2.2 do ASC).
   // BRIDGE_ALLOW_LAN=1 libera a rede local, por sua conta e risco.
-  const host = bridgeHost();
-  const publicUrl = process.env.BRIDGE_PUBLIC_URL
+  const host = cfg.derived.bindHost;
+  const publicUrl = v.BRIDGE_PUBLIC_URL
     || `http://${advertisedHost(host)}:${bridgePort}`;
 
   // A passkey não fica nos .torrent: vem de PASSKEY_FILE (0600) ou PASSKEY.
   const passkey = readPasskey({ file: path.join(DATA_DIR, 'passkey.txt') });
-  const uploadLimit = process.env.BRIDGE_UPLOAD_LIMIT
-    ? Number(process.env.BRIDGE_UPLOAD_LIMIT)
-    : -1;
+  const uploadLimit = v.BRIDGE_UPLOAD_LIMIT;
 
+  // ANNOUNCE_BASE pode carregar credencial: só vem do ambiente, nunca do arquivo.
   const announceBase = process.env.ANNOUNCE_BASE || DEFAULT_ANNOUNCE_BASE;
   logger.addSecret(passkey);
 
   // Cofre persistente: se o processo cair no meio das 72 h, a contagem não zera.
   const vault = new SeedVault({
     file: path.join(DATA_DIR, 'seed-vault.json'),
-    requiredHours: Number(process.env.SEED_REQUIRED_HOURS || 72),
+    requiredHours: v.SEED_REQUIRED_HOURS,
   });
   const resumo = vault.summary();
   if (resumo.pendentes > 0) {
@@ -113,22 +124,13 @@ async function main() {
   const asc = new AscClient({ stateFile: path.join(DATA_DIR, 'asc-session.json') });
   await asc.load();
 
-  const backgroundMode = (process.env.BACKGROUND_COMPLETE || 'off').toLowerCase();
-  if (!['off', 'auto'].includes(backgroundMode)) {
-    throw new Error('BACKGROUND_COMPLETE deve ser off ou auto.');
-  }
-  const afterSeed = (process.env.AFTER_SEED || 'delete').toLowerCase();
-  if (!['delete', 'stop', 'keep'].includes(afterSeed)) {
-    throw new Error('AFTER_SEED deve ser delete, stop ou keep.');
-  }
-  const idleMinutes = Number(process.env.BACKGROUND_IDLE_MINUTES || 10);
-  if (!Number.isFinite(idleMinutes) || idleMinutes < 1) {
-    throw new Error('BACKGROUND_IDLE_MINUTES deve ser um número ≥ 1.');
-  }
+  const backgroundMode = v.BACKGROUND_COMPLETE;
+  const afterSeed = v.AFTER_SEED;
+  const idleMinutes = v.BACKGROUND_IDLE_MINUTES;
 
   log.info('iniciando', {
-    node: process.version, pid: process.pid, host, bridgePort, addonPort, configPort: envInt('CONFIG_PORT', 7020),
-    afterSeed, backgroundMode, idleMinutes, keepAwake: (process.env.KEEP_AWAKE || 'auto').toLowerCase(),
+    node: process.version, pid: process.pid, host, bridgePort, addonPort, configPort, modo: cfg.mode,
+    afterSeed, backgroundMode, idleMinutes, keepAwake: v.KEEP_AWAKE,
     nivelDeLog: logger.level, uploadLimit, passkeyConfigurada: Boolean(passkey),
   });
 
@@ -141,7 +143,7 @@ async function main() {
     accessKey, adminKey, uploadLimit, announceBase, vault,
     backgroundMode, idleMs: idleMinutes * 60 * 1000, afterSeed,
     resumeOnStart: false, // painel e addon sobem primeiro; os torrents retomam em seguida
-    keepAwake: new KeepAwake({ mode: (process.env.KEEP_AWAKE || 'auto').toLowerCase() }),
+    keepAwake: new KeepAwake({ mode: v.KEEP_AWAKE }),
     accountNotice: () => asc.inactivityNotice(),
     trackerCheck: (hashes) => hnr.reconcile({ asc, vault, only: hashes }),
   });
@@ -156,7 +158,7 @@ async function main() {
   const library = await loadLibrary(torrentDir);
   console.log(`[addon] ${library.length} título(s) na biblioteca`);
 
-  const config = await startConfig(asc, envInt('CONFIG_PORT', 7020), {
+  const config = await startConfig(asc, configPort, {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
     complete: (infoHash) => bridge.requestCompletion(infoHash),
   });
@@ -164,18 +166,18 @@ async function main() {
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).
   bridge.ascResolver = (ascId) => remote.resolve(ascId);
   // Catálogo "ASC — status" dentro do Stremio (STATUS_CATALOG=off desliga).
-  const addonBase = process.env.ADDON_PUBLIC_URL || `http://${advertisedHost(host)}:${addonPort}`;
-  const status = (process.env.STATUS_CATALOG || 'on').toLowerCase() === 'off' ? null : {
+  const addonBase = v.ADDON_PUBLIC_URL || `http://${advertisedHost(host)}:${addonPort}`;
+  const status = v.STATUS_CATALOG === 'off' ? null : {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
     posterBase: addonBase,
-    panelUrl: `http://127.0.0.1:${envInt('CONFIG_PORT', 7020)}`,
+    panelUrl: `http://127.0.0.1:${configPort}`,
   };
   const addon = createAddon({
     status,
     remote,
     library,
     bridgeUrl: (infoHash, fileIdx) => bridge.urlFor(infoHash, fileIdx),
-    demo: process.env.DEMO_MODE === 'true',
+    demo: v.DEMO_MODE,
   });
 
   // serveHTTP do SDK escuta em todas as interfaces e não aceita host: monta o
@@ -195,7 +197,7 @@ async function main() {
     server.listen(addonPort, host, resolve);
   });
   console.log(`[addon] instale em http://${advertisedHost(host)}:${addonPort}/manifest.json`);
-  console.log(`[config] login em http://127.0.0.1:${envInt('CONFIG_PORT', 7020)}/`);
+  console.log(`[config] login em http://127.0.0.1:${configPort}/`);
   console.log(`[ponte] stream em ${publicUrl}/s/<infoHash>/<fileIdx>`);
 
   // Anti-HnR: concilia o cofre com o myHistory do tracker (ele vence), retoma
