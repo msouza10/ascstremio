@@ -1,0 +1,13 @@
+docs/README.md
+docs/instalacao.md
+docs/configuracao.md
+docs/uso.md
+docs/seed.md
+docs/seguranca.md
+docs/manutencao.md
+docs/arquitetura.md
+docs/desenvolvimento.md
+.github/SECURITY.md
+.github/CONTRIBUTING.md
+.github/COMMIT_CONVENTION.md
+.github/CODE_OF_CONDUCT.md

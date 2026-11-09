@@ -14,7 +14,7 @@
 - [ ] `scripts/check-no-secrets.sh .` passa (nenhuma passkey, cookie, `.torrent` ou `private/`)
 - [ ] Funciona em Linux, Windows e contêiner (sem caminhos fixos, sem `chmod` obrigatório)
 - [ ] Não enfraquece as proteções locais (127.0.0.1, `Host`, chave `?k=`, `Origin`)
-- [ ] Atualizei o `README.md`/`AGENTS.md` se mudou comportamento, comando ou variável
+- [ ] Atualizei o `README.md`, os guias de `docs/` e/ou `AGENTS.md` se mudou comportamento, comando ou variável
 
 ## Como testei
 

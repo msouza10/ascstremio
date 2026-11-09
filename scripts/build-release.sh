@@ -31,7 +31,12 @@ NAME="ascstremio-$VERSION"
 rm -rf dist/stage; mkdir -p dist/stage/"$NAME"
 sha() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 
-cp -R src scripts windows package.json package-lock.json README.md LICENSE Dockerfile docker-compose.yml .dockerignore dist/stage/"$NAME"/
+cp -R src scripts windows package.json package-lock.json README.md LICENSE AGENTS.md CHANGELOG.md release-please-config.json Dockerfile docker-compose.yml .dockerignore dist/stage/"$NAME"/
+# docs/ também guarda notas privadas ignoradas: copiar somente os guias públicos.
+while IFS= read -r doc; do
+  mkdir -p "dist/stage/$NAME/$(dirname "$doc")"
+  cp "$doc" "dist/stage/$NAME/$doc"
+done < scripts/documentation-files.txt
 cp -R test dist/stage/"$NAME"/
 find dist/stage -name '__pycache__' -prune -exec rm -rf {} +
 

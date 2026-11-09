@@ -2,7 +2,8 @@
 
 Obrigado por ajudar. Este guia é o caminho curto; os detalhes técnicos (mapa do código,
 invariantes de segurança, armadilhas) estão em [`AGENTS.md`](../AGENTS.md) e o uso em
-[`README.md`](../README.md).
+[índice de documentação](../docs/README.md). O [guia de desenvolvimento](../docs/desenvolvimento.md)
+explica ambiente, verificações e empacotamento.
 
 ## Antes de começar
 

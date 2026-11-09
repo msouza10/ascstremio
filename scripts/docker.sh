@@ -2,7 +2,7 @@
 # Cria e roda a imagem Docker (ou Podman) do Amigos Share · Stremio.
 #
 #   scripts/docker.sh build            constrói a imagem ascstremio:<versão> e :latest
-#   scripts/docker.sh run              constrói (se faltar) e sobe o contêiner, portas só em 127.0.0.1
+#   scripts/docker.sh run              constrói (se faltar) e sobe; HTTP local, peers 7030/TCP na rede
 #   scripts/docker.sh stop|logs|shell  para, mostra logs, abre um shell
 #   scripts/docker.sh passkey          grava a passkey no volume (lê do teclado, sem eco)
 #   scripts/docker.sh save [arquivo]   exporta a imagem (padrão dist/ascstremio-<versão>-image.tar.gz)
