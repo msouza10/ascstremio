@@ -41,7 +41,7 @@ function whyNoMain(entry) {
 // player faz o primeiro GET na URL da fonte (`resolve`), que é o momento do play.
 // Assim abrir a página de um filme não grava .torrent (com a sua passkey) nem
 // consome requisições à conta por opções que você não vai tocar.
-function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorrent } = {}) {
+function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorrent, cache = null, now = Date.now } = {}) {
   const records = new Map(); // id -> { row, query }
   const prepared = new Map(); // id -> Promise<{ infoHash, fileIdx }>  (download sob demanda)
   const unsupported = new Set(); // ids que não são filme de arquivo único: saem das listas
@@ -246,6 +246,98 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return task;
   }
 
+  // ---- Consulta por IMDb com queda para os arquivos locais -------------------------------------
+  // `availability`: a última tentativa online. Fora do ar NÃO há nova tentativa em laço: falha de
+  // sessão só tenta de novo quando a conta voltar a estar conectada (login no painel); falha de
+  // site/rede espera um intervalo. O cliente nunca relogia sozinho.
+  const OFFLINE_RETRY_MS = 30_000;
+  const OFFLINE_TEXT = {
+    session: 'a sessão do ASC está ausente ou expirou; entre novamente no painel',
+    network: 'sem conexão com o site do ASC (site fora do ar ou rede caída)',
+    site: 'o site do ASC recusou ou não concluiu a consulta',
+  };
+  let availability = { online: true, kind: null, message: null, since: null };
+  let retryAt = 0;
+
+  function markOffline(kind) {
+    const k = OFFLINE_TEXT[kind] ? kind : 'site';
+    if (availability.online) log.warn(`fontes online indisponíveis: ${OFFLINE_TEXT[k]}`);
+    availability = { online: false, kind: k, message: OFFLINE_TEXT[k], since: availability.since ?? now() };
+    retryAt = now() + OFFLINE_RETRY_MS;
+  }
+
+  // Dá para tentar o site agora? Sem sessão nunca vista (nem salva) nem se tenta; sessão que acabou
+  // de falhar só volta quando `connected`; os demais respeitam o intervalo.
+  function onlineGate() {
+    if (asc.connected === false && asc.saved === false) return 'session';
+    if (availability.online) return null;
+    if (availability.kind === 'session') return asc.connected === true ? null : 'session';
+    return now() < retryAt ? availability.kind : null;
+  }
+
+  // Fontes locais COMPLETAS em disco que o cache associa ao filme. Não toca na rede nem no
+  // .torrent do site; incompleto ou removido não entra (o play baixaria de novo).
+  function localStreams(video) {
+    const cached = cache?.get(video.imdbId);
+    if (!cached) return [];
+    const out = [];
+    for (const release of cached.releases) {
+      const local = bridge.entryByAscId?.(String(release.id));
+      const main = local ? mainVideo(local.files) : null;
+      if (!local || !main || bridge.diskState?.(local.infoHash) !== 'full') continue;
+      const row = { badges: release.badges };
+      const g = groups(row);
+      const quando = new Date(cached.at).toLocaleDateString('pt-BR');
+      out.push({
+        name: ['📁 Local', [g.resolution, g.source].filter(Boolean).join(' ')].filter(Boolean).join('\n'),
+        description: [
+          release.name,
+          [g.video.join(' · '), flagsOf(g, null), g.audio.filter((l) => !g.lang.includes(l)).join(' · ')].filter(Boolean).join(' ') || null,
+          `💾 ${fmtBytes(main.length)} · arquivo completo neste computador`,
+          `ℹ Fontes online indisponíveis: ${availability.message ?? 'ASC não consultado'}.`,
+          `Dados salvos em ${quando}${cached.stale ? ' (podem estar desatualizados)' : ''}.`,
+        ].filter(Boolean).join('\n'),
+        url: bridge.urlFor(local.infoHash, main.index),
+        behaviorHints: { notWebReady: true, bingeGroup: `asc-${release.id}`, filename: path.basename(main.path) },
+      });
+    }
+    return out;
+  }
+
+  // Busca por IMDb: online quando possível; senão cai para os arquivos locais completos. Devolve
+  // { streams, offline } — `offline` = null (consulta feita) ou { kind, message } com o motivo.
+  // Sem resultados na consulta online é ausência real (não cai para o cache). Nunca baixa .torrent.
+  async function lookup(video) {
+    if (video.type !== 'movie') return { streams: [], offline: null };
+    const blocked = onlineGate();
+    if (blocked) {
+      if (blocked === 'session' && availability.online) markOffline('session');
+      return { streams: localStreams(video), offline: { kind: availability.kind, message: availability.message } };
+    }
+    let rows;
+    try {
+      rows = await search(video.imdbId);
+    } catch (error) {
+      markOffline(error?.kind ?? (asc.connected === false && asc.saved === false ? 'session' : 'site'));
+      return { streams: localStreams(video), offline: { kind: availability.kind, message: availability.message } };
+    }
+    if (!availability.online) log.info('fontes online voltaram a responder');
+    availability = { online: true, kind: null, message: null, since: null };
+    // Imagens de disco e releases sem seeders vão para o fim da lista (continuam visíveis);
+    // no resto, mais seeders primeiro e, em empate, freeleech antes.
+    const weak = (row) => (isDisc(row) ? 2 : 0) + (row.seeders === 0 ? 1 : 0);
+    const ordered = [...rows].sort((a, b) => weak(a) - weak(b)
+      || (b.seeders ?? 0) - (a.seeders ?? 0)
+      || (b.freeleech === true) - (a.freeleech === true));
+    await loadOriginal(video.imdbId, rows);
+    const top = ordered.slice(0, MAX_OPTIONS);
+    const streams = top.map((row) => streamFromRow(row, video.imdbId)).filter(Boolean);
+    cache?.set(video.imdbId, top);
+    // Registrar apenas contagens e identidade pública do filme, sem dados do tracker.
+    console.log(`[asc] ${video.imdbId}: ${rows.length} release(s), ${streams.length} fonte(s), nenhum .torrent baixado`);
+    return { streams, offline: null };
+  }
+
   // Tamanho anunciado da release na listagem (bytes), para reservar disco antes do snatch.
   function sizeOf(rawId) {
     const n = Number(records.get(String(rawId))?.row?.size);
@@ -258,21 +350,10 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     meta(id) { const record = records.get(String(id)); return record ? meta(record.row) : null; },
     streamsFor,
     resolve,
-    async findStreams(video) {
-      if (video.type !== 'movie') return [];
-      const rows = await search(video.imdbId);
-      // Imagens de disco e releases sem seeders vão para o fim da lista (continuam visíveis);
-      // no resto, mais seeders primeiro e, em empate, freeleech antes.
-      const weak = (row) => (isDisc(row) ? 2 : 0) + (row.seeders === 0 ? 1 : 0);
-      const ordered = [...rows].sort((a, b) => weak(a) - weak(b)
-        || (b.seeders ?? 0) - (a.seeders ?? 0)
-        || (b.freeleech === true) - (a.freeleech === true));
-      await loadOriginal(video.imdbId, rows);
-      const streams = ordered.slice(0, MAX_OPTIONS).map((row) => streamFromRow(row, video.imdbId)).filter(Boolean);
-      // Registrar apenas contagens e identidade pública do filme, sem dados do tracker.
-      console.log(`[asc] ${video.imdbId}: ${rows.length} release(s), ${streams.length} fonte(s), nenhum .torrent baixado`);
-      return streams;
-    },
+    lookup,
+    availability: () => ({ ...availability }),
+    // Compatível com quem só quer a lista: a indisponibilidade fica em `lookup`/`availability`.
+    async findStreams(video) { return (await lookup(video)).streams; },
   };
 }
 

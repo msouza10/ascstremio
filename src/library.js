@@ -79,6 +79,22 @@ async function readTorrent(torrentPath) {
   };
 }
 
+// Entrada de `readTorrent` -> entrada do catálogo (id, título, vídeos, tipo), ou null se o torrent
+// não tem vídeo. Filme = um vídeo que domina o torrent (extras pequenos não contam); pack = vários
+// de tamanho parecido (série/temporada). Também serve a torrents baixados depois da partida.
+function describeEntry(entry) {
+  const allVideos = (entry?.files ?? []).filter((f) => f.isVideo);
+  if (allVideos.length === 0) return null;
+  const main = mainVideo(entry.files);
+  return {
+    ...entry,
+    id: `asc:${entry.infoHash}`,
+    title: displayName(entry),
+    videos: main ? [main] : allVideos,
+    kind: main ? 'movie' : 'series',
+  };
+}
+
 // Varre o diretório e monta o catálogo. Arquivos ilegíveis são ignorados com
 // aviso, sem derrubar o addon.
 async function loadLibrary(dir) {
@@ -96,18 +112,9 @@ async function loadLibrary(dir) {
     const full = path.join(dir, name);
     try {
       const entry = await readTorrent(full);
-      const allVideos = entry.files.filter((f) => f.isVideo);
-      if (allVideos.length === 0) continue; // sem vídeo: não interessa ao player
-      // Filme = um vídeo que domina o torrent (extras pequenos não contam).
-      // Pack = vários de tamanho parecido (série/temporada).
-      const main = mainVideo(entry.files);
-      entries.push({
-        ...entry,
-        id: `asc:${entry.infoHash}`,
-        title: displayName(entry),
-        videos: main ? [main] : allVideos,
-        kind: main ? 'movie' : 'series',
-      });
+      const described = describeEntry(entry);
+      if (!described) continue; // sem vídeo: não interessa ao player
+      entries.push(described);
     } catch {
       console.error(`[library] ignorado (não foi possível ler): ${path.basename(full)}`);
     }
@@ -117,4 +124,4 @@ async function loadLibrary(dir) {
   return entries;
 }
 
-module.exports = { loadLibrary, readTorrent, isVideo, mainVideo };
+module.exports = { loadLibrary, describeEntry, readTorrent, isVideo, mainVideo };

@@ -4,7 +4,8 @@ const path = require('path');
 
 const { getRouter } = require('stremio-addon-sdk');
 const { createAddon } = require('./addon');
-const { loadLibrary } = require('./library');
+const { loadLibrary, describeEntry } = require('./library');
+const { MetaCache } = require('./meta-cache');
 const { Bridge } = require('./bridge');
 const { AscClient } = require('./asc-client');
 const { startConfig } = require('./config-server');
@@ -160,7 +161,8 @@ async function main() {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
     complete: (infoHash) => bridge.requestCompletion(infoHash),
   });
-  const remote = createAscProvider(asc, bridge, torrentDir);
+  const metaCache = new MetaCache({ file: path.join(DATA_DIR, 'meta-cache.json') }).load();
+  const remote = createAscProvider(asc, bridge, torrentDir, { cache: metaCache });
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).
   bridge.ascResolver = (ascId) => remote.resolve(ascId);
   bridge.ascSizeHint = (ascId) => remote.sizeOf(ascId);
@@ -176,6 +178,10 @@ async function main() {
     status,
     remote,
     library,
+    // Biblioteca atual (inclui o baixado após a partida) com o estado em disco de cada item.
+    localEntries: () => [...bridge.entries.values()]
+      .map((entry) => { const item = describeEntry(entry); return item && { ...item, disk: bridge.diskState(entry.infoHash) }; })
+      .filter(Boolean),
     bridgeUrl: (infoHash, fileIdx) => bridge.urlFor(infoHash, fileIdx),
     demo: v.DEMO_MODE,
     statusAllowed: () => currentCredential()?.status === true,
