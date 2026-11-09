@@ -22,6 +22,7 @@ const PAGES = [/^\/$/, /^\/filmes$/, /^\/filmes\/[A-Za-z0-9_-]{1,64}$/, /^\/traf
 const QUIET = new Set(['/api/monitor', '/api/status', '/api/logs', '/api/logs/files', '/config.js']);
 const MAX_DOWNLOAD = 100_000;
 const PANEL_POSTS = ['/api/settings', '/api/settings/preview', '/api/wizard/complete', '/api/wizard/dismiss', '/api/credentials'];
+const ALERT_POSTS = ['/api/alerts/webhook', '/api/alerts/webhook/clear', '/api/alerts/test'];
 
 function staticFile(pathname) {
   if (!/^\/[A-Za-z0-9._/-]+$/.test(pathname) || pathname.includes('..')) return null;
@@ -38,7 +39,7 @@ function staticFile(pathname) {
 // alteram algo passam pelas mesmas barreiras dos POSTs existentes (Host, Origin, CSRF, JSON).
 // O painel só abre com a sessão ASC confirmada; os logs ficam acessíveis sem
 // sessão (é onde se descobre por que o login falhou), sempre só em loopback.
-async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogger, panel = null) {
+async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogger, panel = null, alerts = null) {
   const token = randomBytes(32).toString('hex');
   const origin = `http://127.0.0.1:${port}`;
   const log = logs.child('config');
@@ -141,7 +142,12 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         if (!asc.connected) return send(401, { error: 'Conecte e confirme a sessão do ASC para abrir as configurações.' });
         return send(200, url.pathname === '/api/settings' ? panel.state() : { credentials: panel.listCredentials() });
       }
-      const routes = ['/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/logs/level', ...PANEL_POSTS];
+      if (req.method === 'GET' && url.pathname === '/api/alerts') {
+        if (!alerts) return send(404, { error: 'Alertas indisponíveis.' });
+        if (!asc.connected) return send(401, { error: 'Conecte e confirme a sessão do ASC para abrir as configurações.' });
+        return send(200, alerts.status());
+      }
+      const routes = [...ALERT_POSTS, '/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/logs/level', ...PANEL_POSTS];
       if (req.method !== 'POST' || !routes.includes(url.pathname)) return send(404, { error: 'Página inexistente.' });
       if (req.headers.origin !== origin || req.headers['x-csrf-token'] !== token || req.headers['content-type'] !== 'application/json') {
         log.warn(`POST ${url.pathname} recusado: origem ou token CSRF inválido`);
@@ -151,6 +157,21 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       for await (const chunk of req) { bytes += chunk.length; if (bytes > 8192) return send(413, { error: 'Dados muito grandes.' }); chunks.push(chunk); }
       let body;
       try { body = JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { return send(400, { error: 'Dados inválidos.' }); }
+      if (ALERT_POSTS.includes(url.pathname)) {
+        if (!alerts) return send(404, { error: 'Alertas indisponíveis.' });
+        if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
+        // A URL e o bearer entram aqui (escrita apenas) e nunca voltam em resposta nem em log.
+        if (url.pathname === '/api/alerts/test') {
+          const r = await alerts.test();
+          log.info(`teste de alerta pedido pelo painel: ${r.ok ? 'entregue' : 'falhou'}`);
+          const headers = r.retryAfter ? { 'Retry-After': String(r.retryAfter) } : {};
+          res.writeHead(r.status, { 'Content-Type': 'application/json; charset=utf-8', ...headers });
+          return res.end(JSON.stringify({ ok: r.ok, error: r.error ?? null, status: alerts.status() }));
+        }
+        const r = url.pathname === '/api/alerts/webhook/clear' ? alerts.removeDestination() : alerts.setDestination({ url: body.url, bearerToken: body.bearerToken });
+        log.info(`destino de alertas ${url.pathname.endsWith('clear') ? 'removido' : 'definido'} pelo painel: ${r.ok ? 'ok' : 'recusado'}`);
+        return send(r.status, r.ok ? alerts.status() : { error: r.error });
+      }
       if (PANEL_POSTS.includes(url.pathname)) {
         if (!panel) return send(404, { error: 'Configurações indisponíveis.' });
         if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });

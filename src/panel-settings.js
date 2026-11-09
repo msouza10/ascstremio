@@ -73,7 +73,7 @@ function fromSettingsError(err) {
 // efetivos em uso agora (cfg.values da partida); applyLive(key, value): aplica sem reiniciar
 // (hoje só LOG_LEVEL), devolve true se aplicou; credentials: CredentialStore; addonBase: URL
 // do addon que os aparelhos usam (cfg.derived.network.urls.addon).
-function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => false, credentials = null, addonBase = null, addSecret = () => {}, interfaces = undefined, playback = null, peerPort = null } = {}) {
+function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => false, credentials = null, addonBase = null, addSecret = () => {}, interfaces = undefined, playback = null, peerPort = null, alertsGuard = null } = {}) {
   if (!dataDir || !bootEnv || !running) throw new Error('panel-settings: dataDir, bootEnv e running são obrigatórios');
   const live = { ...running };
   const wizardPath = path.join(dataDir, WIZARD_FILE);
@@ -233,6 +233,10 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     for (const key of keys) {
       const entry = settings.schemaEntry(key);
       if (entry.risky) throw new PanelError(403, 'terminal', `${key}: só pelo terminal, com o aplicativo parado (npm run configurar -- definir ${key}=...).`, [key]);
+    }
+    if (alertsGuard && changes.ALERTS_ENABLED !== undefined && changes.ALERTS_ENABLED !== null && String(changes.ALERTS_ENABLED).toLowerCase() === 'true') {
+      const why = alertsGuard(changes);
+      if (why) throw new PanelError(422, 'invalid', why, [why]);
     }
     // Texto do formulário -> tipo do esquema (mesma conversão da CLI).
     const typedChanges = {};
