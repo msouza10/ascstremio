@@ -27,6 +27,7 @@ Section "Instalar"
   CreateDirectory "$SMPROGRAMS\Amigos Share Stremio"
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Abrir painel.lnk" "$INSTDIR\open-panel.cmd" "" "$INSTDIR\node\node.exe"
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Parar servico.lnk" "$INSTDIR\stop.cmd"
+  CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Configuração.lnk" "cmd.exe" '/k ""$INSTDIR\configurar.cmd""'
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Pasta de dados.lnk" "$LOCALAPPDATA\AscStremio\data"
   ; Inicia sozinho ao entrar no Windows (precisa semear por 72 h).
   CreateShortcut "$SMSTARTUP\Amigos Share Stremio.lnk" "wscript.exe" '"$INSTDIR\launcher.vbs"'
