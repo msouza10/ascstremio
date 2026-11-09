@@ -59,12 +59,16 @@ async function findPoster(title, type = 'movie') {
   return poster;
 }
 
+// `localEntries` (opcional): função que devolve a biblioteca ATUAL (inclui o que foi baixado depois
+// da partida), cada item com `disk` ('full' | 'partial' | 'none'). Sem ela vale o `library` fixo.
 // `status` (opcional): { snapshot(), posterBase, panelUrl } — liga o catálogo "ASC — status".
-function createAddon({ provider = amigosShare, demo = false, library = [], bridgeUrl = null, remote = null, status = null, statusAllowed = () => true } = {}) {
+function createAddon({ provider = amigosShare, demo = false, library = [], localEntries = null, bridgeUrl = null, remote = null, status = null, statusAllowed = () => true } = {}) {
   // `statusAllowed` decide por requisição se o cliente enxerga ratio/avisos de status. Em produção
   // o index.js liga isso à credencial (negado por padrão); o padrão aberto serve só aos testes.
   const showStatus = () => Boolean(status) && statusAllowed();
-  const byHash = new Map(library.map((entry) => [entry.infoHash, entry]));
+  // Item sem nenhum dado em disco (arquivo removido) não é anunciado como disponível.
+  const currentLibrary = () => (localEntries ? localEntries().filter((entry) => entry.disk !== 'none') : library);
+  const findLocal = (infoHash) => currentLibrary().find((entry) => entry.infoHash === infoHash);
   const urlFor = bridgeUrl ?? ((infoHash, idx) => `http://127.0.0.1:7010/s/${infoHash}/${idx}`);
 
   const builder = new addonBuilder({
@@ -88,6 +92,16 @@ function createAddon({ provider = amigosShare, demo = false, library = [], bridg
   const statusItems = () => {
     try { return statusKit.buildItems(status.snapshot(), { panelUrl: status.panelUrl }); } catch (err) { log.warn(`status indisponível: ${err?.message ?? err}`); return []; }
   };
+  // Aviso de fontes online indisponíveis. Só abre o painel (externalUrl); não promete nada além
+  // dos arquivos locais completos listados abaixo dele.
+  const offlineNotice = (offline, locais) => {
+    return [{
+      name: '⚠ ASC indisponível',
+      description: `Fontes online indisponíveis: ${offline.message}.\n${locais ? `Abaixo, ${locais} arquivo(s) já baixado(s) neste computador.` : 'Nenhum arquivo deste filme está completo neste computador.'}\nToque para abrir o ${showStatus() && status.panelUrl ? 'painel' : 'site'}.`,
+      // Painel só para quem pode ver o status; para os demais, o próprio site (sem dado da conta).
+      externalUrl: showStatus() && status.panelUrl ? `${status.panelUrl}/` : 'https://amigos-share.club/',
+    }];
+  };
   // Aviso de risco crítico no topo das fontes de filmes ASC.
   const withAlert = (streams) => {
     if (!showStatus() || !Array.isArray(streams)) return streams;
@@ -100,15 +114,19 @@ function createAddon({ provider = amigosShare, demo = false, library = [], bridg
       return showStatus() ? { metas: statusKit.catalogMetas(statusItems(), status.posterBase), cacheMaxAge: 0 } : { metas: [], cacheMaxAge: 0 };
     }
     if (remote && type === 'movie' && id === 'asc-online') {
-      return { metas: await remote.catalog(extra?.search || ''), cacheMaxAge: 0 };
+      // ASC fora do ar não derruba o catálogo: lista vazia (o motivo aparece nas fontes por IMDb).
+      try { return { metas: await remote.catalog(extra?.search || ''), cacheMaxAge: 0 }; } catch (err) {
+        log.warn(`catálogo online indisponível: ${err?.message ?? err}`);
+        return { metas: [], cacheMaxAge: 0 };
+      }
     }
-    const metas = library
+    const metas = currentLibrary()
       .filter((entry) => entry.kind === type)
       .map((entry) => ({
         id: entry.id,
         type,
         name: entry.title,
-        description: `${humanSize(entry.size)} · teste de streaming ASC · ${entry.videos.length} arquivo(s)`,
+        description: `${humanSize(entry.size)} · teste de streaming ASC · ${entry.videos.length} arquivo(s)${entry.disk === 'partial' ? ' · incompleto neste computador' : ''}`,
       }));
 
     return { metas, cacheMaxAge: 0 };
@@ -120,7 +138,7 @@ function createAddon({ provider = amigosShare, demo = false, library = [], bridg
     if (remote && type === 'movie' && /^ascfilm:\d+$/.test(id)) return { meta: remote.meta(id.slice(8)) };
     const local = parseLocalId(id);
     if (local) {
-      const entry = byHash.get(local.infoHash);
+      const entry = findLocal(local.infoHash);
       if (!entry) return { meta: null };
 
       const poster = await findPoster(entry.title, type);
@@ -155,7 +173,7 @@ function createAddon({ provider = amigosShare, demo = false, library = [], bridg
     // 1) Item do catálogo local: caminho principal.
     const local = parseLocalId(id);
     if (local) {
-      const entry = byHash.get(local.infoHash);
+      const entry = findLocal(local.infoHash);
       if (!entry) return { streams: [], cacheMaxAge: 0 };
 
       const fileIdx = local.fileIdx ?? entry.videos[0].index;
@@ -183,7 +201,13 @@ function createAddon({ provider = amigosShare, demo = false, library = [], bridg
     const video = parseVideoId(type, id);
     if (video && !demo) {
       try {
-        const streams = remote ? await remote.findStreams(video) : await provider.findStreams(video, { library, urlFor, humanSize });
+        if (remote?.lookup) {
+          // Com o ASC indisponível, `lookup` cai para os arquivos locais completos e diz por quê.
+          const { streams, offline } = await remote.lookup(video);
+          const shown = offline ? [...offlineNotice(offline, streams.length), ...streams] : streams;
+          return { streams: withAlert(shown), cacheMaxAge: 0 };
+        }
+        const streams = remote ? await remote.findStreams(video) : await provider.findStreams(video, { library: currentLibrary(), urlFor, humanSize });
         if (Array.isArray(streams)) return { streams: remote ? withAlert(streams) : streams, cacheMaxAge: 0 };
       } catch (err) {
         // O corpo das respostas do provedor não vai ao log; só o motivo (o logger ainda redige segredos).
