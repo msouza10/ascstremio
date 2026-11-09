@@ -386,7 +386,9 @@ class Bridge {
   admitTorrent(infoHash) {
     // Já no motor (ou abrindo): a admissão foi feita na abertura; novos Range/seek não pagam de novo.
     if (this.loading.has(infoHash) || (this.client?.torrents ?? []).some((t) => t.infoHash === infoHash)) return;
-    if (this.diskState(infoHash) === 'full') return;
+    // Só dispensa quem o cofre registra como CONCLUÍDO (e com os arquivos inteiros): o tamanho aparente
+    // sozinho engana, pois um arquivo esparso de streaming que o player levou até o fim parece cheio.
+    if (this.vault.get(infoHash)?.completedAt && this.diskState(infoHash) === 'full') return;
     this.disk.require({ holder: infoHash, need: this.neededBytes(infoHash), live: this.liveRemaining });
   }
 

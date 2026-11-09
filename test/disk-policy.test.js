@@ -227,11 +227,23 @@ test('dois plays simultâneos de downloads grandes não aprovam a mesma folga', 
   assert.throws(() => b.admitTorrent(HASH2), (e) => e instanceof DiskRefusal && e.status === 507);
 });
 
-test('torrent já completo em disco só semeia: não passa pela reserva, nem sem medição', () => {
+test('torrent concluído e inteiro em disco só semeia: não passa pela reserva, nem sem medição', () => {
   const { b, dir } = ponte({ freeSpace: () => { throw new Error('statfs indisponível'); } });
   fs.writeFileSync(path.join(dir, 'filme.mkv'), Buffer.alloc(1));
   b.entries.get(HASH).files = [{ path: 'filme.mkv', length: 1 }];
+  b.vault.markSeen(HASH, {});
+  b.vault.markCompleted(HASH);
   b.admitTorrent(HASH); // não lança
+});
+
+// No Windows o statfs/stat não expõe blocos alocados (st.blocks): a contagem usa o tamanho aparente.
+test('arquivo esparso com tamanho aparente completo, mas não concluído, continua sujeito à reserva', { skip: process.platform === 'win32' }, () => {
+  const { b, dir } = ponte({ freeSpace: () => 100 });
+  const arquivo = path.join(dir, 'filme.mkv');
+  fs.writeFileSync(arquivo, '');
+  fs.truncateSync(arquivo, 5e8); // só o tamanho aparente; sem blocos alocados
+  assert.equal(b.diskState(HASH), 'full', 'o tamanho aparente engana o diskState');
+  assert.throws(() => b.admitTorrent(HASH), (e) => e instanceof DiskRefusal && e.status === 507);
 });
 
 test('torrent já no motor não paga de novo a cada Range', () => {
