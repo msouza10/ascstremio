@@ -143,6 +143,27 @@ release nasce rascunho; a esteira testa, monta o pacote Linux (`ascstremio-X.Y.Z
 (`ghcr.io/<dono>/ascstremio`: `X.Y.Z`, `X.Y`, `latest`; amd64 e arm64) e só então publica o release.
 Falhou algum passo = o release segue rascunho. Não crie tags à mão.
 
+## Pull requests: revisões e comentários
+
+**Nunca ignore comentários de PR.** Checks verdes não bastam: antes de qualquer merge (inclusive
+PRs do Dependabot e do release-please), leia tudo o que foi escrito e decida sobre cada ponto.
+
+- **Leia sempre:** comentários gerais, reviews e comentários em linhas do código. Por exemplo:
+  `gh pr view N --json state,reviewDecision,comments,reviews,statusCheckRollup` e
+  `gh api repos/<dono>/ascstremio/pulls/N/comments`. Revisores automáticos (Codex etc.) contam
+  como revisores: um "achado não resolvido" bloqueia o merge.
+- **Analise se faz sentido.** Verifique a alegação no código antes de agir; revisor, humano ou
+  automático, pode errar. Não aceite nem descarte por reflexo.
+- **Resolva ou responda.** Se procede, corrija no mesmo PR (commit novo, sem reescrever histórico) e
+  diga o que mudou. Se não procede, responda no PR explicando o porquê, com evidência. Nenhum
+  comentário fica sem desfecho; só marque como resolvido o que de fato foi tratado.
+- **Depois de corrigir,** espere o CI rodar de novo e releia os comentários: um novo push pode
+  gerar novos achados.
+- **Só então faça o merge**, e apenas quando o usuário pedir. Mencione no relato final o que os
+  revisores disseram e como cada ponto foi tratado.
+- Check falhando também não se ignora, mesmo parecendo instabilidade: investigue e rode de novo
+  antes de mergear.
+
 ## CI (`.github/workflows/ci.yml`)
 
 Em push e pull request: testes (Ubuntu e Windows × Node 22 e 24), `shellcheck`, `actionlint`,
