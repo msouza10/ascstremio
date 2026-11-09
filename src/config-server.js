@@ -5,6 +5,7 @@ const { randomBytes } = require('node:crypto');
 const { AscError } = require('./asc-client');
 const { Logger, logger: defaultLogger, LEVEL_NAMES } = require('./logger');
 const { configHost } = require('./safety');
+const { PanelError } = require('./panel-settings');
 
 // Tela local do addon. O CSP só aceita script/estilo/fonte do próprio servidor,
 // então nada é inline e só arquivos de src/ui/ com extensão conhecida saem daqui.
@@ -16,10 +17,11 @@ const TYPES = {
   '.svg': 'image/svg+xml',
 };
 // Páginas do painel: todas devolvem o mesmo shell, o roteador do cliente escolhe a view.
-const PAGES = [/^\/$/, /^\/filmes$/, /^\/filmes\/[A-Za-z0-9_-]{1,64}$/, /^\/trafego$/, /^\/logs$/, /^\/conta$/, /^\/entrar$/];
+const PAGES = [/^\/$/, /^\/filmes$/, /^\/filmes\/[A-Za-z0-9_-]{1,64}$/, /^\/trafego$/, /^\/logs$/, /^\/conta$/, /^\/entrar$/, /^\/configuracoes$/, /^\/assistente$/];
 // Leituras repetidas pelo próprio painel: não geram linha de log (seria ruído e laço).
 const QUIET = new Set(['/api/monitor', '/api/status', '/api/logs', '/api/logs/files', '/config.js']);
 const MAX_DOWNLOAD = 100_000;
+const PANEL_POSTS = ['/api/settings', '/api/settings/preview', '/api/wizard/complete', '/api/wizard/dismiss', '/api/credentials'];
 
 function staticFile(pathname) {
   if (!/^\/[A-Za-z0-9._/-]+$/.test(pathname) || pathname.includes('..')) return null;
@@ -31,13 +33,39 @@ function staticFile(pathname) {
 }
 
 // `monitor` (opcional): { snapshot(), complete(infoHash) } vindos da ponte.
+// `panel` (opcional): createPanelSettings(...) de src/panel-settings.js (assistente e página de
+// configurações, issue #23). Todas as rotas dele exigem sessão do ASC confirmada, e as que
+// alteram algo passam pelas mesmas barreiras dos POSTs existentes (Host, Origin, CSRF, JSON).
 // O painel só abre com a sessão ASC confirmada; os logs ficam acessíveis sem
 // sessão (é onde se descobre por que o login falhou), sempre só em loopback.
-async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogger) {
+async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogger, panel = null) {
   const token = randomBytes(32).toString('hex');
   const origin = `http://127.0.0.1:${port}`;
   const log = logs.child('config');
   let lastLogin = 0;
+  const handlePanel = async (route, body) => {
+    try {
+      if (route === '/api/settings/preview') return [200, panel.preview(body)];
+      if (route === '/api/settings') {
+        const out = panel.save(body);
+        log.info(`configuração alterada pelo painel: ${out.changes.map((c) => c.key).join(', ') || 'sem mudança'} (revisão ${out.revision})`);
+        return [200, out];
+      }
+      if (route === '/api/wizard/complete' || route === '/api/wizard/dismiss') {
+        const state = panel.wizardMark(route.endsWith('complete') ? 'complete' : 'dismiss');
+        log.info(`assistente de configuração: ${route.endsWith('complete') ? 'concluído' : 'adiado'}`);
+        return [200, state];
+      }
+      // /api/credentials: o token sai só aqui, uma vez (nunca é registrado em log).
+      const made = panel.createCredential(body);
+      log.info(`credencial de instalação emitida pelo painel: ${made.credential.id}`);
+      return [201, made];
+    } catch (error) {
+      if (!(error instanceof PanelError)) throw error;
+      log.warn(`${route}: ${error.code}: ${error.message}`);
+      return [error.status, { error: error.message, code: error.code, problems: error.problems }];
+    }
+  };
   const server = http.createServer(async (req, res) => {
     const started = Date.now();
     res.setHeader('Cache-Control', 'no-store');
@@ -108,7 +136,12 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         if (!asc.connected) return send(401, { error: 'Conecte e confirme a sessão do ASC para abrir o painel.' });
         return send(200, monitor.snapshot());
       }
-      const routes = ['/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/logs/level'];
+      if (req.method === 'GET' && (url.pathname === '/api/settings' || url.pathname === '/api/credentials')) {
+        if (!panel) return send(404, { error: 'Configurações indisponíveis.' });
+        if (!asc.connected) return send(401, { error: 'Conecte e confirme a sessão do ASC para abrir as configurações.' });
+        return send(200, url.pathname === '/api/settings' ? panel.state() : { credentials: panel.listCredentials() });
+      }
+      const routes = ['/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/logs/level', ...PANEL_POSTS];
       if (req.method !== 'POST' || !routes.includes(url.pathname)) return send(404, { error: 'Página inexistente.' });
       if (req.headers.origin !== origin || req.headers['x-csrf-token'] !== token || req.headers['content-type'] !== 'application/json') {
         log.warn(`POST ${url.pathname} recusado: origem ou token CSRF inválido`);
@@ -118,6 +151,11 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       for await (const chunk of req) { bytes += chunk.length; if (bytes > 8192) return send(413, { error: 'Dados muito grandes.' }); chunks.push(chunk); }
       let body;
       try { body = JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { return send(400, { error: 'Dados inválidos.' }); }
+      if (PANEL_POSTS.includes(url.pathname)) {
+        if (!panel) return send(404, { error: 'Configurações indisponíveis.' });
+        if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
+        return send(...await handlePanel(url.pathname, body));
+      }
       if (url.pathname === '/api/logs/level') {
         if (typeof body.nivel !== 'string' || !logs.setLevel(body.nivel)) return send(400, { error: 'Nível inválido.' });
         log.info(`nível mínimo de gravação alterado para ${body.nivel}`);

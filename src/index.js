@@ -21,6 +21,7 @@ const { createAddonHandler } = require('./addon-auth');
 const { KeepAwake } = require('./keepawake');
 const { logger, initFiles } = require('./logger');
 const { acquireInstance }  = require('./instance-lock');
+const { createPanelSettings } = require('./panel-settings');
 
 // Onde ficam passkey, sessão, cofre, logs, .torrent e cache. Fora do código para
 // sobreviver a atualizações (instalador, contêiner, Windows em %LOCALAPPDATA%).
@@ -67,6 +68,8 @@ async function main() {
     }
   }
   // Leitores antigos (safety, bridge, keepawake) consultam process.env: recebem só o que veio do arquivo.
+  // O painel precisa saber o que veio do AMBIENTE de verdade: applyToEnv mistura o arquivo em process.env.
+  const bootEnv = { ...process.env };
   settings.applyToEnv(cfg);
   logger.setLevel(v.LOG_LEVEL);
   initFiles(path.join(DATA_DIR, 'logs'), { retentionDays: v.LOG_RETENTION_DAYS });
@@ -156,10 +159,18 @@ async function main() {
   const library = await loadLibrary(torrentDir);
   console.log(`[addon] ${library.length} título(s) na biblioteca`);
 
+  // Assistente e página de configurações: escrevem no settings.json por este processo, que já
+  // detém a trava da instância (não há segundo escritor). LOG_LEVEL vale na hora; o resto, ao reiniciar.
+  const panel = createPanelSettings({
+    dataDir: DATA_DIR, bootEnv, running: cfg.values, credentials,
+    addonBase: net.urls.addon,
+    addSecret: (secret) => logger.addSecret(secret),
+    applyLive: (key, value) => (key === 'LOG_LEVEL' ? logger.setLevel(value) : false),
+  });
   const config = await startConfig(asc, configPort, {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
     complete: (infoHash) => bridge.requestCompletion(infoHash),
-  });
+  }, undefined, panel);
   const remote = createAscProvider(asc, bridge, torrentDir);
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).
   bridge.ascResolver = (ascId) => remote.resolve(ascId);
