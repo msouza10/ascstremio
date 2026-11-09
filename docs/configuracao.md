@@ -7,7 +7,7 @@ As variáveis são lidas na inicialização. Reinicie a instância depois de alt
 Cada opção vem de uma de três origens, da mais forte para a mais fraca:
 
 1. **Ambiente** (shell, `service.env`, Compose): sempre vence e nunca é sobrescrito por outra origem.
-2. **Arquivo `DATA_DIR/settings.json`** (modo `0600`, gravado de forma atômica, com `version` e `revision`): usado pelas interfaces de configuração que vierem (terminal e painel). Não precisa existir e não é criado na partida; quem usa só variáveis de ambiente continua exatamente como antes.
+2. **Arquivo `DATA_DIR/settings.json`** (modo `0600`, gravado de forma atômica, com `version` e `revision`): usado pelas interfaces de configuração (terminal, descrito abaixo, e painel). Não precisa existir e não é criado na partida; quem usa só variáveis de ambiente continua exatamente como antes.
 3. **Padrão** do esquema (tabelas abaixo).
 
 Regras que valem para qualquer origem:
@@ -28,6 +28,41 @@ Regras que valem para qualquer origem:
 - Compose: use `environment` no serviço; recrie o contêiner para aplicar mudanças. Um `.env` do Compose só interpola o YAML quando referenciado.
 - `scripts/docker.sh run` repassa diretamente apenas `AFTER_SEED` e `LOG_LEVEL`, além dos padrões da imagem; outras opções exigem ajustar a invocação ou usar Compose.
 - Windows: não há carregamento de `service.env` pelo launcher; configure o ambiente herdado pelo processo e reinicie-o.
+
+## Configuração pelo terminal
+
+Depois de instalar, a configuração também se consulta e se altera pelo terminal (no host ou por SSH), com a mesma validação da partida. Não é um terminal servido no navegador e não depende da sessão do ASC: serve para consertar rede e painel mesmo com a sessão expirada.
+
+| Onde | Comando |
+|---|---|
+| Linux (código ou pacote) | `npm run configurar -- <comando>`; o instalador imprime a linha completa com `DATA_DIR` e o Node usado |
+| Contêiner | `scripts/docker.sh configurar <comando>` |
+| Windows | `configurar.cmd <comando>` na pasta de instalação (atalho "Configuração" no Menu Iniciar) |
+
+Sem comando e em terminal interativo abre o **modo guiado** (ver todas as opções, trocar local/LAN, alterar, remover, diagnóstico e recuperação). Sem terminal (cron, `docker exec` sem `-t`, pipe) nada espera entrada: sem comando, ou `guiado`, falha com o uso.
+
+| Comando | O que faz |
+|---|---|
+| `listar [--json] [--detalhes]` | Todas as opções com valor efetivo, **origem** (`ambiente`, `ambiente (service.env)`, `arquivo`, `padrão`) e se **exige reinício** |
+| `obter CHAVE [--json]` | Uma opção, com descrição, valores aceitos e padrão |
+| `definir CHAVE=VALOR... [--revisao N] [--json]` | Grava no `settings.json` (também `definir CHAVE VALOR`) |
+| `remover CHAVE... [--revisao N]` | Tira do arquivo; volta ao ambiente ou padrão |
+| `modo [local\|lan]` | Mostra ou troca o modo de uso |
+| `validar [--json]` | Confere ambiente + arquivo; sai com 1 se houver problema |
+| `diagnosticar [--json]` | Arquivo, `service.env`, instância ativa, problemas e como consertar |
+| `recuperar [--sim]` | Renomeia (nunca apaga) um `settings.json` quebrado para `settings.json.quebrado-<data>` |
+
+Regras:
+
+- **Segredos nunca por argumento nem na saída.** `PASSKEY` e `ANNOUNCE_BASE` são recusadas (`definir PASSKEY=...` falha sem repetir o valor); aparecem só como "definido" ou "não definido". A passkey continua em `passkey.txt` ou no ambiente. Senhas do ASC não passam por aqui.
+- **Escrita exige o aplicativo parado.** A CLI adquire a [trava da instância](manutencao.md#uma-instância-por-instalação) antes de gravar; com o serviço ligado a alteração é recusada (código 3) em vez de escrever por trás dele. Consultar (`listar`, `obter`, `validar`, `diagnosticar`) funciona com ele ligado. Fluxo: pare o serviço, altere, inicie. No contêiner: `scripts/docker.sh stop`, `scripts/docker.sh configurar ...`, `scripts/docker.sh run`.
+- **Controle de versão.** Cada gravação confere a revisão lida; `--revisao N` usa a revisão que você leu antes (`listar --json`), e um arquivo alterado no meio do caminho é recusado (código 4).
+- **O ambiente vence.** Opção definida por variável de ambiente ou `service.env` é recusada (a origem é `ambiente`); edite o `service.env`/Compose. A CLI lê o `DATA_DIR/service.env` para mostrar o mesmo ambiente do serviço Linux; em shell, contêiner (`docker exec` herda o ambiente do contêiner; `run --rm` só tem o da imagem) e Windows ela vê apenas as variáveis do próprio processo. Rode-a no mesmo ambiente do aplicativo.
+- **Reinício.** As alterações valem na próxima partida do aplicativo (a CLI não fala com o processo em execução). A saída lista as que exigem reinício.
+- **Configuração quebrada.** `settings.json` corrompido, de versão futura ou com valor inválido recusa a partida e `definir` não regrava por cima. `diagnosticar` aponta o problema; `recuperar` isola o arquivo (guarda cópia) para voltar a ambiente + padrões. Problemas que vêm do ambiente não são tocados.
+- **Modo LAN.** `modo lan` passa pela mesma validação (em contêiner exige `BRIDGE_PUBLIC_URL` e `ADDON_PUBLIC_URL`) e mostra o aviso de segurança. Voltar a `local` não apaga dados.
+
+Códigos de saída: `0` ok; `1` recusado ou inválido; `2` uso incorreto ou sem terminal; `3` aplicativo em execução; `4` conflito de revisão. Com `--json` os erros saem como `{"ok":false,"code":...,"problems":[...]}`.
 
 ## Credenciais e caminhos
 

@@ -29,6 +29,7 @@ O download do torrent usa a sessão do site. O announce usa a passkey, injetada 
 | Código | Responsabilidade |
 |---|---|
 | `src/credentials.js`, `src/addon-auth.js`, `src/credenciais-cli.js` | Credenciais de instalação (emissão, verificador, revogação), porta autenticada do addon e CLI de gestão |
+| `src/config-admin.js`, `src/configurar-cli.js` | Operações de configuração (leitura, alteração com trava da instância e revisão, recuperação) e a CLI/menu do terminal; a lógica é separada da apresentação para o assistente web reutilizar |
 | `src/index.js` | Ambiente, composição dos servidores e encerramento |
 | `src/addon.js`, `src/asc-provider.js` | Catálogos, busca e fontes; resolução online sob demanda |
 | `src/asc-client.js` | Login, cookies, serialização de consultas, download e leitura da atividade/conta |

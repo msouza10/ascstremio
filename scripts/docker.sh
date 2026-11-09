@@ -6,6 +6,7 @@
 #   scripts/docker.sh stop|logs|shell  para, mostra logs, abre um shell
 #   scripts/docker.sh passkey          grava a passkey no volume (lê do teclado, sem eco)
 #   scripts/docker.sh credenciais ...  gerencia credenciais de reprodução (garantir, criar, listar, revogar)
+#   scripts/docker.sh configurar ...   configuração no terminal (listar, definir, validar, recuperar; sem argumentos: guiado)
 #   scripts/docker.sh save [arquivo]   exporta a imagem (padrão dist/ascstremio-<versão>-image.tar.gz)
 #
 # Dados no volume nomeado "ascstremio-data" (/data no contêiner). Usa docker ou podman.
@@ -41,6 +42,19 @@ case "${1:-run}" in
   logs) "$ENGINE" logs -f --tail 100 "$NAME" ;;
   shell) "$ENGINE" exec -it "$NAME" sh ;;
   credenciais) shift; "$ENGINE" exec "$NAME" node src/credenciais-cli.js "$@" ;;
+  configurar)
+    shift
+    # -i/-t só com terminal: sem TTY a CLI não espera entrada e falha com o uso.
+    tty_flags=(); [ -t 0 ] && [ -t 1 ] && tty_flags=(-it)
+    if [ "$("$ENGINE" container inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null || true)" = true ]; then
+      # Em execução: consultas funcionam; alterações são recusadas pela trava (pare antes: scripts/docker.sh stop).
+      "$ENGINE" exec ${tty_flags[@]+"${tty_flags[@]}"} "$NAME" node src/configurar-cli.js "$@"
+    else
+      "$ENGINE" volume create "$VOLUME" >/dev/null
+      "$ENGINE" image inspect "$NAME:latest" >/dev/null 2>&1 || build
+      "$ENGINE" run --rm ${tty_flags[@]+"${tty_flags[@]}"} --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+        -v "$VOLUME:/data" --entrypoint node "$NAME:latest" src/configurar-cli.js "$@"
+    fi ;;
   passkey)
     read -r -s -p "Passkey do ASC: " pk; echo
     [ -n "$pk" ] || { echo "vazia, nada gravado" >&2; exit 1; }
@@ -50,5 +64,5 @@ case "${1:-run}" in
   save)
     out="${2:-dist/$NAME-$VERSION-image.tar.gz}"; mkdir -p "$(dirname "$out")"
     "$ENGINE" save "$NAME:latest" | gzip -9 > "$out"; echo "$out" ;;
-  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

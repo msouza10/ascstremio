@@ -74,3 +74,5 @@ Em outro aparelho, `127.0.0.1` aponta para esse aparelho. Alterar as URLs requer
 A biblioteca local lê `.torrent` em `DATA_DIR/torrents`; sua presença não significa que o vídeo esteja baixado ou que seja freeleech. Não compartilhe esses arquivos ou importe credenciais alheias.
 
 `DEMO_MODE=true npm start` adiciona uma fonte externa para **Big Buck Bunny (2008)**. Ela depende de um servidor público e não valida login, tracker privado, seed ou reprodução pela ponte. A integração online continua voltada a filmes, mesmo que o parser aceite identificadores de episódios.
+
+Para consultar ou mudar portas, modo local/LAN e políticas sem o painel, use a [configuração pelo terminal](configuracao.md#configuração-pelo-terminal).

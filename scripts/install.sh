@@ -245,6 +245,7 @@ fi
 # ----------------------------------------------------------------------- serviço
 if [ "$WANT_SERVICE" -eq 0 ]; then
   step "Serviço"; ok "não criado. Para rodar à mão: cd $PROJECT && DATA_DIR=$DATA_DIR npm start"
+  ok "configuração no terminal (com o aplicativo parado para alterar): cd $PROJECT && DATA_DIR=$DATA_DIR npm run configurar"
   exit 0
 fi
 
@@ -405,7 +406,8 @@ cat <<EOF
   Addon (Stremio): $ADDON_LINE
   Estado         : systemctl --user status $UNIT_NAME
   Logs           : journalctl --user -u $UNIT_NAME -f
-  Configuração   : $ENV_FILE  (depois: systemctl --user restart $UNIT_NAME)
+  Configuração   : DATA_DIR="$DATA_DIR" "$NODE_BIN" "$PROJECT/src/configurar-cli.js"  (ou: npm run configurar)
+                   variáveis fixas do serviço: $ENV_FILE  (depois: systemctl --user restart $UNIT_NAME)
   Desinstalar    : scripts/install.sh --uninstall
 EOF
 echo "  $WARNINGS aviso(s), $BLOCKERS pendência(s)."
