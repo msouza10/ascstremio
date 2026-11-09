@@ -7,13 +7,16 @@ const { Readable } = require('node:stream');
 const { Bridge } = require('../src/bridge');
 const { SeedVault } = require('../src/seedvault');
 const { tmpdir } = require('./tmp-helper');
+const { CredentialStore } = require('../src/credentials');
 
 const LOCAL = { remoteAddress: '127.0.0.1' };
 const tmp = () => path.join(tmpdir('lazy-'), 'v.json');
 const HASH = '1'.padStart(40, 'a');
+const store = new CredentialStore({ file: path.join(tmpdir('lazy-cred-'), 'credentials.json') });
+const { token: TOKEN } = store.create({ name: 'teste' });
 
 function ponte(over = {}) {
-  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', port: 7099, publicUrl: 'http://127.0.0.1:7010/', vault: new SeedVault({ file: tmp() }), ...over });
+  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', port: 7099, publicUrl: 'http://127.0.0.1:7010/', credentials: store, vault: new SeedVault({ file: tmp() }), ...over });
   b.client = { torrents: [] };
   return b;
 }
@@ -27,7 +30,8 @@ function resposta() {
     off(ev, fn) { return this.removeListener(ev, fn); } });
   return r;
 }
-const pedido = (method, url, headers = {}) => ({ method, url, headers, socket: LOCAL });
+// Os pedidos de vídeo levam a credencial de instalação (?k=), como as URLs emitidas ao Stremio.
+const pedido = (method, url, headers = {}) => ({ method, url: `${url}${url.includes('?') ? '&' : '?'}k=${TOKEN}`, headers, socket: LOCAL });
 const corpo = (res) => Buffer.concat(res.chunks).toString();
 
 function torrentFalso(bytes) {

@@ -185,7 +185,7 @@ Mantenha o terminal aberto. `Ctrl+C` encerra o aplicativo e o seed. A retomada o
 
 ## Passkey do tracker
 
-A senha autentica a sessão do site; a **passkey** autentica os anúncios BitTorrent. Configure ambas para usar a integração completa. A passkey não é a chave `bridge-key` de reprodução, gerada pelo aplicativo.
+A senha autentica a sessão do site; a **passkey** autentica os anúncios BitTorrent. Configure ambas para usar a integração completa. A passkey não é a credencial de reprodução do addon, emitida pelo aplicativo (`credentials.json`).
 
 Na execução manual ou serviço Linux, guarde sua passkey em `passkey.txt` dentro da pasta de dados, sem espaços extras. No Linux/macOS, uma forma de digitá-la sem incluí-la no histórico é:
 
@@ -205,7 +205,7 @@ O exemplo é para Bash e para o `DATA_DIR` padrão do código. Em uma instalaç�
 
 1. Abra **http://127.0.0.1:7020/** e faça login no ASC. A senha é usada para entrar; a sessão é salva em disco.
 2. Mantenha **somente freeleech** ativado até entender as regras de ratio e seed.
-3. Instale **http://127.0.0.1:7000/manifest.json** no Stremio.
+3. Emita a credencial de reprodução (o instalador Linux já emite a primeira): `npm run credenciais -- garantir`; no contêiner, `scripts/docker.sh credenciais garantir`; no Windows, `node\node.exe app\src\credenciais-cli.js garantir` na pasta de instalação (com `DATA_DIR` igual ao do aplicativo). Instale no Stremio a URL `http://127.0.0.1:7000/<credencial>/manifest.json` mostrada na saída; ela aparece só uma vez.
 4. Confira os dados da conta no painel. Se ainda não foram lidos, não interprete a ausência de avisos como regularidade.
 
 Siga para [uso](uso.md) ou [diagnóstico](manutencao.md#diagnóstico).

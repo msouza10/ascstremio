@@ -34,7 +34,7 @@ npm start
 
 1. Abra o painel em **http://127.0.0.1:7020/** e conecte sua conta individual do ASC. O filtro **somente freeleech** começa ativado.
 2. Configure sua passkey conforme o [guia de instalação](docs/instalacao.md#passkey-do-tracker). A senha de login e a passkey têm funções diferentes.
-3. No Stremio, instale o addon pela URL **http://127.0.0.1:7000/manifest.json**.
+3. Emita a credencial de reprodução com `npm run credenciais -- garantir` (o instalador Linux já faz isso) e instale no Stremio a URL `http://127.0.0.1:7000/<credencial>/manifest.json` que ele mostra, uma única vez. Detalhes em [segurança](docs/seguranca.md#credenciais-de-instalação-do-addon).
 4. Em Descobrir → Filmes, abra **ASC — filmes**. Use **ASC — status** e o painel para acompanhar pendências.
 
 Use `npm start`, que inclui a opção de cabeçalhos HTTP exigida pela integração. Se já houver uma instalação em execução, pare-a antes de iniciar outra com as mesmas portas e pasta de dados.
@@ -62,7 +62,7 @@ O [índice dos guias](docs/README.md) organiza a leitura por tarefa. O [changelo
 
 ## Limites atuais
 
-Os serviços HTTP ficam no loopback do host por padrão. O modo LAN é opcional e tem limitações; a administração da ponte exige um token próprio (`admin-key`), separado da chave de reprodução. A porta de peers BitTorrent tem exposição diferente dos serviços HTTP. Consulte [segurança e rede](docs/seguranca.md) antes de alterar a instalação.
+Os serviços HTTP ficam no loopback do host por padrão. O modo LAN é opcional e tem limitações; a administração da ponte exige um token próprio (`admin-key`), separado das credenciais de reprodução, que são individuais e revogáveis. A porta de peers BitTorrent tem exposição diferente dos serviços HTTP. Consulte [segurança e rede](docs/seguranca.md) antes de alterar a instalação.
 
 A auditoria completa do histórico e a validação das regras do ASC para distribuição pública estão pendentes ([#11](https://github.com/msouza10/ascstremio/issues/11), [#14](https://github.com/msouza10/ascstremio/issues/14)). O código é distribuído sob a [licença MIT](LICENSE). O uso de conta individual não equivale a autorização do tracker nem concede direitos sobre conteúdo de terceiros.
 

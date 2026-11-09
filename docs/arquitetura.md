@@ -28,7 +28,8 @@ O download do torrent usa a sessão do site. O announce usa a passkey, injetada 
 
 | Código | Responsabilidade |
 |---|---|
-| `src/index.js` | Ambiente, persistência da chave de reprodução, composição dos servidores e encerramento |
+| `src/credentials.js`, `src/addon-auth.js`, `src/credenciais-cli.js` | Credenciais de instalação (emissão, verificador, revogação), porta autenticada do addon e CLI de gestão |
+| `src/index.js` | Ambiente, composição dos servidores e encerramento |
 | `src/addon.js`, `src/asc-provider.js` | Catálogos, busca e fontes; resolução online sob demanda |
 | `src/asc-client.js` | Login, cookies, serialização de consultas, download e leitura da atividade/conta |
 | `src/library.js` | Leitura da biblioteca e seleção do vídeo principal |
@@ -48,14 +49,15 @@ Rotas relativas a `http://127.0.0.1:7010`, com as verificações de Host habilit
 | Método e rota | Finalidade | Controle atual |
 |---|---|---|
 | `GET /health` | Saúde do processo e quantidade de torrents | Host permitido; não comprova sessão ou regularidade da conta |
-| `GET/HEAD /a/<id>` | Fonte online resolvida sob demanda | Chave `?k=`; HEAD não baixa torrent |
-| `GET/HEAD /s/<hash>/<idx>` | Arquivo de torrent da biblioteca | Chave `?k=`; suporte a Range na reprodução |
+| `GET/HEAD /a/<id>` | Fonte online resolvida sob demanda | Credencial `?k=` ativa; HEAD não baixa torrent |
+| `GET/HEAD /s/<hash>/<idx>` | Arquivo de torrent da biblioteca | Credencial `?k=` ativa; suporte a Range na reprodução |
+| `GET/POST /credentials`, `POST /credentials/revoke?id=`, `POST /credentials/rotate?id=` | Lista, emite (`name`, `status=1`), revoga e gira credenciais de instalação | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback; só aqui o token aparece, uma vez |
 | `GET /status` | Estado dos torrents no motor | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback |
 | `GET /seed-status` | Cofre, pendências e avisos | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback |
 | `POST /complete?hash=<infoHash>` | Solicita download completo em segundo plano | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback; valida hash |
 | `POST /cleanup[?hash=<infoHash>]` | Remove torrents e armazenamento após conferir obrigações | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback; consulta o tracker |
 
-As quatro rotas administrativas exigem o cabeçalho `X-Admin-Token`, com o conteúdo de `DATA_DIR/admin-key` (a chave de reprodução `?k=` não vale aqui). O token nunca vai na URL. Sem ele, ou com `Origin`, a resposta é 403 antes de qualquer leitura ou efeito. `/cleanup` não aceita mais `force=1`: só libera o que o tracker confirmou cumprido, e responde 409 com o que falta. Detalhes em [segurança](seguranca.md).
+As rotas administrativas exigem o cabeçalho `X-Admin-Token`, com o conteúdo de `DATA_DIR/admin-key` (a credencial de reprodução `?k=` não vale aqui). O token nunca vai na URL. Sem ele, ou com `Origin`, a resposta é 403 antes de qualquer leitura ou efeito. `/cleanup` não aceita mais `force=1`: só libera o que o tracker confirmou cumprido, e responde 409 com o que falta. Detalhes em [segurança](seguranca.md).
 
 ## Painel HTTP
 
@@ -78,6 +80,8 @@ Rotas relativas a `http://127.0.0.1:7020`. Todas exigem Host exato; as ações P
 As rotas de log funcionam sem sessão ASC para diagnóstico local. A interface usa polling; não há WebSocket. O painel não publica uma API remota multiusuário nem promete estabilidade de todos os campos internos.
 
 ## Addon HTTP
+
+Todas as rotas ficam sob o prefixo da credencial: `/<credencial>/manifest.json`, `/<credencial>/catalog/…`, `/<credencial>/meta/…`, `/<credencial>/stream/…` e `/<credencial>/status/poster/<id>.svg`. Sem credencial ativa (ausente, errada ou revogada) a resposta é 403, inclusive para o manifesto; rotas fora dessa lista dão 404. O prefixo é removido antes de chegar ao roteador do SDK (`src/addon-auth.js`) e o token acompanha a requisição para montar as URLs de vídeo com a mesma credencial.
 
 O SDK Stremio fornece manifesto, catálogos, metadados e fontes. `/status/poster/<id>.svg` gera os cartões do monitor para identificadores existentes no estado atual. IDs IMDb de filmes e identificadores locais são convertidos pelos provedores; aceitar o formato de um episódio no parser não implica suporte online a séries.
 
