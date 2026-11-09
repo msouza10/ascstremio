@@ -1,0 +1,61 @@
+name: Relatar um bug
+description: Algo não funciona como o esperado
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Antes de enviar:** apague qualquer **passkey, cookie, senha, `.torrent` ou trecho de `private/`**
+        de logs e prints. A página `/logs` do painel já redige segredos, mas confira. Vulnerabilidade de
+        segurança **não** vai aqui: use o [relato privado](https://github.com/msouza10/ascstremio/security/advisories/new).
+  - type: textarea
+    id: o-que-aconteceu
+    attributes:
+      label: O que aconteceu
+      description: E o que você esperava que acontecesse.
+    validations:
+      required: true
+  - type: textarea
+    id: como-reproduzir
+    attributes:
+      label: Como reproduzir
+      placeholder: |
+        1. Abrir o filme X no Stremio
+        2. Escolher a fonte Y
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: versao
+    attributes:
+      label: Versão do ascstremio
+      description: Do release ou da imagem (ex.: 0.1.1). Atualize para a última antes de reportar.
+    validations:
+      required: true
+  - type: dropdown
+    id: instalacao
+    attributes:
+      label: Como você instalou
+      options: [Linux (script ou curl), Docker / Podman, Windows (instalador), Do código (npm start), Outro]
+    validations:
+      required: true
+  - type: input
+    id: sistema
+    attributes:
+      label: Sistema operacional e Node (se aplicável)
+      placeholder: Ubuntu 24.04, Node 22.12
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs relevantes
+      description: Da página `/logs` do painel (nível warn/error) ou `journalctl --user -u ascstremio`. Sem segredos.
+      render: text
+  - type: checkboxes
+    id: confirmacoes
+    attributes:
+      label: Confirmações
+      options:
+        - label: Procurei nas issues se já foi relatado.
+          required: true
+        - label: Removi passkey, cookies e dados da conta do que colei aqui.
+          required: true

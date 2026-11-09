@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Vulnerabilidade de segurança
+    url: https://github.com/msouza10/ascstremio/security/advisories/new
+    about: Não abra issue pública. Relate em privado (passkey, sessão e conta estão em jogo).
+  - name: Dúvida de uso
+    url: https://github.com/msouza10/ascstremio#readme
+    about: Instalação, variáveis e solução de problemas estão no README.

@@ -4,5 +4,5 @@ dist
 .git
 *.torrent
 *.log
-docs/asc-design
+docs
 tools/__pycache__

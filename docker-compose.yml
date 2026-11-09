@@ -1,7 +1,7 @@
 # docker compose up -d --build     (ou: scripts/docker.sh run)
 # Painel: http://127.0.0.1:7020/   Addon: http://127.0.0.1:7000/manifest.json
-# As portas ficam presas ao 127.0.0.1 da máquina (conta pessoal, regra 2.2 do ASC).
-# Para TV/celular na rede local troque "127.0.0.1:" por o IP da máquina, por sua conta e risco.
+# As portas HTTP ficam no 127.0.0.1 da máquina; 7030/TCP aceita peers pela rede.
+# Mantenha painel e administração locais. Limites de LAN: docs/seguranca.md.
 services:
   ascstremio:
     build: .

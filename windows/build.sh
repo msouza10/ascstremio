@@ -7,7 +7,7 @@
 #   windows/build.sh --stage-only só monta dist/win/stage (sem makensis)
 #
 # Precisa de: curl, unzip, npm, tar e makensis (Ubuntu/Debian: apt install nsis).
-# NÃO foi executado em um Windows real: veja "Windows" no README antes de distribuir.
+# A CI instala e inicia o pacote em Windows; a reprodução ainda depende do player.
 
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -47,6 +47,12 @@ find "$STAGE/app/node_modules" -type d \( -name 'linux-*' -o -name 'darwin-*' -o
   || { echo "node-datachannel não é binário do Windows" >&2; exit 1; }
 cp windows/launcher.vbs windows/start.cmd windows/stop.cmd windows/open-panel.cmd "$STAGE/"
 cp README.md "$STAGE/LEIA-ME.md"
+cp README.md LICENSE AGENTS.md CHANGELOG.md release-please-config.json "$STAGE/"
+# Evita empacotar notas privadas que também possam existir em docs/.
+while IFS= read -r doc; do
+  mkdir -p "$STAGE/$(dirname "$doc")"
+  cp "$doc" "$STAGE/$doc"
+done < scripts/documentation-files.txt
 echo "Pasta montada em $STAGE"
 
 [ "$STAGE_ONLY" -eq 1 ] || {

@@ -22,14 +22,24 @@ logs/
 *.bak-*
 *.removido-*
 
-# --- só o README é documentação publicada; notas, capturas e sondas ficam locais
-docs/
+# --- guias públicos por nome exato; notas, capturas e sondas ficam locais
+docs/*
 tools/
 *.md
 !README.md
 !CHANGELOG.md
 !AGENTS.md
+!.github/*.md
 !CLAUDE.md
+!docs/README.md
+!docs/instalacao.md
+!docs/configuracao.md
+!docs/uso.md
+!docs/seed.md
+!docs/seguranca.md
+!docs/manutencao.md
+!docs/arquitetura.md
+!docs/desenvolvimento.md
 *.png
 *.jpg
 *.jpeg

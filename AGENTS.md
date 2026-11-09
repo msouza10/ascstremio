@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Guia para agentes de código e para quem contribui. Leia antes de mexer. O `README.md` é a
-documentação do usuário (instalação, uso, regras do tracker); este arquivo é o "como trabalhar aqui".
+apresentação e entrada para os guias públicos em `docs/`; este arquivo é o "como trabalhar aqui".
 
 ## O que é
 
@@ -38,9 +38,11 @@ commits em português do Brasil, com acentuação.
 | `.github/workflows/` | CI (`ci.yml`) e release (`release.yml`) |
 | `Dockerfile`, `docker-compose.yml` | imagem e execução em contêiner |
 
-Pastas **locais e não versionadas**: `private/` (dados da conta), `docs/` (notas do mantenedor e
-captura do design do site), `tools/` (sondas que usam a conta real). Não dependa delas em código,
-testes ou CI.
+Pastas **locais e não versionadas**: `private/` (dados da conta) e `tools/` (sondas que usam a
+conta real). `docs/` mistura guias públicos enumerados em `scripts/documentation-files.txt`
+e notas/capturas locais antigas, que continuam ignoradas. Nunca adicione ou copie `docs/`
+inteira: libere somente nomes exatos no `.gitignore` e na lista pública. Não dependa de notas
+privadas em código, testes ou CI. O índice público é [`docs/README.md`](docs/README.md).
 
 ## Comandos
 
@@ -99,10 +101,13 @@ tem de ser igual à de dentro (ele confere `Host: 127.0.0.1:<CONFIG_PORT>`).
 6. **Regras do ASC mandam:** 72 h de seed ou ratio 1.0 (13.1); 12 dias sem semear é hit-and-run (13.3);
    90 dias sem acessar o site é banimento (2.6). Não encerre seed nem apague arquivo antes de o
    **tracker** confirmar; `HEAD` nunca baixa nem anuncia; listar fontes não baixa `.torrent`.
-7. **Contêiner:** sem root, `read_only`, `cap_drop: ALL`, `no-new-privileges`. `ASCSTREMIO_CONTAINER=1`
-   só muda a interface de escuta; não afrouxe as outras proteções.
+7. **Contêiner:** sem root, `read_only`, `cap_drop: ALL`, `no-new-privileges`. Não amplie a
+   confiança de rede. A implementação atual aceita RFC1918 como local no contêiner; a limitação
+   está documentada em `docs/seguranca.md` e na issue #10, sem ser considerada proteção suficiente.
 
 ## Commits, versão e release
+
+Detalhes e exemplos: [`.github/COMMIT_CONVENTION.md`](.github/COMMIT_CONVENTION.md); fluxo de contribuição: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
 Os **títulos dos commits seguem [Conventional Commits](https://www.conventionalcommits.org/pt-br/)**
 e *decidem a versão e o changelog*. Formato: `tipo(escopo opcional): descrição no imperativo, em português`.
@@ -138,6 +143,27 @@ release nasce rascunho; a esteira testa, monta o pacote Linux (`ascstremio-X.Y.Z
 (`ghcr.io/<dono>/ascstremio`: `X.Y.Z`, `X.Y`, `latest`; amd64 e arm64) e só então publica o release.
 Falhou algum passo = o release segue rascunho. Não crie tags à mão.
 
+## Pull requests: revisões e comentários
+
+**Nunca ignore comentários de PR.** Checks verdes não bastam: antes de qualquer merge (inclusive
+PRs do Dependabot e do release-please), leia tudo o que foi escrito e decida sobre cada ponto.
+
+- **Leia sempre:** comentários gerais, reviews e comentários em linhas do código. Por exemplo:
+  `gh pr view N --json state,reviewDecision,comments,reviews,statusCheckRollup` e
+  `gh api repos/<dono>/ascstremio/pulls/N/comments`. Revisores automáticos (Codex etc.) contam
+  como revisores: um "achado não resolvido" bloqueia o merge.
+- **Analise se faz sentido.** Verifique a alegação no código antes de agir; revisor, humano ou
+  automático, pode errar. Não aceite nem descarte por reflexo.
+- **Resolva ou responda.** Se procede, corrija no mesmo PR (commit novo, sem reescrever histórico) e
+  diga o que mudou. Se não procede, responda no PR explicando o porquê, com evidência. Nenhum
+  comentário fica sem desfecho; só marque como resolvido o que de fato foi tratado.
+- **Depois de corrigir,** espere o CI rodar de novo e releia os comentários: um novo push pode
+  gerar novos achados.
+- **Só então faça o merge**, e apenas quando o usuário pedir. Mencione no relato final o que os
+  revisores disseram e como cada ponto foi tratado.
+- Check falhando também não se ignora, mesmo parecendo instabilidade: investigue e rode de novo
+  antes de mergear.
+
 ## CI (`.github/workflows/ci.yml`)
 
 Em push e pull request: testes (Ubuntu e Windows × Node 22 e 24), `shellcheck`, `actionlint`,
@@ -161,8 +187,9 @@ dependências, actions e imagem base (não suba a imagem base além do Node 22 s
 
 ## Onde ler mais
 
-- Uso, instalação, variáveis de ambiente, segurança: [`README.md`](README.md)
-- Histórico de versões: [`CHANGELOG.md`](CHANGELOG.md)
+- Apresentação: [`README.md`](README.md); guias de uso, instalação, configuração e segurança:
+  [`docs/README.md`](docs/README.md)
+- Histórico de versões: [`CHANGELOG.md`](CHANGELOG.md) · Contribuir: [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) · Padrão de commits e changelog: [`.github/COMMIT_CONVENTION.md`](.github/COMMIT_CONVENTION.md) · Licença: [`LICENSE`](LICENSE)
 - Stremio: [SDK de addons](https://github.com/Stremio/stremio-addon-sdk) ·
   [protocolo](https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/api/README.md) ·
   [defineStreamHandler](https://stremio.github.io/stremio-addon-sdk/api/requests/defineStreamHandler.html)
@@ -176,4 +203,4 @@ dependências, actions e imagem base (não suba a imagem base além do Node 22 s
   [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) ·
   [Node.js 22](https://nodejs.org/docs/latest-v22.x/api/)
 - Regras do tracker (§2.2 conta pessoal, §2.6 inatividade, §13 seed/hit-and-run): páginas "Regras" do
-  próprio Amigos Share (exigem login); o resumo operacional está no `README.md`.
+  próprio Amigos Share (exigem login); o resumo operacional está em [`docs/seed.md`](docs/seed.md).
