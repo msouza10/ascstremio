@@ -32,11 +32,15 @@ mkdir -p "$STAGE/node"; cp "$OUT/cache/node-unz"/*/node.exe "$STAGE/node/"; rm -
 
 cp -R src package.json package-lock.json "$STAGE/app/"
 ( cd "$STAGE/app" && npm_config_platform=win32 npm_config_arch=x64 npm ci --omit=dev --no-audit --no-fund )
-# Os módulos nativos têm de ser binários do Windows (cabeçalho "MZ"), não os do host de build.
-for n in $(find "$STAGE/app/node_modules" -name '*.node'); do
-  case "$n" in *linux*|*darwin*|*android*) continue ;; esac
-  [ "$(head -c2 "$n")" = "MZ" ] || [ -n "$(echo "$n" | grep -E 'prebuilds/(linux|darwin)')" ] || { echo "módulo nativo que não é do Windows: $n" >&2; exit 1; }
+# Só binários do Windows (cabeçalho "MZ") podem ficar. O que o host compilou/baixou para
+# outro sistema (ex.: build/Release do bufferutil no Linux) sairia na frente dos prebuilds
+# certos, então é removido; node-datachannel não tem alternativa e precisa ser do Windows.
+find "$STAGE/app/node_modules" -name '*.node' -print0 | while IFS= read -r -d '' n; do
+  [ "$(head -c2 "$n")" = "MZ" ] || rm -f "$n"
 done
+find "$STAGE/app/node_modules" -type d \( -name 'linux-*' -o -name 'darwin-*' -o -name 'android-*' \) -path '*prebuilds*' -prune -exec rm -rf {} +
+[ "$(head -c2 "$STAGE/app/node_modules/node-datachannel/build/Release/node_datachannel.node")" = "MZ" ] \
+  || { echo "node-datachannel não é binário do Windows" >&2; exit 1; }
 cp windows/launcher.vbs windows/start.cmd windows/stop.cmd windows/open-panel.cmd "$STAGE/"
 cp README.md "$STAGE/LEIA-ME.md"
 echo "Pasta montada em $STAGE"
