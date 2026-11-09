@@ -39,6 +39,21 @@ O cache pode ser grande, mas restaurar apenas o cofre não restaura os dados nec
 
 Desinstalar o serviço Linux ou o programa Windows preserva os dados. A exclusão definitiva deve considerar seed pendente e revogação das credenciais, além de backups existentes.
 
+## Retenção por orçamento
+
+Opcional e desligada por padrão (`RETENTION_MODE=off`; chaves em [configuração](configuracao.md#retenção-por-orçamento-opcional)). Ela só roda **com o aplicativo em execução**: a ponte sabe quais filmes estão tocando e é quem fala com o tracker; com o aplicativo parado nada disso é conhecido, então não existe modo offline que apague arquivos. Escolha de segurança: não há remoção automática.
+
+```bash
+npm run retencao                         # prévia: lista candidatos, ordem, motivo e bytes estimados; não remove nada
+npm run retencao -- --executar <plano>   # executa a lista da prévia (o plano vale 10 minutos e uma vez)
+```
+
+No contêiner, rode `node src/retencao-cli.js` dentro dele (`docker exec`). As mesmas operações existem na ponte, com o token administrativo: `GET /retention` (prévia) e `POST /retention/run?plan=<id>`.
+
+Na execução, o aplicativo: (1) relê o tracker à força para cada candidato; se a sessão ou o tracker falhar, **cancela tudo** e nada é removido; (2) recalcula; (3) reconfere cada título imediatamente antes de remover e, se algo mudou (play, sessão, obrigação reaberta, tracker sem registro), o título sai da lista; (4) enquanto remove um título, tentativas de abri-lo recebem `503`; (5) encerra o torrent e apaga apenas os arquivos que o `.torrent` lista, um a um, dentro de `BRIDGE_STORE`, sem seguir symlink e sem tocar em link físico; arquivo em uso permanece e é reportado. O log registra cada remoção (título abreviado, hash curto, bytes), sem caminhos absolutos nem segredos. Pastas de título que ficam vazias são aparadas; o `.torrent` e o cofre permanecem.
+
+Limites conhecidos: bytes da prévia são estimativas (blocos alocados); se o orçamento não é alcançável só com títulos elegíveis, a prévia informa a falta e **não oferece execução**; a retenção não remove órfãos, parciais de streaming nem títulos com obrigação aberta, de modo que um disco cheio por eles não é resolvido por ela. Não há painel de execução nesta versão.
+
 ## Logs
 
 Abra **http://127.0.0.1:7020/logs** mesmo quando o login no ASC estiver falhando. É possível filtrar por nível, fonte, período e texto, acompanhar novas entradas e exportar texto/NDJSON ou arquivos diários.

@@ -56,6 +56,8 @@ Rotas relativas a `http://127.0.0.1:7010`, com as verificações de Host habilit
 | `GET /status` | Estado dos torrents no motor | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback |
 | `GET /seed-status` | Cofre, pendências e avisos | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback |
 | `POST /complete?hash=<infoHash>` | Solicita download completo em segundo plano | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback; valida hash |
+| `GET /retention` | Prévia da retenção por orçamento (somente leitura, sem rede) | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback |
+| `POST /retention/run?plan=<id>` | Executa o plano emitido pela prévia, relendo o tracker e reconferindo cada título | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback; 409/503 sem remover nada se o plano expirou, a retenção está desligada ou o tracker falha |
 | `POST /cleanup[?hash=<infoHash>]` | Remove torrents e armazenamento após conferir obrigações | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback; consulta o tracker |
 
 As rotas administrativas exigem o cabeçalho `X-Admin-Token`, com o conteúdo de `DATA_DIR/admin-key` (a credencial de reprodução `?k=` não vale aqui). O token nunca vai na URL. Sem ele, ou com `Origin`, a resposta é 403 antes de qualquer leitura ou efeito. `/cleanup` não aceita mais `force=1`: só libera o que o tracker confirmou cumprido, e responde 409 com o que falta. Detalhes em [segurança](seguranca.md).
