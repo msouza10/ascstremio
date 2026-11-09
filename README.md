@@ -504,7 +504,7 @@ Os passos vivem em `scripts/` e rodam igual localmente: `scripts/build-release.s
 - O repositório **não** contém passkey, cookies, `.torrent`, cofre de seed, logs nem capturas do
   site: `private/`, `*.torrent`, `docs/`, `tools/` e afins ficam no `.gitignore`, e
   `scripts/check-no-secrets.sh` (rodado no CI antes de qualquer pacote) falha se algo assim
-  aparecer. Só o `README.md` e o `CHANGELOG.md` gerado são publicados.
+  aparecer. Só `README.md`, `AGENTS.md` (guia para contribuir) e o `CHANGELOG.md` gerado são publicados.
 - **Proteções do app local** (cada uma com teste em `test/`):
   - escuta só em `127.0.0.1` (a rede local exige `BRIDGE_ALLOW_LAN=1`);
   - **anti DNS rebinding**: addon, ponte e painel recusam `Host` que seja nome DNS (só IP
