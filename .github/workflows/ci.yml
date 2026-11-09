@@ -125,7 +125,7 @@ jobs:
     runs-on: windows-latest
     needs: windows-installer
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: instalador-windows
       - name: Instala (/S) e confere o SHA-256
