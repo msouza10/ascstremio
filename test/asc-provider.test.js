@@ -22,7 +22,7 @@ async function fixture(t, { rows = [linha(1), linha(2)], videosPorId = {}, arqui
     vault: { get: () => null },
     lazyUrl: (id) => `http://127.0.0.1:7010/a/${id}`,
     diskState: () => (diskFull ? 'full' : 'none'),
-    entryByAscId(id) { return [...this.entries.values()].find((e) => String(e.torrentPath).endsWith(`/asc-${id}.torrent`)) ?? null; },
+    entryByAscId(id) { return [...this.entries.values()].find((e) => path.basename(String(e.torrentPath)) === `asc-${id}.torrent`) ?? null; },
   };
   const asc = {
     onlyFreeleech, connected,
@@ -121,7 +121,7 @@ test('play: baixa o .torrent uma única vez mesmo com GETs simultâneos e regist
   assert.equal(a.fileIdx, 0);
   assert.equal(bridge.entries.get(a.infoHash).freeleech, true, 'freeleech vem da busca');
   assert.deepEqual(await fs.readdir(dir), ['asc-1.torrent']);
-  assert.equal((await fs.stat(path.join(dir, 'asc-1.torrent'))).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal((await fs.stat(path.join(dir, 'asc-1.torrent'))).mode & 0o777, 0o600);
   // segundo play: já está na biblioteca, não baixa de novo
   await provider.resolve('1');
   assert.equal(calls.downloads.length, 1);

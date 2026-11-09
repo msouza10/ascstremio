@@ -452,7 +452,7 @@ function falsoSpawn() {
 
 test('KeepAwake abre um inibidor ao precisar e solta ao terminar, sem duplicar', () => {
   const { impl, filhos } = falsoSpawn();
-  const k = new KeepAwake({ spawnImpl: impl, available: () => true, pid: 4242 });
+  const k = new KeepAwake({ spawnImpl: impl, available: () => true, pid: 4242, platform: 'linux', exists: () => true });
   const log = console.log; console.log = () => {};
   try {
     assert.equal(k.update(false), false);

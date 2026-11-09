@@ -30,7 +30,7 @@ test('login captura CSRF, persiste cookie rotacionado, nunca a senha; restaura s
     assert.equal((await asc.login('example', 'test-secret', true)).connected, true);
     const saved = await fs.readFile(file, 'utf8');
     assert.ok(!saved.includes('test-secret'));
-    assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
     const restored = new AscClient({ stateFile: file, delay: 0 });
     await restored.load();
     assert.match(await restored.jar.getCookieString('https://amigos-share.club/dashboard'), /session=rotated/);

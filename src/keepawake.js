@@ -18,12 +18,12 @@ const WINDOWS_SCRIPT = (pid) => [
   `while (Get-Process -Id ${pid} -ErrorAction SilentlyContinue) { [void]$k::SetThreadExecutionState(0x80000001); Start-Sleep -Seconds 30 }`,
 ].join('; ');
 
-function defaultCommand(reason, pid, platform = process.platform) {
+function defaultCommand(reason, pid, platform = process.platform, exists = fs.existsSync) {
   if (process.env.BRAZUKA_CONTAINER === '1') return null;
-  if (platform === 'linux' && fs.existsSync(INHIBIT)) {
+  if (platform === 'linux' && exists(INHIBIT)) {
     return [INHIBIT, ['--what=sleep', '--who=brazuka-asc', `--why=${reason}`, '--mode=block', 'sh', '-c', WATCH, String(pid)]];
   }
-  if (platform === 'darwin' && fs.existsSync(CAFFEINATE)) return [CAFFEINATE, ['-i', '-w', String(pid)]];
+  if (platform === 'darwin' && exists(CAFFEINATE)) return [CAFFEINATE, ['-i', '-w', String(pid)]];
   if (platform === 'win32') {
     return ['powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', WINDOWS_SCRIPT(pid)]];
   }
@@ -31,12 +31,13 @@ function defaultCommand(reason, pid, platform = process.platform) {
 }
 
 class KeepAwake {
-  constructor({ mode = 'auto', spawnImpl = spawn, available, pid = process.pid, platform = process.platform } = {}) {
+  constructor({ mode = 'auto', spawnImpl = spawn, available, pid = process.pid, platform = process.platform, exists = fs.existsSync } = {}) {
+    this.exists = exists;
     this.mode = mode;
     this.spawn = spawnImpl;
     this.pid = pid;
     this.platform = platform;
-    this.available = mode !== 'off' && (available ? available() : defaultCommand('teste', pid, platform) !== null);
+    this.available = mode !== 'off' && (available ? available() : defaultCommand('teste', pid, platform, exists) !== null);
     this.child = null;
   }
 
@@ -50,7 +51,7 @@ class KeepAwake {
   }
 
   start(reason) {
-    const command = defaultCommand(reason, this.pid, this.platform);
+    const command = defaultCommand(reason, this.pid, this.platform, this.exists);
     if (!command) { this.available = false; return; }
     const child = this.spawn(command[0], command[1], { stdio: 'ignore', windowsHide: true });
     child.on('error', () => { this.child = null; this.available = false; });
