@@ -17,6 +17,7 @@ const { timingSafeEqual } = require('crypto');
 const { currentToken } = require('./credentials');
 const hnr = require('./hnr-guard');
 const { DiskGuard, DEFAULT_RESERVE_BYTES } = require('./disk-policy');
+const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { logger } = require('./logger');
 const log = logger.child('ponte');
 const tlog = logger.child('torrent');
@@ -87,6 +88,10 @@ class Bridge {
     idleMs = 10 * 60 * 1000,
     minFreeBytes = DEFAULT_RESERVE_BYTES, // reserva absoluta de disco (DISK_RESERVE_GIB)
     reservePercent = 0, // reserva em % do volume (DISK_RESERVE_PERCENT); vale a maior das duas
+    maxPlaybacks = 0, // reproduções lógicas simultâneas no total (PLAYBACK_MAX_SESSIONS); 0 = sem limite
+    maxPlaybacksPerCredential = 0, // idem por credencial (PLAYBACK_MAX_PER_CREDENTIAL); 0 = sem limite
+    playbackGraceMs = DEFAULT_GRACE_MS, // inatividade que encerra uma sessão de reprodução
+    clock = Date.now, // relógio da quota (injetável nos testes)
     freeSpace = null, // injeção para testes: (dir) => livres | { free, total }
     afterSeed = 'delete',
     keepAwake = null,
@@ -139,6 +144,8 @@ class Bridge {
     this.credentials = credentials;
     // Respostas de vídeo abertas por credencial: a revogação as derruba na hora.
     this.sessions = new Map();
+    // Quota de reproduções lógicas (src/play-limit.js): reserva antes de qualquer efeito de download.
+    this.limiter = new PlaybackLimiter({ maxSessions: maxPlaybacks, maxPerCredential: maxPlaybacksPerCredential, graceMs: playbackGraceMs, now: clock });
     this.credentials?.on('revoked', (id) => this.dropSessions(id));
     this.adminKey = adminKey;
     this.strictHost = strictHost;
@@ -507,6 +514,13 @@ class Bridge {
 
   // Foto completa para o painel de monitoramento: cada filme individualmente,
   // o resumo geral e o histórico de tráfego. Só leitura, sem rede.
+  // Vagas de reprodução para o diagnóstico: só contagens por credencial (id e nome), sem título nem IP.
+  playbackSnapshot() {
+    const snap = this.limiter.snapshot();
+    const names = new Map((this.credentials?.list?.() ?? []).map((c) => [c.id, c.name]));
+    return { ...snap, credentials: snap.credentials.map((c) => ({ ...c, name: names.get(c.credentialId) ?? null })) };
+  }
+
   snapshot(now = Date.now()) {
     const engine = new Map((this.client?.torrents ?? []).map((t) => [t.infoHash, t]));
     const active = new Set(engine.keys());
@@ -694,6 +708,7 @@ class Bridge {
         diskReserveBytes: this.minFreeBytes,
         diskReservePercent: this.reservePercent,
       },
+      playback: this.playbackSnapshot(),
       account: this.account
         ? {
           hitAndRuns: this.account.hitAndRuns,
@@ -766,11 +781,40 @@ class Bridge {
   }
 
   dropSessions(credentialId) {
+    this.limiter.dropCredential(credentialId);
     const set = this.sessions.get(credentialId);
     if (!set) return;
     log.info(`credencial revogada: ${set.size} resposta(s) de vídeo aberta(s) encerrada(s)`);
     for (const res of [...set]) res.destroy?.();
     this.sessions.delete(credentialId);
+  }
+
+  // Reserva a vaga de reprodução de um GET ANTES de qualquer efeito (.torrent, snatch, abrir torrent).
+  // Devolve o lease (liberado sozinho quando a resposta fecha, por qualquer motivo) ou null depois
+  // de responder 429 com Retry-After. Registrar o 'close' aqui, de forma síncrona, evita contador
+  // preso quando a resposta é destruída durante um await mais adiante.
+  admitPlayback(res, credential, key) {
+    const r = this.limiter.acquire(credential.id, key);
+    if (!r.ok) {
+      log.warn(`reprodução recusada: limite ${r.scope === 'global' ? 'global' : 'da credencial'} de ${r.limit} sessão(ões) atingido`);
+      res.writeHead(429, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Retry-After': String(r.retryAfter),
+        'Cache-Control': 'no-store',
+      });
+      res.end(JSON.stringify({
+        error: r.scope === 'global'
+          ? `Limite de ${r.limit} reprodução(ões) simultânea(s) atingido. Encerre outra ou tente de novo em instantes.`
+          : `Limite de ${r.limit} reprodução(ões) simultânea(s) para este aparelho atingido. Encerre outra ou tente de novo em instantes.`,
+        limite: r.scope, max: r.limit, retryAfter: r.retryAfter,
+      }));
+      return null;
+    }
+    const { lease } = r;
+    // Só uma resposta de vídeo que começou (cabeçalhos enviados, < 400) mantém a vaga pela janela de inatividade.
+    const done = () => lease.release({ keep: Boolean(res.headersSent) && res.statusCode < 400 });
+    if (res.destroyed) done(); else res.once('close', done);
+    return lease;
   }
 
   adminOk(req) {
@@ -990,7 +1034,7 @@ class Bridge {
     // sem Origin (navegadores o enviam em POST/fetch entre origens) e, fora do
     // contêiner, vindas de loopback. No contêiner o endereço de origem é o do gateway
     // ou de outro contêiner, então só o token vale; ele é independente da chave ?k=.
-    const admin = ['/cleanup', '/seed-status', '/status', '/complete', '/credentials', '/credentials/revoke', '/credentials/rotate'].includes(url.pathname);
+    const admin = ['/cleanup', '/seed-status', '/status', '/complete', '/credentials', '/credentials/revoke', '/credentials/rotate', '/playback'].includes(url.pathname);
     if (admin && (!this.adminOk(req) || req.headers?.origin || !(inContainer() || isLoopbackRequest(req)))) {
       log.warn(`rota administrativa recusada: ${req.method} ${url.pathname} (origem ${req.socket?.remoteAddress ?? '?'}${req.headers?.origin ? `, Origin ${req.headers.origin}` : ''})`);
       res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -1069,6 +1113,12 @@ class Bridge {
       return;
     }
 
+    if (url.pathname === '/playback' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(this.playbackSnapshot()));
+      return;
+    }
+
     if (url.pathname === '/status') {
       const body = this.client.torrents.map((t) => ({
         infoHash: t.infoHash,
@@ -1109,6 +1159,28 @@ class Bridge {
     let infoHash = m ? m[1].toLowerCase() : null;
     let fileIdx = m ? (m[2] === undefined ? 0 : Number(m[2])) : 0;
 
+    // Vídeo só por GET/HEAD: outro método não pode contornar a quota nem disparar download.
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8', Allow: 'GET, HEAD, OPTIONS' });
+      res.end(JSON.stringify({ error: 'método não permitido' }));
+      return;
+    }
+
+    // Quota de reproduções: só o GET (HEAD nunca ocupa vaga) e antes de qualquer efeito.
+    let lease = null;
+    if (req.method === 'GET') {
+      let key;
+      if (m) {
+        key = `s:${infoHash}:${fileIdx}`;
+      } else {
+        const local = this.entryByAscId(lazy[1]);
+        const main = local ? mainVideo(local.files) : null;
+        key = local && main ? `s:${local.infoHash}:${main.index}` : `a:${lazy[1]}`;
+      }
+      lease = this.admitPlayback(res, credential, key);
+      if (!lease) return;
+    }
+
     // /a/<id>: fonte listada pelo Stremio sem .torrent local. Só o GET (o play)
     // baixa o .torrent; HEAD e sondagens nunca baixam nem anunciam.
     if (lazy) {
@@ -1146,6 +1218,7 @@ class Bridge {
         }
         // Credencial revogada (ou cliente que saiu) enquanto o .torrent era preparado: não abre o torrent.
         if (res.destroyed) return;
+        lease?.rekey(`s:${infoHash}:${fileIdx}`);
         // Troca a promessa provisória pela do torrent sem deixar brecha entre as duas.
         this.admitTorrent(infoHash);
       }
