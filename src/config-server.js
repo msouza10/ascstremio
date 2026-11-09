@@ -4,7 +4,8 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { AscError } = require('./asc-client');
 const { Logger, logger: defaultLogger, LEVEL_NAMES } = require('./logger');
-const { configHost } = require('./safety');
+const { configHost, isLoopbackRequest } = require('./safety');
+const { AdminCredential, AdminSessions, LoginLimiter, safeEqual } = require('./admin-auth');
 const { PanelError } = require('./panel-settings');
 
 // Tela local do addon. O CSP só aceita script/estilo/fonte do próprio servidor,
@@ -23,6 +24,20 @@ const QUIET = new Set(['/api/monitor', '/api/status', '/api/logs', '/api/logs/fi
 const MAX_DOWNLOAD = 100_000;
 const PANEL_POSTS = ['/api/settings', '/api/settings/preview', '/api/wizard/complete', '/api/wizard/dismiss', '/api/credentials'];
 
+// Cookie de sessão de administração. Em HTTPS (proxy) o prefixo __Host- exige Secure, Path=/ e
+// nada de Domain; no canal local/HTTP em claro o navegador não aceitaria Secure, então o nome é outro.
+const COOKIE_SECURE = '__Host-asc_admin';
+const COOKIE_PLAIN = 'asc_admin';
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function readCookie(header, name) {
+  for (const part of String(header || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return null;
+}
+
 function staticFile(pathname) {
   if (!/^\/[A-Za-z0-9._/-]+$/.test(pathname) || pathname.includes('..')) return null;
   const ext = path.extname(pathname);
@@ -36,13 +51,29 @@ function staticFile(pathname) {
 // `panel` (opcional): createPanelSettings(...) de src/panel-settings.js (assistente e página de
 // configurações, issue #23). Todas as rotas dele exigem sessão do ASC confirmada, e as que
 // alteram algo passam pelas mesmas barreiras dos POSTs existentes (Host, Origin, CSRF, JSON).
+// `remote` (opcional, issue #24): { plan, dataDir, now?, failDelayMs? } com o plano de
+// src/admin-access.js. Com a administração pela LAN ativa (plano válido e senha definida), TODAS
+// as rotas /api exigem sessão de administração própria (cookie HttpOnly/SameSite=Strict, CSRF por
+// sessão), inclusive pelo 127.0.0.1; o Host/Origin aceitos são exatamente os do plano. Sem isso,
+// nada muda: só 127.0.0.1, sem login de administração. A sessão do ASC nunca autentica acesso.
 // O painel só abre com a sessão ASC confirmada; os logs ficam acessíveis sem
 // sessão (é onde se descobre por que o login falhou), sempre só em loopback.
-async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogger, panel = null) {
+async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogger, panel = null, remote = null) {
   const token = randomBytes(32).toString('hex');
   const origin = `http://127.0.0.1:${port}`;
   const log = logs.child('config');
   let lastLogin = 0;
+  const plan = remote?.plan?.enabled ? remote.plan : null;
+  const credential = plan ? (remote.credential ?? new AdminCredential({ dataDir: remote.dataDir })) : null;
+  const sessions = plan ? new AdminSessions({ idleMs: plan.idleMs, maxMs: plan.maxMs, generation: () => credential.generation(), now: remote.now }) : null;
+  const limiter = plan ? new LoginLimiter({ now: remote.now }) : null;
+  const failDelayMs = remote?.failDelayMs ?? 400;
+  let verifying = 0;
+  // Ativa só enquanto a senha existe: removê-la no terminal fecha o acesso remoto na hora.
+  const guarded = () => Boolean(plan) && credential.configured();
+  if (remote?.plan?.requested && !plan) {
+    log.error(`administração do painel pela LAN NÃO habilitada (fail-closed): ${remote.plan.problems.join(' ')} O painel local segue normalmente.`);
+  }
   const handlePanel = async (route, body) => {
     try {
       if (route === '/api/settings/preview') return [200, panel.preview(body)];
@@ -66,7 +97,7 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       return [error.status, { error: error.message, code: error.code, problems: error.problems }];
     }
   };
-  const server = http.createServer(async (req, res) => {
+  const handler = async (req, res) => {
     const started = Date.now();
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -80,14 +111,91 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       else if (res.statusCode >= 400) log.warn(msg);
       else log.debug(msg);
     });
-    if (req.headers.host !== `127.0.0.1:${port}`) {
-      log.warn(`requisição recusada: Host inesperado (${String(req.headers.host).slice(0, 60)})`);
+    // Canal: 'local' (127.0.0.1:porta) ou 'remote' (Host exatamente igual ao do plano). Origin
+    // esperado = esquema + o próprio Host já validado. Nada de curinga nem de cabeçalho encaminhado.
+    const hostHeader = String(req.headers.host ?? '');
+    const guard = guarded();
+    let channel = null;
+    if (hostHeader === `127.0.0.1:${port}` && (!guard || isLoopbackRequest(req))) channel = { kind: 'local', host: hostHeader, origin };
+    else if (guard && plan.hosts.includes(hostHeader.toLowerCase()) && (plan.transport !== 'https-proxy' || isLoopbackRequest(req))) {
+      channel = { kind: 'remote', host: hostHeader.toLowerCase(), origin: `${plan.transport === 'https-proxy' ? 'https' : 'http'}://${hostHeader.toLowerCase()}` };
+    }
+    if (!channel) {
+      log.warn(`requisição recusada: Host inesperado (${hostHeader.slice(0, 60)})`);
       return send(403, { error: 'Abra pelo endereço 127.0.0.1.' });
     }
+    const cookieName = channel.kind === 'remote' && plan?.secureCookie ? COOKIE_SECURE : COOKIE_PLAIN;
+    const cookieAttrs = (value, maxAge) => `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${cookieName === COOKIE_SECURE ? '; Secure' : ''}`;
+    const source = req.socket?.remoteAddress ?? 'desconhecido';
+    const readBody = async () => {
+      let bytes = 0; const chunks = [];
+      for await (const chunk of req) { bytes += chunk.length; if (bytes > 8192) return { tooBig: true }; chunks.push(chunk); }
+      try { return { body: JSON.parse(Buffer.concat(chunks).toString() || '{}') }; } catch { return { invalid: true }; }
+    };
     try {
       const url = new URL(req.url, origin);
       pathname = url.pathname;
       const sp = url.searchParams;
+      let admin = null; // sessão de administração válida desta requisição
+      if (guard) {
+        const found = sessions.check(readCookie(req.headers.cookie, cookieName), channel.host);
+        if (found) {
+          admin = found.session;
+          if (found.rotateTo) res.setHeader('Set-Cookie', cookieAttrs(found.rotateTo, Math.ceil(plan.maxMs / 1000)));
+        }
+      }
+      if (url.pathname === '/api/admin/session') {
+        if (!guard) return send(200, { enabled: false });
+        const view = () => ({ enabled: true, authenticated: Boolean(admin), channel: channel.kind, transport: plan.transport,
+          ...(admin ? { csrf: admin.csrf, expiresAt: new Date(sessions.expiresAt(admin)).toISOString(), idleMinutes: plan.idleMs / 60000 } : {}) });
+        if (req.method === 'GET') return send(200, view());
+        const sameOrigin = req.headers.origin === channel.origin;
+        if (req.method === 'DELETE') {
+          if (!admin) return send(401, { error: 'Sessão de administração ausente.', code: 'admin_required' });
+          if (!sameOrigin || !safeEqual(req.headers['x-csrf-token'], admin.csrf)) return send(403, { error: 'Requisição não autorizada.' });
+          sessions.destroyKey(admin.keyHash);
+          res.setHeader('Set-Cookie', cookieAttrs('', 0));
+          log.info('sessão de administração encerrada (logout)');
+          return send(200, { enabled: true, authenticated: false });
+        }
+        if (req.method !== 'POST') return send(405, { error: 'Método não permitido.' });
+        // Login: defesa contra login-CSRF (Origin exata, JSON, token de pré-login) e contra força bruta.
+        if (!sameOrigin || req.headers['content-type'] !== 'application/json' || !safeEqual(req.headers['x-csrf-token'], token)) {
+          log.warn('login de administração recusado: origem ou token CSRF inválido');
+          return send(403, { error: 'Requisição não autorizada.' });
+        }
+        const wait = limiter.check(source);
+        if (!wait.ok || verifying >= 2) {
+          const retry = wait.ok ? 1 : wait.retryAfter;
+          res.setHeader('Retry-After', String(retry));
+          log.warn(`login de administração adiado: excesso de tentativas (origem ${source})`);
+          return send(429, { error: `Muitas tentativas. Aguarde ${retry} s.`, code: 'rate_limited' });
+        }
+        const parsed = await readBody();
+        if (parsed.tooBig) return send(413, { error: 'Dados muito grandes.' });
+        if (parsed.invalid || typeof parsed.body.password !== 'string') return send(400, { error: 'Dados inválidos.' });
+        verifying += 1;
+        let ok = false;
+        try { ok = await credential.verify(parsed.body.password); } finally { verifying -= 1; }
+        if (!ok) {
+          limiter.fail(source);
+          log.warn(`login de administração recusado (origem ${source})`);
+          if (failDelayMs) await sleep(failDelayMs);
+          return send(401, { error: 'Senha incorreta.', code: 'bad_password' });
+        }
+        // Rotação: a sessão anterior (se houver) morre e o id é sempre novo (sem fixação de sessão).
+        const previous = readCookie(req.headers.cookie, cookieName);
+        if (previous) sessions.destroy(previous);
+        const created = sessions.create(channel.host);
+        limiter.succeed(source);
+        admin = created.session;
+        res.setHeader('Set-Cookie', cookieAttrs(created.id, Math.ceil(plan.maxMs / 1000)));
+        log.info(`sessão de administração iniciada (${channel.kind}, origem ${source})`);
+        return send(200, view());
+      }
+      if (guard && url.pathname.startsWith('/api/') && !admin) {
+        return send(401, { error: 'Entre com a senha de administração.', code: 'admin_required' });
+      }
       if (req.method === 'GET' && PAGES.some((re) => re.test(url.pathname))) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(fs.readFileSync(path.join(UI_DIR, 'index.html')));
@@ -143,14 +251,15 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       }
       const routes = ['/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/logs/level', ...PANEL_POSTS];
       if (req.method !== 'POST' || !routes.includes(url.pathname)) return send(404, { error: 'Página inexistente.' });
-      if (req.headers.origin !== origin || req.headers['x-csrf-token'] !== token || req.headers['content-type'] !== 'application/json') {
+      const csrfOk = guard ? safeEqual(req.headers['x-csrf-token'], admin.csrf) : req.headers['x-csrf-token'] === token;
+      if (req.headers.origin !== channel.origin || !csrfOk || req.headers['content-type'] !== 'application/json') {
         log.warn(`POST ${url.pathname} recusado: origem ou token CSRF inválido`);
         return send(403, { error: 'Requisição não autorizada.' });
       }
-      let bytes = 0; const chunks = [];
-      for await (const chunk of req) { bytes += chunk.length; if (bytes > 8192) return send(413, { error: 'Dados muito grandes.' }); chunks.push(chunk); }
-      let body;
-      try { body = JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { return send(400, { error: 'Dados inválidos.' }); }
+      const parsed = await readBody();
+      if (parsed.tooBig) return send(413, { error: 'Dados muito grandes.' });
+      if (parsed.invalid) return send(400, { error: 'Dados inválidos.' });
+      const body = parsed.body;
       if (PANEL_POSTS.includes(url.pathname)) {
         if (!panel) return send(404, { error: 'Configurações indisponíveis.' });
         if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
@@ -190,9 +299,32 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       log[known ? 'warn' : 'error'](`${req.method} ${pathname}: ${error?.message ?? error}`, known ? undefined : { stack: error?.stack });
       send(400, { error: known ? error.message : (error?.status === 404 ? 'Filme fora da biblioteca.' : 'Não foi possível concluir. Tente novamente.') });
     }
-  });
+  };
+  const server = http.createServer(handler);
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, configHost(), resolve); });
   log.info(`painel escutando em ${origin}`);
+  // Administração pela LAN em HTTP em claro: segundo listener só no IPv4 da LAN escolhido (nunca
+  // 0.0.0.0). Se falhar (IP mudou), a administração remota fica inacessível; o painel local segue.
+  const extras = [];
+  if (plan) {
+    for (const addr of plan.bind.filter((a) => a !== '127.0.0.1')) {
+      const extra = http.createServer(handler);
+      try {
+        await new Promise((resolve, reject) => { extra.once('error', reject); extra.listen(port, addr, resolve); });
+        extras.push(extra);
+        log.warn(`administração do painel pela LAN ativa em ${addr}:${port} (HTTP sem criptografia; Host aceito: ${plan.hosts.join(', ')})`);
+      } catch (err) {
+        log.error(`administração pela LAN indisponível: não foi possível escutar em ${addr}:${port} (${err.code ?? err.message}). O painel local segue normalmente.`);
+      }
+    }
+    if (plan.transport === 'https-proxy') log.info(`administração do painel pela LAN ativa atrás de proxy HTTPS (${plan.hosts.join(', ')}); o painel escuta só em 127.0.0.1`);
+    if (!credential.configured()) log.warn('administração pela LAN habilitada, mas sem senha de administração: acesso remoto fechado (npm run admin-painel -- definir)');
+  }
+  if (extras.length) {
+    const close = server.close.bind(server);
+    server.close = (cb) => { for (const e of extras) e.close(); sessions.destroyAll(); return close(cb); };
+  }
+  server.admin = plan ? { sessions, limiter, credential } : null;
   return server;
 }
 

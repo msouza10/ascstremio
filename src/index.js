@@ -23,6 +23,8 @@ const { KeepAwake } = require('./keepawake');
 const { logger, initFiles } = require('./logger');
 const { acquireInstance }  = require('./instance-lock');
 const { createPanelSettings } = require('./panel-settings');
+const adminAccess = require('./admin-access');
+const { AdminCredential } = require('./admin-auth');
 
 // Onde ficam passkey, sessão, cofre, logs, .torrent e cache. Fora do código para
 // sobreviver a atualizações (instalador, contêiner, Windows em %LOCALAPPDATA%).
@@ -172,10 +174,16 @@ async function main() {
     addSecret: (secret) => logger.addSecret(secret),
     applyLive: (key, value) => (key === 'LOG_LEVEL' ? logger.setLevel(value) : false),
   });
+  // Administração do painel pela LAN (opcional, desligada por padrão; issue #24). Falta de
+  // pré-condição só desliga a administração remota, nunca impede o motor de retomar o seed.
+  const adminCredential = new AdminCredential({ dataDir: DATA_DIR });
+  const remoteAdmin = adminAccess.plan({
+    values: v, mode: cfg.mode, container: cfg.container, net, credentialConfigured: adminCredential.configured(), port: configPort,
+  });
   const config = await startConfig(asc, configPort, {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
     complete: (infoHash) => bridge.requestCompletion(infoHash),
-  }, undefined, panel);
+  }, undefined, panel, { plan: remoteAdmin, credential: adminCredential });
   const metaCache = new MetaCache({ file: path.join(DATA_DIR, 'meta-cache.json') }).load();
   const remote = createAscProvider(asc, bridge, torrentDir, { cache: metaCache });
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).

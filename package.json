@@ -9,10 +9,11 @@
     "start": "node --max-http-header-size=65536 src/index.js",
     "dev": "node --max-http-header-size=65536 --watch src/index.js",
     "test": "npm run check",
-    "check": "node --check src/ui/app.js && node --check src/ui/views.js && node --check src/ui/logs.js && node --check src/ui/settings-model.js && node --check src/ui/settings.js && node --test test/*.test.js",
+    "check": "node --check src/ui/app.js && node --check src/ui/views.js && node --check src/ui/logs.js && node --check src/ui/settings-model.js && node --check src/ui/settings.js && node --check src/ui/admin.js && node --test test/*.test.js",
     "credenciais": "node src/credenciais-cli.js",
     "configurar": "node src/configurar-cli.js",
     "rede": "node src/rede-cli.js",
+    "admin-painel": "node src/admin-cli.js",
     "install-service": "bash scripts/install.sh"
   },
   "engines": {
