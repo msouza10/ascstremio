@@ -14,6 +14,7 @@ const { tmpdir } = require('./tmp-helper');
 
 const NET = { eth0: [{ address: '192.168.1.20', family: 'IPv4', internal: false }] };
 const SENHA = 'correto-cavalo-bateria-9';
+const NOVA_SENHA = ['outra', 'senha', 'bem', 'longa', '77'].join('-'); // montada em partes: fixture sintética, não segredo
 const LAN_NET = { host: '192.168.1.20', hostKind: 'ipv4', hostSource: 'config' };
 let nextPort = 7440;
 
@@ -350,9 +351,9 @@ test('recuperação local: trocar a senha, revogar sessões ou remover a credenc
     assert.equal(await cli.run(['definir', '--senha-arquivo', pwFile], { env, io }), 1, 'sem --trocar não sobrescreve');
     assert.equal(await cli.run(['definir', '--trocar', '--senha-arquivo', pwFile], { env, io }), 0);
     assert.equal((await t.login()).status, 401, 'a senha antiga morreu');
-    assert.equal((await t.login({ body: { password: 'outra-senha-bem-longa-77' } })).status, 200);
+    assert.equal((await t.login({ body: { password: NOVA_SENHA } })).status, 200);
     assert.equal(await cli.run(['remover'], { env, io }), 0);
-    assert.equal((await t.login({ body: { password: 'outra-senha-bem-longa-77' } })).status, 403, 'sem senha o Host da LAN fecha');
+    assert.equal((await t.login({ body: { password: NOVA_SENHA } })).status, 403, 'sem senha o Host da LAN fecha');
     assert.equal((await t.req('GET', '/api/status', { host: t.localHost })).status, 200, 'o painel local volta ao modo local');
   } finally { await t.close(); }
 });

@@ -26,3 +26,14 @@ targetRules = ["generic-api-key"]
 paths = ['''^test/panel-settings\.test\.js$''']
 regexTarget = "line"
 regexes = ['''(?m)^    const sec = await tenta\(\{ PASSKEY: 'abc123segredo' \}\);$''']
+
+[[allowlists]]
+description = "Senha de administração SINTÉTICA de teste (histórico do PR da issue #24), linha exata"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^test/admin-painel\.test\.js$''']
+regexTarget = "line"
+regexes = [
+  '''(?m)^    assert\.equal\(\(await t\.login\(\{ body: \{ password: 'outra-senha-bem-longa-77' \} \}\)\)\.status, 200\);$''',
+  '''(?m)^    assert\.equal\(\(await t\.login\(\{ body: \{ password: 'outra-senha-bem-longa-77' \} \}\)\)\.status, 403, 'sem senha o Host da LAN fecha'\);$''',
+]
