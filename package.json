@@ -13,6 +13,7 @@
     "credenciais": "node src/credenciais-cli.js",
     "configurar": "node src/configurar-cli.js",
     "rede": "node src/rede-cli.js",
+    "alertas": "node src/alertas-cli.js",
     "install-service": "bash scripts/install.sh"
   },
   "engines": {

@@ -249,6 +249,36 @@
       return c;
     }
 
+    // Destino dos alertas (issue #31): a URL é segredo, só entra aqui (escrita) e nunca volta.
+    function alertsCard() {
+      const c = card();
+      c.append(cardHead('Destino dos alertas por webhook'));
+      const info = el('p', 'muted', 'Carregando…');
+      const msg = el('p', 'muted');
+      const url = el('input', 'input'); url.type = 'password'; url.autocomplete = 'off'; url.placeholder = 'URL do destino (segredo; não é exibida depois)';
+      const bearer = el('input', 'input'); bearer.type = 'password'; bearer.autocomplete = 'off'; bearer.placeholder = 'Token bearer (opcional)';
+      const row = el('div', 'item-badges');
+      const save = el('button', 'btn btn-primary', 'Salvar destino'); save.type = 'button';
+      const test = el('button', 'btn btn-outline', 'Enviar mensagem de teste'); test.type = 'button';
+      const del = el('button', 'btn btn-ghost', 'Remover destino'); del.type = 'button';
+      row.append(save, test, del);
+      c.append(info, url, bearer, row, msg);
+      const show = (st) => {
+        info.textContent = `Alertas ${st.enabled ? 'habilitados' : 'desabilitados'}; destino: ${st.configured ? `configurado (${st.source}${st.host ? `, ${st.host}` : ''})` : 'não configurado'}${st.problem ? ` — ${st.problem}` : ''}. Último envio: ${st.lastSuccessAt ?? 'nunca'}; último erro: ${st.lastError ?? 'nenhum'}.`;
+      };
+      const run = async (route, body, ok) => {
+        try {
+          const r = await app().call('POST', route, body);
+          show(r.status ?? r); msg.textContent = ok; url.value = ''; bearer.value = '';
+        } catch (ex) { msg.textContent = ex.data?.error ?? ex.message; }
+      };
+      app().call('GET', 'alerts').then(show, (ex) => { info.textContent = ex.message; });
+      save.addEventListener('click', () => run('alerts/webhook', { url: url.value, bearerToken: bearer.value }, 'Destino salvo. Habilite ALERTS_ENABLED acima depois de testar.'));
+      test.addEventListener('click', () => run('alerts/test', {}, 'Mensagem de teste entregue.'));
+      del.addEventListener('click', () => run('alerts/webhook/clear', {}, 'Destino removido.'));
+      return c;
+    }
+
     function bannerPending() {
       if (!state.pending.length) return null;
       return alertBox('complete', 'Reinício pendente', `${state.pending.join(', ')} já está(ão) salvo(s), mas só vale(m) depois de reiniciar. ${state.restartHint}`);
@@ -290,6 +320,7 @@
       discard.addEventListener('click', () => { drafts = {}; errors = { byKey: {}, general: [] }; errBox.clear(); previewHost.replaceChildren(); setText(live, 'Alterações descartadas.'); draw(); });
       const pb = playbackCard();
       if (pb) host.append(pb);
+      host.append(alertsCard());
       host.append(errBox.root, previewHost, form, installCard(() => state, M.copyName(state.mode)).root);
     }
 

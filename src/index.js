@@ -23,6 +23,7 @@ const { KeepAwake } = require('./keepawake');
 const { logger, initFiles } = require('./logger');
 const { acquireInstance }  = require('./instance-lock');
 const { createPanelSettings } = require('./panel-settings');
+const { AlertManager, configFromValues, OBSERVE_INTERVAL_MS } = require('./alerts');
 
 // Onde ficam passkey, sessão, cofre, logs, .torrent e cache. Fora do código para
 // sobreviver a atualizações (instalador, contêiner, Windows em %LOCALAPPDATA%).
@@ -165,17 +166,37 @@ async function main() {
 
   // Assistente e página de configurações: escrevem no settings.json por este processo, que já
   // detém a trava da instância (não há segundo escritor). LOG_LEVEL vale na hora; o resto, ao reiniciar.
+  const alerts = new AlertManager({
+    dataDir: DATA_DIR, env: bootEnv, config: configFromValues(v), log: logger.child('alertas'),
+    addSecret: (secret) => logger.addSecret(secret), ownPorts: [addonPort, bridgePort, configPort],
+  });
+  alerts.registerSecrets(); // a URL do destino fica redigida nos logs desde já
+  const alertKeys = new Set(['ALERTS_ENABLED', 'ALERT_WEBHOOK_FORMAT', 'ALERT_WEBHOOK_ALLOWED_HOSTS', 'ALERT_WEBHOOK_ALLOW_PRIVATE', 'ALERT_HNR_WITHIN_HOURS', 'ALERT_DISK_FREE_GIB', 'ALERT_TRACKER_FAILURE_MINUTES', 'ALERT_NO_PEERS_MINUTES', 'ALERT_COOLDOWN_MINUTES']);
   const panel = createPanelSettings({
+    alertsGuard: (changes) => {
+      // Valida com os hosts que valerão após salvar (se vierem na mesma alteração).
+      const saved = settings.resolve({ dataDir: DATA_DIR, env: bootEnv }).values;
+      const hosts = changes.ALERT_WEBHOOK_ALLOWED_HOSTS ?? saved.ALERT_WEBHOOK_ALLOWED_HOSTS;
+      const probe = new AlertManager({ dataDir: DATA_DIR, env: bootEnv, timers: false, config: { ...configFromValues(saved), allowedHosts: String(hosts || '').split(',').map((x) => x.trim()).filter(Boolean) } });
+      return probe.configProblem();
+    },
     dataDir: DATA_DIR, bootEnv, running: cfg.values, credentials,
     addonBase: net.urls.addon,
     playback: () => bridge.playbackSnapshot(),
     addSecret: (secret) => logger.addSecret(secret),
-    applyLive: (key, value) => (key === 'LOG_LEVEL' ? logger.setLevel(value) : false),
+    applyLive: (key, value) => {
+      if (key === 'LOG_LEVEL') return logger.setLevel(value);
+      if (alertKeys.has(key)) { alerts.setConfig({ [key]: value }); return true; }
+      return false;
+    },
   });
   const config = await startConfig(asc, configPort, {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
     complete: (infoHash) => bridge.requestCompletion(infoHash),
-  }, undefined, panel);
+  }, undefined, panel, alerts);
+  // Alertas: avaliação a cada minuto sobre o snapshot (leitura pura); a entrega é assíncrona e
+  // nunca bloqueia nem derruba o aplicativo.
+  setInterval(() => alerts.observe(() => ({ ...bridge.snapshot(), stats: asc.accountStats })), OBSERVE_INTERVAL_MS).unref();
   const metaCache = new MetaCache({ file: path.join(DATA_DIR, 'meta-cache.json') }).load();
   const remote = createAscProvider(asc, bridge, torrentDir, { cache: metaCache });
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).
@@ -238,6 +259,7 @@ async function main() {
   let hnrRetry = null;
   const vigiaHnr = async () => {
     let leu = false;
+    let trackerFalhou = false;
     try {
       // O que o tracker já cobra (inclusive de antes do cofre existir).
       const act = await hnr.syncActivity({ asc, vault, entries: bridge.entries });
@@ -255,6 +277,7 @@ async function main() {
     }
     try {
       const r = await hnr.reconcile({ asc, vault });
+      trackerFalhou = Boolean(r.failed);
       if (r.checked || r.failed) {
         console.log(`[hnr] tracker conferido: ${r.checked} torrent(s), ${r.ajustados} ajuste(s), ${r.failed ? 'FALHA de acesso (sessão?)' : 'ok'}`);
       }
@@ -262,8 +285,10 @@ async function main() {
       bridge.keepAwake?.update(bridge.needsAwake());
       await bridge.resumePending();
     } catch (err) {
+      trackerFalhou = true;
       console.error(`[hnr] falha na conciliação com o tracker: ${err?.message ?? err}`);
     }
+    alerts.trackerResult(leu && !trackerFalhou);
     for (const aviso of bridge.hnrWarnings()) console.warn(`[hnr] ${aviso}`);
     // Sem rede na partida (boot, Wi-Fi subindo): tenta de novo logo, em vez de esperar 1 h.
     clearTimeout(hnrRetry);
