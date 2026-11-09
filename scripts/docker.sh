@@ -5,6 +5,7 @@
 #   scripts/docker.sh run              constrói (se faltar) e sobe; HTTP local, peers 7030/TCP na rede
 #   scripts/docker.sh stop|logs|shell  para, mostra logs, abre um shell
 #   scripts/docker.sh passkey          grava a passkey no volume (lê do teclado, sem eco)
+#   scripts/docker.sh credenciais ...  gerencia credenciais de reprodução (garantir, criar, listar, revogar)
 #   scripts/docker.sh save [arquivo]   exporta a imagem (padrão dist/ascstremio-<versão>-image.tar.gz)
 #
 # Dados no volume nomeado "ascstremio-data" (/data no contêiner). Usa docker ou podman.
@@ -33,11 +34,13 @@ case "${1:-run}" in
       -v "$VOLUME:/data" \
       ${AFTER_SEED:+-e AFTER_SEED="$AFTER_SEED"} ${LOG_LEVEL:+-e LOG_LEVEL="$LOG_LEVEL"} \
       "$NAME:latest" >/dev/null
-    echo "Painel: http://127.0.0.1:7020/   Addon: http://127.0.0.1:7000/manifest.json"
+    echo "Painel: http://127.0.0.1:7020/"
+    echo "Addon: precisa de credencial. Emita com: scripts/docker.sh credenciais garantir"
     echo "Logs: scripts/docker.sh logs   |   Passkey: scripts/docker.sh passkey" ;;
   stop) "$ENGINE" stop "$NAME" ;;
   logs) "$ENGINE" logs -f --tail 100 "$NAME" ;;
   shell) "$ENGINE" exec -it "$NAME" sh ;;
+  credenciais) shift; "$ENGINE" exec "$NAME" node src/credenciais-cli.js "$@" ;;
   passkey)
     read -r -s -p "Passkey do ASC: " pk; echo
     [ -n "$pk" ] || { echo "vazia, nada gravado" >&2; exit 1; }

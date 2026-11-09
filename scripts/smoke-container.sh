@@ -19,7 +19,7 @@ code() { curl -s -o /dev/null -w '%{http_code}' "$1" || true; }
 for _ in $(seq 1 60); do [ "$(code http://127.0.0.1:$P_BRIDGE/health)" = 200 ] && break; sleep 1; done
 
 fail=0
-for url in "$P_BRIDGE/health" "$P_ADDON/manifest.json" "$P_PANEL/"; do
+for url in "$P_BRIDGE/health" "$P_PANEL/"; do
   c="$(code "http://127.0.0.1:$url")"
   if [ "$c" = 200 ]; then echo "ok   $url"; else echo "FALHA $url -> $c"; fail=1; fi
 done
@@ -29,6 +29,16 @@ c="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$P_BRIDGE/status" 
 [ "$c" = 403 ] && echo "ok   $P_BRIDGE/status recusa sem token" || { echo "FALHA $P_BRIDGE/status sem token -> $c"; fail=1; }
 c="$(curl -s -o /dev/null -w '%{http_code}' -H "X-Admin-Token: $admin_key" "http://127.0.0.1:$P_BRIDGE/status" || true)"
 [ "$c" = 200 ] && echo "ok   $P_BRIDGE/status com token" || { echo "FALHA $P_BRIDGE/status com token -> $c"; fail=1; }
+# Addon: sem credencial dá 403; com a credencial emitida pelo CLI dá 200; revogada, volta a dar 403.
+c="$(code "http://127.0.0.1:$P_ADDON/manifest.json")"
+[ "$c" = 403 ] && echo "ok   $P_ADDON/manifest.json recusa sem credencial" || { echo "FALHA $P_ADDON/manifest.json sem credencial -> $c"; fail=1; }
+manifest="$("$ENGINE" exec "$NAME" node src/credenciais-cli.js criar fumaca | grep 'manifest.json$' || true)"
+c="$(code "$manifest")"
+[ "$c" = 200 ] && echo "ok   addon com credencial emitida" || { echo "FALHA addon com credencial -> $c"; fail=1; }
+cred_id="$("$ENGINE" exec "$NAME" node src/credenciais-cli.js listar | awk '/fumaca/ {print $1}')"
+"$ENGINE" exec "$NAME" node src/credenciais-cli.js revogar "$cred_id" >/dev/null
+c="$(code "$manifest")"
+[ "$c" = 403 ] && echo "ok   credencial revogada recusada" || { echo "FALHA credencial revogada -> $c"; fail=1; }
 uid="$("$ENGINE" exec "$NAME" id -u)"
 [ "$uid" != 0 ] && echo "ok   processo sem root (uid $uid)" || { echo "FALHA: contêiner roda como root"; fail=1; }
 exit "$fail"

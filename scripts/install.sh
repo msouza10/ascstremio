@@ -387,10 +387,22 @@ else
   fail "o serviço não respondeu. Veja: journalctl --user -u $UNIT_NAME -n 50 --no-pager"
 fi
 
+# Credencial de reprodução: o addon recusa tudo sem uma. Emite a primeira só se não houver
+# nenhuma ativa (o token aparece uma vez, aqui no terminal; nunca vai ao log do serviço).
+ADDON_LINE="http://127.0.0.1:7000/<credencial>/manifest.json (emita: npm run credenciais -- criar \"Stremio\")"
+if [ "$up" -eq 1 ] && [ "$MODE" != check ]; then
+  step "Credencial de reprodução"
+  if issued="$(DATA_DIR="$DATA_DIR" node "$PROJECT/src/credenciais-cli.js" garantir 2>&1)"; then
+    echo "$issued" | sed 's/^/  /'
+  else
+    warn "não foi possível emitir a credencial agora: $issued"
+  fi
+fi
+
 step "Pronto"
 cat <<EOF
   Painel e login : http://127.0.0.1:7020/
-  Addon (Stremio): http://127.0.0.1:7000/manifest.json
+  Addon (Stremio): $ADDON_LINE
   Estado         : systemctl --user status $UNIT_NAME
   Logs           : journalctl --user -u $UNIT_NAME -f
   Configuração   : $ENV_FILE  (depois: systemctl --user restart $UNIT_NAME)

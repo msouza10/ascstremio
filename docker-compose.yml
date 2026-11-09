@@ -1,5 +1,5 @@
 # docker compose up -d --build     (ou: scripts/docker.sh run)
-# Painel: http://127.0.0.1:7020/   Addon: http://127.0.0.1:7000/manifest.json
+# Painel: http://127.0.0.1:7020/   Addon: http://127.0.0.1:7000/<credencial>/manifest.json (docker compose exec ascstremio node src/credenciais-cli.js garantir)
 # As portas HTTP ficam no 127.0.0.1 da máquina; 7030/TCP aceita peers pela rede.
 # Mantenha painel e administração locais. Limites de LAN: docs/seguranca.md.
 services:
