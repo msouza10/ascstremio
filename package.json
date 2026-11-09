@@ -1,6 +1,6 @@
 {
   "name": "ascstremio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Base de addon Stremio para integração futura com Amigos Share",
   "main": "src/index.js",
