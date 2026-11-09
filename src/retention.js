@@ -54,6 +54,14 @@ function inspectFile(rootReal, rel) {
   return { ok: true, bytes: allocated(st), exists: true };
 }
 
+// Identidade textual de um caminho do .torrent para comparar títulos: em Windows e macOS os
+// volumes costumam ignorar maiúsculas, então `Filme/A.mkv` e `filme/a.mkv` são o mesmo arquivo.
+function pathKey(rel) {
+  const norm = safeRelative(rel);
+  if (!norm) return null;
+  return process.platform === 'win32' || process.platform === 'darwin' ? norm.toLowerCase() : norm;
+}
+
 function realRoot(storeDir) {
   return fs.realpathSync(storeDir);
 }
@@ -127,4 +135,4 @@ function select(items, policy) {
   return result;
 }
 
-module.exports = { inspectFile, removeFiles, select, safeRelative, realRoot, DAY_MS, GIB, SAFETY_MS };
+module.exports = { inspectFile, removeFiles, select, safeRelative, pathKey, realRoot, DAY_MS, GIB, SAFETY_MS };

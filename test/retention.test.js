@@ -365,18 +365,56 @@ test('arquivo ausente conta zero e título sem dados em disco não é candidato'
   assert.equal(p.totalTitulos, 2);
 });
 
-test('arquivo que não pode ser removido (em uso) permanece, é reportado e a execução segue', async (t) => {
+test('arquivo que não pode ser removido (em uso) permanece, não conta como liberado e a execução segue', async (t) => {
   const c = cenario({ budgetBlocos: 1 });
-  const a = c.add(1, { idade: 90, blocos: 1 });
-  c.add(2, { idade: 40 });
+  const a = c.add(1, { idade: 95, blocos: 1 });
+  const b2 = c.add(2, { idade: 90 });
+  c.add(3, { idade: 40 });
   const original = fs.unlinkSync;
-  t.mock.method(fs, 'unlinkSync', (p) => { if (String(p).endsWith('filme.mkv') && String(p).includes('Filme 1')) { const e = new Error('busy'); e.code = 'EBUSY'; throw e; } return original(p); });
+  t.mock.method(fs, 'unlinkSync', (p) => { if (String(p).includes('Filme 1')) { const e = new Error('busy'); e.code = 'EBUSY'; throw e; } return original(p); });
   const r = await c.R.run(c.R.preview().plano);
-  assert.equal(r.removidos.length, 1);
-  assert.equal(r.removidos[0].bytes, 0);
+  assert.deepEqual(r.removidos.map((x) => x.infoHash), [b2.hash], 'o laço segue para o próximo candidato');
   assert.equal(r.falhas[0].detalhes[0].reason, 'em-uso');
+  assert.equal(r.falhas[0].motivo, 'nenhum arquivo foi removido');
   assert.ok(existe(a.full));
   assert.equal(c.vault.get(a.hash).releasedAs, undefined, 'nada removido, não marca liberado');
+  assert.equal(r.bytesLiberados, BLOCO);
+  assert.equal(r.alvoAtingido, false, 'o espaço do arquivo em uso continua ocupado: a meta não foi atingida');
+});
+
+test('arquivo em uso como único candidato: nada liberado e meta não atingida', async (t) => {
+  const c = cenario({ budgetBlocos: 1 });
+  const a = c.add(1, { idade: 95 }); c.add(2, { idade: 40 });
+  const original = fs.unlinkSync;
+  t.mock.method(fs, 'unlinkSync', (p) => { if (String(p).includes('Filme 1')) { const e = new Error('busy'); e.code = 'EPERM'; throw e; } return original(p); });
+  const r = await c.R.run(c.R.preview().plano);
+  assert.equal(r.removidos.length, 0);
+  assert.equal(r.bytesLiberados, 0);
+  assert.equal(r.alvoAtingido, false);
+  assert.ok(existe(a.full));
+});
+
+test('caminhos que só diferem em maiúsculas contam como o mesmo arquivo nos sistemas que não as distinguem', () => {
+  const caso = process.platform === 'win32' || process.platform === 'darwin';
+  assert.equal(retention.pathKey('Filme/A.mkv') === retention.pathKey('filme/a.mkv'), caso);
+  assert.equal(retention.pathKey('../x'), null);
+  if (!caso) return;
+  const c = cenario({ budgetBlocos: 1 });
+  const a = c.add(1, { idade: 90 });
+  const b2 = c.add(2, { idade: 91, arquivos: [{ path: a.rel.toUpperCase(), length: BLOCO }] });
+  c.add(3, { idade: 40 });
+  const motivos = Object.fromEntries(c.R.preview().protegidos.map((x) => [x.infoHash, x.motivo]));
+  assert.equal(motivos[a.hash], 'arquivo-compartilhado');
+  assert.equal(motivos[b2.hash], 'arquivo-compartilhado');
+});
+
+test('marca antiga de conclusão em segundo plano (AFTER_SEED=keep) não bloqueia título já concluído e confirmado', () => {
+  const c = cenario({ budgetBlocos: 1 });
+  const a = c.add(1, { idade: 90 }); c.add(2, { idade: 40 });
+  c.b.completing.add(a.hash);
+  c.vault.get(a.hash).backgroundComplete = true;
+  c.b.client.torrents.push({ infoHash: a.hash, ready: true, done: true });
+  assert.deepEqual(c.R.preview().candidatos.map((x) => x.infoHash), [a.hash]);
 });
 
 test('modo off recusa a execução mesmo com plano antigo', async () => {

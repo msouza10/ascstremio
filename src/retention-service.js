@@ -82,7 +82,8 @@ class Retention {
     if ((b.streams.get(infoHash) ?? 0) > 0) return { ...base, reason: 'reproducao-ativa' };
     if (b.limiter.hasKeyPrefix(`s:${infoHash}:`)) return { ...base, reason: 'sessao-recente' };
     if (b.loading.has(infoHash) || this.retiring.has(infoHash)) return { ...base, reason: 'em-andamento' };
-    if (b.completing.has(infoHash) || (entry.backgroundComplete && !entry.satisfiedAt)) return { ...base, reason: 'conclusao-em-andamento' };
+    // `b.completing` não serve de sinal: com AFTER_SEED=keep o hash fica nele para sempre. O que
+    // vale é o torrent do motor ainda baixando (abaixo).
     const torrent = b.client?.torrents?.find((x) => x.infoHash === infoHash);
     if (torrent && (!torrent.ready || !torrent.done)) return { ...base, reason: 'em-andamento' };
     // Conteúdo recém-confirmado ou usado há pouco.
@@ -91,8 +92,8 @@ class Retention {
     // Arquivo compartilhado com outro título da biblioteca: quem mais o usa pode ter obrigação.
     for (const [other, olib] of b.entries) {
       if (other === infoHash) continue;
-      const theirs = new Set((olib.files ?? []).map((f) => retention.safeRelative(f.path)));
-      if (files.some((f) => theirs.has(retention.safeRelative(f)))) return { ...base, reason: 'arquivo-compartilhado' };
+      const theirs = new Set((olib.files ?? []).map((f) => retention.pathKey(f.path)));
+      if (files.some((f) => theirs.has(retention.pathKey(f)))) return { ...base, reason: 'arquivo-compartilhado' };
     }
     return { ...base, eligible: true };
   }
@@ -191,6 +192,7 @@ class Retention {
     }
     // (2) Recalcula com o dado fresco. A seleção da prévia vale como LISTA e ORDEM; o que mudou sai.
     const removidos = [];
+    const parciais = [];
     const ignorados = [];
     const falhas = [];
     let rootReal;
@@ -208,16 +210,21 @@ class Retention {
       try {
         const r = await this.retire(item);
         if (r.erro) { falhas.push({ infoHash: hash, motivo: r.erro }); continue; }
-        bytes -= item.bytes;
-        titles -= 1;
-        removidos.push({ infoHash: hash, nome: item.name, bytes: r.bytes, falhasDeArquivo: r.failed.length });
-        if (r.failed.length) falhas.push({ infoHash: hash, motivo: 'alguns arquivos permaneceram', detalhes: r.failed });
+        // O orçamento só desconta o que realmente saiu; o título só deixa de contar sem sobras em disco.
+        bytes -= r.bytes;
+        if (r.failed.length === 0) {
+          titles -= 1;
+          removidos.push({ infoHash: hash, nome: item.name, bytes: r.bytes });
+        } else {
+          falhas.push({ infoHash: hash, motivo: r.removed > 0 ? 'alguns arquivos permaneceram' : 'nenhum arquivo foi removido', detalhes: r.failed });
+          if (r.removed > 0) parciais.push({ infoHash: hash, nome: item.name, bytes: r.bytes });
+        }
       } finally { this.retiring.delete(hash); }
     }
     b.duCache = null;
-    const bytesLiberados = removidos.reduce((a, r) => a + r.bytes, 0);
+    const bytesLiberados = [...removidos, ...parciais].reduce((a, r) => a + r.bytes, 0);
     log.info(`retenção concluída: ${removidos.length} título(s) removido(s), ${fmtBytes(bytesLiberados)}; ${ignorados.length} ignorado(s)`);
-    return { removidos, ignorados, falhas, bytesLiberados, alvoAtingido: !acima() };
+    return { removidos, parciais, ignorados, falhas, bytesLiberados, alvoAtingido: !acima() };
   }
 
   // Encerra o torrent (sem apagar pelo motor) e remove os arquivos listados. Só com o torrent
