@@ -127,6 +127,12 @@ npm run rede -- --json
 
 A URL de instalação aparece com `<credencial>`; o token real só sai uma vez em `npm run credenciais -- criar "<nome>"`, já com o endereço anunciado (e um aviso se ele não servir a outros aparelhos), e nunca vai para log. QR code não é gerado.
 
+### Porta de peers (diagnóstico)
+
+`npm run rede -- peers` (e o cartão "Porta de peers" em Configurações, somente leitura) mostra quatro camadas sem confundir escuta local com alcance externo: (1) porta configurada e se o motor realmente escuta; (2) no contêiner, só a porta de dentro, pois a publicação (`-p`) é do hospedeiro e não é verificável daqui; (3) firewall/NAT, sempre "desconhecido": o programa não abre portas (UPnP/NAT-PMP desligados), não altera o roteador e **não consulta serviços de terceiros**; (4) conexões de **entrada** de peers observadas desde a partida, só como contadores e horário da última, sem endereços.
+
+Estados: `escutando` (escuta local, sem entrada observada ainda), `sem entrada observada` (6 h ou mais com torrent ativo e nenhuma entrada; compatível com firewall, NAT/CGNAT ou ninguém ter tentado, não prova bloqueio), `entrada observada` (ao menos um peer de endereço público entrou; no contêiner o Docker pode mascarar a origem; entradas de rede local não contam), `sem escuta` (motor parado, por exemplo porta ocupada) e `desconhecido`. A CLI lê um resumo (`peer-port-status.json`, 0600, só contadores) que o aplicativo em execução regrava a cada minuto; sem ele ou com ele velho, o estado é `desconhecido`. Os contadores zeram a cada partida. Não há teste de alcance automático; para conferir de fora, use outra rede por sua conta.
+
 Consulte [segurança e rede](seguranca.md) antes de habilitar LAN. Não use essas opções para hospedar uma conta compartilhada.
 
 ## Seed, energia e transferência

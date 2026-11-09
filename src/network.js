@@ -11,8 +11,10 @@
 // chega até ele (roteador, firewall, isolamento de Wi-Fi): o alcance pelo cliente é sempre
 // 'desconhecido'. Não há teste de URL arbitrária (evita SSRF).
 
+const fs = require('fs');
 const net = require('net');
 const os = require('os');
+const path = require('path');
 
 // Interfaces que existem só dentro do host (contêiner, VM, WSL): o endereço delas não é
 // alcançável pelos outros aparelhos da rede doméstica.
@@ -277,4 +279,213 @@ function staleWarning(plan, interfaces = systemInterfaces()) {
   return null;
 }
 
-module.exports = { listCandidates, parseHost, parseInterfaceName, evaluate, staleWarning, urlHost, systemInterfaces };
+// ---------------------------------------------------------------------------------------
+// Porta de peers BitTorrent (issue #34): diagnóstico em camadas.
+//
+// Escuta local NÃO é alcance externo. O programa não abre porta no roteador (UPnP/NAT-PMP
+// desligados), não pergunta a nenhum serviço de terceiros se a porta está aberta e não
+// abre torrent só para testar. O que ele sabe de verdade:
+//   1. se o motor está escutando e em qual porta (estado do servidor do WebTorrent);
+//   2. no contêiner, só a porta de DENTRO; a publicação (-p) é do hospedeiro;
+//   3. firewall/NAT: nada (só orientação);
+//   4. se já chegou conexão de ENTRADA de peer desde a partida (contadores, sem endereço).
+// Estados: escutando | sem_entrada | entrada_observada | sem_escuta | desconhecido.
+
+const PEER_STATUS_FILE = 'peer-port-status.json';
+// Tempo com torrent ativo sem nenhuma entrada antes de falar em "sem entrada observada".
+// Peer só tenta entrar quando o tracker passa o nosso endereço a quem baixa; antes disso, a
+// ausência de entrada não diz nada.
+const PEER_QUIET_MS = 6 * 3600 * 1000;
+// O processo em execução regrava o resumo a cada ~1 min; mais velho que isto não vale.
+const PEER_STATUS_FRESH_MS = 3 * 60 * 1000;
+
+// Classifica o endereço remoto de uma conexão de entrada, sem guardá-lo.
+//   'publico': roteável na internet; 'privado': LAN/CGNAT/link-local/ULA; 'loopback'; 'desconhecido'.
+function classifyRemote(address) {
+  if (typeof address !== 'string' || !address) return 'desconhecido';
+  let a = address.toLowerCase();
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(a);
+  if (mapped) a = mapped[1];
+  const fam = net.isIP(a);
+  if (fam === 4) {
+    const [x, y] = a.split('.').map(Number);
+    if (x === 127) return 'loopback';
+    if (x === 10 || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168)) return 'privado';
+    if (x === 169 && y === 254) return 'privado';
+    if (x === 100 && y >= 64 && y <= 127) return 'privado';
+    if (x === 0 || x >= 224) return 'desconhecido';
+    return 'publico';
+  }
+  if (fam === 6) {
+    if (a === '::1') return 'loopback';
+    if (a === '::') return 'desconhecido';
+    const h = firstHextet(a);
+    if ((h & 0xfe00) === 0xfc00 || (h & 0xffc0) === 0xfe80) return 'privado';
+    if ((h >> 8) === 0xff) return 'desconhecido';
+    return 'publico';
+  }
+  return 'desconhecido';
+}
+
+// Observador de conexões de ENTRADA de peers. Guarda só contadores e horários: nenhum
+// endereço, porta remota, peerId ou info hash (privacidade; o tracker é privado).
+function createPeerObserver({ now = Date.now } = {}) {
+  const st = { total: 0, publico: 0, privado: 0, desconhecido: 0, lastAt: null, lastPublicAt: null, startedAt: now(), activeMs: 0 };
+  let client = null;
+  let lastSample = now();
+  let lastActive = false;
+  // Soma só os intervalos em que havia torrent ativo (amostrado a cada snapshot, ~1 min).
+  const sample = () => {
+    const t = now();
+    if (lastActive) st.activeMs += Math.max(0, t - lastSample);
+    lastSample = t;
+    lastActive = Boolean(client?.torrents?.length);
+  };
+  const seen = new WeakSet();
+  const onWire = (wire) => {
+    // 'tcpIncoming'/'utpIncoming' = o peer nos procurou; 'tcpOutgoing' = fomos nós (não prova nada).
+    if (!wire || typeof wire.type !== 'string' || !wire.type.includes('Incoming')) return;
+    const cls = classifyRemote(wire.remoteAddress);
+    if (cls === 'loopback') return; // o próprio computador não prova nada
+    st.total += 1;
+    st[cls] += 1;
+    st.lastAt = now();
+    if (cls === 'publico') st.lastPublicAt = st.lastAt;
+  };
+  const watch = (torrent) => {
+    if (!torrent || seen.has(torrent) || typeof torrent.on !== 'function') return;
+    seen.add(torrent);
+    torrent.on('wire', onWire);
+  };
+  return {
+    // Liga ao cliente do motor: pega os torrents existentes e os futuros. Não abre porta nem torrent.
+    attach(c) {
+      if (!c || typeof c.on !== 'function') return;
+      client = c;
+      sample();
+      for (const t of client.torrents ?? []) watch(t);
+      client.on('torrent', watch);
+    },
+    snapshot: () => { sample(); return { ...st }; },
+  };
+}
+
+// O que o motor sabe de si, sem abrir nada. Qualquer leitura que falhe vira "desconhecido".
+function engineState(client) {
+  if (!client) return { known: false };
+  try {
+    if (client.destroyed) return { known: true, listening: false, destroyed: true, port: null };
+    const addr = client.listening && typeof client.address === 'function' ? client.address() : null;
+    return {
+      known: true, listening: Boolean(client.listening && addr), destroyed: false,
+      port: addr?.port ?? null, utp: Boolean(client.utp),
+    };
+  } catch { return { known: false }; }
+}
+
+const fmtTime = (ms) => (ms ? `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC` : null);
+
+// Núcleo puro. engine: saída de engineState (ou { known:false }); observed: snapshot do observador
+// (ou null); configuredPort: TORRENT_PORT (0 = escolhida pelo sistema).
+function evaluatePeerPort({ engine = { known: false }, observed = null, configuredPort = 0, container = false, now = Date.now() } = {}) {
+  const notes = [];
+  const advice = [];
+  const listening = Boolean(engine.known && engine.listening);
+  const port = listening ? engine.port : null;
+  const evidence = observed ? (container ? observed.publico + observed.privado : observed.publico) : 0;
+  const localOnly = observed && !container ? observed.privado : 0;
+  const observedMs = observed?.activeMs ?? 0;
+
+  let state;
+  if (!engine.known) state = 'desconhecido';
+  else if (!listening) state = 'sem_escuta';
+  else if (evidence > 0) state = 'entrada_observada';
+  else if (observedMs >= PEER_QUIET_MS) state = 'sem_entrada';
+  else state = 'escutando';
+
+  const summary = {
+    desconhecido: 'Desconhecido: não há leitura do estado do motor de torrents (o aplicativo não está em execução ou não respondeu).',
+    sem_escuta: engine.destroyed
+      ? 'O motor de torrents parou (por exemplo, porta de peers ocupada por outro programa). Veja o log e reinicie o aplicativo.'
+      : 'O motor ainda não está escutando a porta de peers.',
+    escutando: `O motor escuta a porta ${port} neste computador. Isso não prova que ela seja alcançável de fora: nenhuma conexão de entrada foi observada ainda (pode ser só falta de tempo ou de torrent ativo).`,
+    sem_entrada: `O motor escuta a porta ${port}, mas nenhuma conexão de entrada de peer foi observada desde a partida. Isso é compatível com firewall, NAT/CGNAT ou simplesmente com ninguém ter tentado entrar; não prova bloqueio.`,
+    entrada_observada: `Já entrou ao menos uma conexão de peer pela porta ${port} desde a partida${container ? ' (no contêiner, o Docker pode mascarar o endereço de origem)' : ', vinda de endereço público'}. É evidência prática de alcance, não garantia para todos os peers.`,
+  }[state];
+
+  if (listening && configuredPort === 0) {
+    notes.push('TORRENT_PORT=0: o sistema escolhe uma porta nova a cada partida, então não dá para liberá-la no firewall nem publicá-la no contêiner. Fixe uma porta (a imagem usa 7030).');
+  }
+  if (listening && configuredPort && port && configuredPort !== port) {
+    notes.push(`Configurada ${configuredPort}, mas o motor escuta ${port}: a configuração salva ainda não foi aplicada (reinicie) ou o ambiente a sobrescreve.`);
+  }
+  if (localOnly > 0) {
+    notes.push(`${localOnly} entrada(s) vieram de endereço da rede local ou privado: não provam alcance pela internet.`);
+  }
+  if (container) {
+    notes.push('Contêiner: o programa só vê a porta de dentro. Se ela foi publicada no hospedeiro (-p), não dá para saber daqui; confira com `docker port` ou o docker-compose.yml. A porta de fora tem de ser igual à de dentro, pois é a de dentro que vai ao tracker.');
+  }
+  if (state !== 'desconhecido') {
+    notes.push('Firewall e NAT: o programa não os consulta nem os altera (UPnP/NAT-PMP desligados) e não pergunta a serviço de terceiros. Atrás de CGNAT (IP do roteador na faixa 100.64.0.0/10, ou diferente do que um site de "meu IP" mostra) não há como receber conexões de entrada sem ajuda do provedor. IPv6 tem regras de firewall próprias no roteador.');
+    notes.push('Não receber conexões de entrada não impede todo upload: peers para os quais o programa se conecta também recebem dados, e o seed continua valendo para o tracker.');
+    advice.push(`Se quiser receber conexões de entrada: libere somente a porta de peers${port ? ` (${port}/TCP)` : ''} no firewall do computador e encaminhe-a no roteador para este computador. Nunca abra as portas do addon, da ponte ou do painel para a internet.`);
+    advice.push(`Para conferir de fora, por sua conta, a partir de outra rede (por exemplo, o celular no 4G): \`nc -vz <seu IP público> ${port ?? '<porta>'}\` ou o verificador de portas que você escolher. O programa não faz isso por você. Não informe passkey, hashes nem títulos a nenhum serviço.`);
+  }
+
+  return {
+    state, summary, notes, advice,
+    layers: {
+      escuta: {
+        configurada: configuredPort,
+        real: port,
+        protocolo: engine.utp ? 'TCP e uTP (UDP) na mesma porta' : 'TCP',
+        estado: !engine.known ? 'desconhecido' : (listening ? 'escutando' : 'sem_escuta'),
+      },
+      publicacao: {
+        modo: container ? 'contêiner' : 'nativo',
+        verificavel: false,
+        nota: container ? 'Não verificável de dentro do contêiner.' : 'Não se aplica (execução nativa).',
+      },
+      firewallNat: { estado: 'desconhecido', nota: 'Não verificado: o programa não consulta nem altera firewall, roteador ou NAT.' },
+      entrada: {
+        observada: evidence,
+        deRedeLocal: localOnly,
+        total: observed?.total ?? 0,
+        ultima: fmtTime(observed?.lastAt),
+        ultimaPublica: container ? null : fmtTime(observed?.lastPublicAt),
+        desde: fmtTime(observed?.startedAt),
+      },
+    },
+  };
+}
+
+// Resumo gravado pelo processo em execução para a CLI (`npm run rede`) ler. Só contadores e
+// o estado do motor; nenhum endereço de peer. Fica em DATA_DIR (0600) e é regravado a cada ~1 min.
+function writePeerStatus(dataDir, { engine, observed }, now = Date.now()) {
+  const file = path.join(dataDir, PEER_STATUS_FILE);
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify({ version: 1, pid: process.pid, updatedAt: now, engine, observed }), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+    return true;
+  } catch {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* nada a limpar */ }
+    return false;
+  }
+}
+
+// Devolve { engine, observed } só se o resumo for recente e legível; senão o motor fica "desconhecido".
+function readPeerStatus(dataDir, now = Date.now()) {
+  const none = { engine: { known: false }, observed: null, stale: true };
+  try {
+    const doc = JSON.parse(fs.readFileSync(path.join(dataDir, PEER_STATUS_FILE), 'utf8'));
+    if (doc?.version !== 1 || !Number.isFinite(doc.updatedAt) || now - doc.updatedAt > PEER_STATUS_FRESH_MS || doc.updatedAt > now + 60000) return none;
+    return { engine: doc.engine ?? { known: false }, observed: doc.observed ?? null, stale: false };
+  } catch { return none; }
+}
+
+module.exports = {
+  listCandidates, parseHost, parseInterfaceName, evaluate, staleWarning, urlHost, systemInterfaces,
+  classifyRemote, createPeerObserver, engineState, evaluatePeerPort, writePeerStatus, readPeerStatus,
+  PEER_STATUS_FILE, PEER_QUIET_MS, PEER_STATUS_FRESH_MS,
+};

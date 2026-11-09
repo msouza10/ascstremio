@@ -249,6 +249,42 @@
       return c;
     }
 
+    // O cartão da porta de peers é redesenhado sozinho (sem tocar no formulário nem nas edições).
+    let peerHost = null;
+    let peerAt = 0;
+    function drawPeer() {
+      if (!peerHost) return;
+      clear(peerHost);
+      const c = peerPortCard();
+      if (c) peerHost.append(c);
+    }
+    async function refreshPeer() {
+      if (!state || !peerHost || Date.now() - peerAt < 15000) return;
+      peerAt = Date.now();
+      try { const fresh = await loadState(); state.peerPort = fresh.peerPort; drawPeer(); } catch { /* mantém o último valor */ }
+    }
+
+    // Porta de peers: somente leitura. Escuta local não é alcance externo; os estados são explícitos.
+    function peerPortCard() {
+      const p = state.peerPort;
+      if (!p) return null;
+      const c = card();
+      const names = { escutando: 'Escutando', sem_entrada: 'Sem entrada observada', entrada_observada: 'Entrada observada', sem_escuta: 'Sem escuta', desconhecido: 'Desconhecido' };
+      const head = cardHead('Porta de peers (BitTorrent)');
+      head.append(badge(names[p.state] ?? 'Desconhecido', p.state === 'entrada_observada' ? 'complete' : 'neutral'));
+      c.append(head);
+      c.append(el('p', 'muted', p.summary));
+      const e = p.layers.escuta; const n = p.layers.entrada;
+      const ul = el('ul', 'foot-list');
+      ul.append(el('li', '', `Escuta: configurada ${e.configurada || 'automática'}; em uso ${e.real ?? 'desconhecida'}; ${e.protocolo}.`));
+      ul.append(el('li', '', `Publicação (${p.layers.publicacao.modo}): ${p.layers.publicacao.nota}`));
+      ul.append(el('li', '', `Firewall/NAT: ${p.layers.firewallNat.estado}. ${p.layers.firewallNat.nota}`));
+      ul.append(el('li', '', `Entradas observadas desde ${n.desde ?? '-'}: ${n.observada}; última: ${n.ultima ?? 'nenhuma'}.`));
+      c.append(ul);
+      for (const t of [...p.notes, ...p.advice]) c.append(el('p', 'foot', t));
+      return c;
+    }
+
     function bannerPending() {
       if (!state.pending.length) return null;
       return alertBox('complete', 'Reinício pendente', `${state.pending.join(', ')} já está(ão) salvo(s), mas só vale(m) depois de reiniciar. ${state.restartHint}`);
@@ -290,6 +326,7 @@
       discard.addEventListener('click', () => { drafts = {}; errors = { byKey: {}, general: [] }; errBox.clear(); previewHost.replaceChildren(); setText(live, 'Alterações descartadas.'); draw(); });
       const pb = playbackCard();
       if (pb) host.append(pb);
+      peerHost = el('div'); host.append(peerHost); drawPeer();
       host.append(errBox.root, previewHost, form, installCard(() => state, M.copyName(state.mode)).root);
     }
 
