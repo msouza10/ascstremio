@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Teste de fumaça da imagem: sobe o contêiner em portas alternativas (só 127.0.0.1),
 # confere ponte, addon, painel e rota administrativa, e remove tudo.
-#   scripts/smoke-container.sh [imagem]      (padrão asc-stremio:latest; docker ou podman)
+#   scripts/smoke-container.sh [imagem]      (padrão ascstremio:latest; docker ou podman)
 set -Eeuo pipefail
-IMAGE="${1:-asc-stremio:latest}"
+IMAGE="${1:-ascstremio:latest}"
 ENGINE="${CONTAINER_ENGINE:-$(command -v docker || command -v podman)}"
 NAME="asc-smoke-$$"
 P_ADDON=17000; P_BRIDGE=17010; P_PANEL=17020

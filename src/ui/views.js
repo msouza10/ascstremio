@@ -612,7 +612,7 @@
     const cSvc = card(); const svcRows = el('dl', 'rows');
     cSvc.append(cardHead('Configuração em uso'), svcRows);
     const cCmd = card();
-    const pre = el('pre', 'code', 'systemctl --user status asc-stremio\njournalctl --user -u asc-stremio -f\nsystemctl --user restart asc-stremio');
+    const pre = el('pre', 'code', 'systemctl --user status ascstremio\njournalctl --user -u ascstremio -f\nsystemctl --user restart ascstremio');
     cCmd.append(cardHead('Comandos do serviço'), pre, el('p', 'foot', 'As variáveis ficam em private/service.env (modelo comentado). Depois de editar, reinicie o serviço.'));
     panels.servico.append(cSvc, cCmd);
 

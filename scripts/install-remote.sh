@@ -4,24 +4,24 @@
 #   curl -fsSL <URL-base>/install.sh | bash
 #   curl -fsSL <URL-base>/install.sh | bash -s -- --no-service
 #
-# Baixa o pacote, confere o SHA-256, instala em ~/.local/share/asc-stremio/app e
+# Baixa o pacote, confere o SHA-256, instala em ~/.local/share/ascstremio/app e
 # chama scripts/install.sh (Node portátil se faltar, testes, serviço systemd).
 # Atualizar = rodar de novo: o código é trocado, os dados em .../data ficam.
 #
-# ASC_STREMIO_BASE_URL  pasta com asc-stremio-latest.tar.gz e .sha256 (http(s):// ou file://)
-# ASC_STREMIO_HOME      destino (padrão ~/.local/share/asc-stremio)
+# ASCSTREMIO_BASE_URL  pasta com ascstremio-latest.tar.gz e .sha256 (http(s):// ou file://)
+# ASCSTREMIO_HOME      destino (padrão ~/.local/share/ascstremio)
 # Este arquivo é a fonte; scripts/build-release.sh gera dist/install.sh com a URL fixa.
 
 set -Eeuo pipefail
 
 DEFAULT_BASE_URL=""
-BASE_URL="${ASC_STREMIO_BASE_URL:-$DEFAULT_BASE_URL}"
-HOME_DIR="${ASC_STREMIO_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/asc-stremio}"
+BASE_URL="${ASCSTREMIO_BASE_URL:-$DEFAULT_BASE_URL}"
+HOME_DIR="${ASCSTREMIO_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/ascstremio}"
 
 die() { echo "Erro: $*" >&2; exit 1; }
 [ "$(id -u)" -ne 0 ] || die "não rode como root: o serviço é do seu usuário e usa a sua passkey."
 [ "$(uname -s)" = Linux ] || die "este instalador é para Linux (Windows: instalador .exe; outros: Docker)."
-[ -n "$BASE_URL" ] || die "defina ASC_STREMIO_BASE_URL (pasta com asc-stremio-latest.tar.gz)."
+[ -n "$BASE_URL" ] || die "defina ASCSTREMIO_BASE_URL (pasta com ascstremio-latest.tar.gz)."
 BASE_URL="${BASE_URL%/}"
 for c in tar gzip mktemp; do command -v "$c" >/dev/null || die "faltou o comando $c"; done
 if command -v curl >/dev/null; then dl() { curl -fsSL --retry 3 -o "$2" "$1"; }
@@ -32,9 +32,9 @@ elif command -v shasum >/dev/null; then sha() { shasum -a 256 "$1" | cut -d' ' -
 else die "faltou sha256sum ou shasum"; fi
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-echo "Baixando $BASE_URL/asc-stremio-latest.tar.gz ..."
-dl "$BASE_URL/asc-stremio-latest.tar.gz" "$tmp/pkg.tar.gz" || die "falha ao baixar o pacote"
-dl "$BASE_URL/asc-stremio-latest.tar.gz.sha256" "$tmp/pkg.sha256" || die "falha ao baixar o .sha256"
+echo "Baixando $BASE_URL/ascstremio-latest.tar.gz ..."
+dl "$BASE_URL/ascstremio-latest.tar.gz" "$tmp/pkg.tar.gz" || die "falha ao baixar o pacote"
+dl "$BASE_URL/ascstremio-latest.tar.gz.sha256" "$tmp/pkg.sha256" || die "falha ao baixar o .sha256"
 want="$(cut -d' ' -f1 "$tmp/pkg.sha256")"; got="$(sha "$tmp/pkg.tar.gz")"
 [ -n "$want" ] && [ "$want" = "$got" ] || die "SHA-256 não confere (esperado '$want', obtido '$got'): nada foi instalado."
 

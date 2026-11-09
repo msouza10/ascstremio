@@ -26,7 +26,7 @@ fi
 echo "$files" | grep -E '^(docs|tools)/' | grep -q . && report "docs/ ou tools/ no pacote (só o README.md é publicado)"
 echo "$files" | grep -E '\.md$' | grep -vE '^README\.md$' | grep -q . && report "documento .md além do README.md"
 # a passkey real desta máquina (se existir) não pode aparecer em lugar nenhum
-for pk in "$OLDPWD/private/passkey.txt" "$HOME/.local/share/asc-stremio/data/passkey.txt"; do
+for pk in "$OLDPWD/private/passkey.txt" "$HOME/.local/share/ascstremio/data/passkey.txt"; do
   if [ -s "$pk" ] && echo "$files" | tr '\n' '\0' | xargs -0 grep -IlF -- "$(tr -d '\n' < "$pk")" 2>/dev/null | grep -q .; then
     report "a passkey real aparece em arquivos do pacote"
   fi

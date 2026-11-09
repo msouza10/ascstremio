@@ -45,7 +45,7 @@ jobs:
           node-version: 22
       # O curl baixa sempre do "último release" deste repositório.
       - run: scripts/build-release.sh --base-url "https://github.com/${{ github.repository }}/releases/latest/download"
-      - run: scripts/check-no-secrets.sh dist/asc-stremio-latest.tar.gz
+      - run: scripts/check-no-secrets.sh dist/ascstremio-latest.tar.gz
       - run: scripts/smoke-install.sh dist
       - uses: actions/upload-artifact@v4
         with:
@@ -118,9 +118,9 @@ jobs:
         with:
           context: .
           load: true
-          tags: asc-stremio:release-test
+          tags: ascstremio:release-test
           cache-from: type=gha
-      - run: scripts/smoke-container.sh asc-stremio:release-test
+      - run: scripts/smoke-container.sh ascstremio:release-test
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -147,12 +147,12 @@ jobs:
       - name: Resumo de SHA-256
         working-directory: artefatos
         run: |
-          sha256sum -- install.sh asc-stremio-*.tar.gz AscStremio-Setup-*.exe > SHA256SUMS
+          sha256sum -- install.sh ascstremio-*.tar.gz AscStremio-Setup-*.exe > SHA256SUMS
           cat SHA256SUMS
       - uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            artefatos/asc-stremio-*.tar.gz
+            artefatos/ascstremio-*.tar.gz
             artefatos/AscStremio-Setup-*.exe
       - name: Criar o release
         env:
@@ -160,5 +160,5 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "v$VERSION" --generate-notes \
-            artefatos/install.sh artefatos/asc-stremio-*.tar.gz artefatos/asc-stremio-*.tar.gz.sha256 \
+            artefatos/install.sh artefatos/ascstremio-*.tar.gz artefatos/ascstremio-*.tar.gz.sha256 \
             artefatos/AscStremio-Setup-*.exe artefatos/AscStremio-Setup-*.exe.sha256 artefatos/SHA256SUMS

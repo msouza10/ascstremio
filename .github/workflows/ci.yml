@@ -61,7 +61,7 @@ jobs:
         with:
           node-version: 22
       - run: scripts/build-release.sh --base-url "https://example.invalid"
-      - run: scripts/check-no-secrets.sh dist/asc-stremio-latest.tar.gz
+      - run: scripts/check-no-secrets.sh dist/ascstremio-latest.tar.gz
       - name: Instalação como usuário novo (sem Node no PATH)
         run: |
           # Esconde o Node do runner para exercitar o download com SHA-256.
@@ -85,10 +85,10 @@ jobs:
         with:
           context: .
           load: true
-          tags: asc-stremio:ci
+          tags: ascstremio:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - run: scripts/smoke-container.sh asc-stremio:ci
+      - run: scripts/smoke-container.sh ascstremio:ci
       - name: docker compose valida
         run: docker compose config -q
 

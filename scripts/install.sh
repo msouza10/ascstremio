@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Instala e valida o Amigos Share · Stremio em qualquer Linux (x64, arm64, armv7;
 # glibc). Não precisa de root: se o Node 22+ não existir, baixa o oficial (com
-# conferência de SHA-256) para ~/.local/share/asc-stremio/node.
+# conferência de SHA-256) para ~/.local/share/ascstremio/node.
 #
 #   scripts/install.sh              confere tudo, instala o que faltar, roda os testes
 #                                   e cria/inicia o serviço (systemd --user)
@@ -20,10 +20,10 @@
 set -Eeuo pipefail
 
 NEED_NODE_MAJOR=22
-UNIT_NAME="asc-stremio.service"
+UNIT_NAME="ascstremio.service"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 UNIT_FILE="$UNIT_DIR/$UNIT_NAME"
-NODE_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/asc-stremio/node"
+NODE_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/ascstremio/node"
 PORTS=(7000 7010 7020)
 
 MODE=install
@@ -104,7 +104,7 @@ fetch() { # fetch URL DESTINO
 }
 sha256_of() { if have_cmd sha256sum; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
-# Node oficial (tar.gz) em ~/.local/share/asc-stremio/node, sem root. O checksum vem
+# Node oficial (tar.gz) em ~/.local/share/ascstremio/node, sem root. O checksum vem
 # do SHASUMS256.txt do próprio nodejs.org; arquivo que não confere é descartado.
 install_portable_node() {
   local arch tmp base file want got
@@ -201,7 +201,7 @@ if [ ! -f "$ENV_FILE" ] && [ "$MODE" != check ]; then
   umask 077
   cat > "$ENV_FILE" <<'EOF'
 # Variáveis do serviço (lidas por systemd; uma por linha, sem aspas nem "export").
-# Depois de editar:  systemctl --user restart asc-stremio
+# Depois de editar:  systemctl --user restart ascstremio
 
 # Conclui sozinho, em segundo plano, os freeleech parados há alguns minutos (off|auto)
 #BACKGROUND_COMPLETE=off
