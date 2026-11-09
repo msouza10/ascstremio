@@ -1,0 +1,37 @@
+name: Sugerir uma funcionalidade
+description: Uma ideia para melhorar o projeto
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        O projeto é **pessoal e local** (uma pessoa por instalação, regra 2.2 do Amigos Share). Ideias que
+        o tornem um serviço compartilhado, exponham a ponte à internet ou enfraqueçam as proteções locais
+        não serão aceitas.
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema isso resolve
+      description: Descreva a situação, não só a solução.
+    validations:
+      required: true
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Proposta
+      description: Como você imagina que funcionaria.
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+  - type: checkboxes
+    id: confirmacoes
+    attributes:
+      label: Confirmações
+      options:
+        - label: Procurei nas issues se já foi sugerido.
+          required: true
+        - label: Isso não compartilha a conta nem expõe a ponte fora da máquina do usuário.
+          required: true
