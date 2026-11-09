@@ -57,11 +57,36 @@ Caminhos relativos fornecidos por variável são interpretados a partir do diret
 | `ASCSTREMIO_CONTAINER` | desligado | `1` faz os três servidores escutarem em `0.0.0.0` dentro do contêiner; a imagem já define |
 | `BRIDGE_PUBLIC_URL` | Calculada a partir da interface e da porta | URL da ponte nas fontes; não muda sozinha a interface de escuta |
 | `ADDON_PUBLIC_URL` | Calculada a partir da interface e da porta | Base das imagens do catálogo de status; não muda sozinha a interface de escuta |
+| `LAN_ADVERTISE_HOST` | ausente | Endereço anunciado aos outros aparelhos no modo LAN: IPv4, IPv6 ou nome DNS, sem esquema, porta ou caminho; ver [endereço anunciado](#endereço-anunciado-na-lan) |
+| `LAN_INTERFACE` | ausente | Interface de onde tirar o endereço anunciado quando há várias (`enp3s0`, `Wi-Fi`) |
 | `ALLOWED_HOSTS` | vazio | Nomes DNS adicionais aceitos por addon/ponte, separados por vírgula |
 | `STATUS_CATALOG` | `on` | `off` remove o catálogo de status e seus alertas das fontes |
 | `DEMO_MODE` | desligado | `true` adiciona uma fonte de demonstração externa |
 
 `PORT`, `BRIDGE_PORT` e `CONFIG_PORT` devem ser inteiros entre 1 e 65535. `ALLOWED_HOSTS` não muda o Host exato exigido pelo painel. Alterar a porta interna do contêiner exige ajustar a publicação da mesma porta no host para o painel. Os nomes em `BRIDGE_PUBLIC_URL`/`ADDON_PUBLIC_URL` também entram na lista de hosts aceitos por addon/ponte.
+
+### Endereço anunciado na LAN
+
+Três coisas são independentes: a **escuta** (interface de bind, definida pelo modo), o **endereço anunciado** (o que entra nas URLs de instalação e de vídeo que o Stremio de outro aparelho vai usar) e os **hosts aceitos** (cabeçalho `Host`, anti DNS rebinding). Escolher o endereço anunciado não amplia a escuta nem o `Host` aceito, exceto por incluir o próprio nome DNS escolhido, sem curingas; também não abre o painel pela LAN.
+
+Ordem de decisão por serviço (addon e ponte): URL explícita (`ADDON_PUBLIC_URL`/`BRIDGE_PUBLIC_URL`) > `LAN_ADVERTISE_HOST` + porta do serviço > endereço de `LAN_INTERFACE` > escolha automática. No modo local o resultado é sempre `127.0.0.1`, sem configurar nada.
+
+- **Escolha automática (modo LAN nativo).** Só considera redes locais comuns. São excluídos, com o motivo visível em `npm run rede`: loopback, link-local (`169.254/16`, `fe80::/10`), interfaces virtuais (Docker, `veth`, `virbr`, VirtualBox, VMware, Hyper-V/WSL) e multicast. VPN/overlay (Tailscale, WireGuard, faixa `100.64.0.0/10`) só entra por escolha explícita. Com mais de uma interface candidata o programa **avisa no log** e continua com a primeira (para não impedir a retomada do seed), mas isso é ambiguidade: defina `LAN_ADVERTISE_HOST` ou `LAN_INTERFACE`.
+- **Endereço estável.** IP de DHCP muda. Reserve o IP no roteador ou use um nome do DNS local em `LAN_ADVERTISE_HOST`. mDNS (`.local`) não funciona em todo aparelho. Um nome DNS não é verificado (o programa não sabe se ele resolve para cá).
+- **Validação.** IPv4/IPv6 escolhidos precisam pertencer a uma interface deste computador: ao **salvar** pela configuração central a divergência é recusada; na **partida** é só aviso (a rede pode estar subindo). URLs explícitas (proxy, NAT, DNS) não precisam pertencer a nenhuma interface. `LAN_ADVERTISE_HOST` e `LAN_INTERFACE` contraditórios são recusados.
+- **Interface perdida.** No modo LAN o aplicativo confere a cada 5 min se o endereço anunciado ainda existe aqui e registra um aviso uma vez por mudança. Nada é alterado em silêncio: as URLs já instaladas no Stremio continuam as mesmas (o programa não conhece o manifesto guardado em cada cliente); depois de corrigir o endereço, remova e reinstale o addon com a URL nova. Seed e dados não são tocados.
+- **Contêiner.** Dentro dele só se vê a interface interna, então o programa não adivinha: informe `LAN_ADVERTISE_HOST` (ou as duas URLs públicas) com o endereço do host e publique as portas com os mesmos números.
+- **Alcance pelo cliente é desconhecido.** Pertencer ao host não prova que a TV chega lá (roteador, firewall, isolamento de Wi-Fi). Não existe teste de URL arbitrária.
+
+Diagnóstico (só lê, não grava nem abre conexão):
+
+```bash
+npm run rede                          # modo, escuta, endereço anunciado, interfaces e justificativas, avisos
+npm run rede -- validar 192.168.1.10  # simula LAN_ADVERTISE_HOST sem gravar (mesma validação estrita do salvar)
+npm run rede -- --json
+```
+
+A URL de instalação aparece com `<credencial>`; o token real só sai uma vez em `npm run credenciais -- criar "<nome>"`, já com o endereço anunciado (e um aviso se ele não servir a outros aparelhos), e nunca vai para log. QR code não é gerado.
 
 Consulte [segurança e rede](seguranca.md) antes de habilitar LAN. Não use essas opções para hospedar uma conta compartilhada.
 
