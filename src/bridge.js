@@ -17,6 +17,7 @@ const { timingSafeEqual } = require('crypto');
 const { currentToken } = require('./credentials');
 const hnr = require('./hnr-guard');
 const { DiskGuard, DEFAULT_RESERVE_BYTES } = require('./disk-policy');
+const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { logger } = require('./logger');
 const log = logger.child('ponte');
@@ -80,6 +81,8 @@ class Bridge {
     firstByteTimeoutMs = 60000,
     passkey = null,
     uploadLimit = -1,
+    streamUploadLimit = -1, // teto de upload durante reprodução (BRIDGE_STREAM_UPLOAD_LIMIT); -1 = não reduz
+    uploadRestoreMs = 15_000, // espera sem reprodução antes de voltar ao teto normal
     announceBase = null,
     vault = null,
     accountNotice = null,
@@ -153,6 +156,13 @@ class Bridge {
     // Credencial em memória: os .torrent em disco ficam sem token.
     this.passkey = passkey;
     this.uploadLimit = uploadLimit;
+    // Teto reduzido durante reprodução (src/upload-policy.js). Inerte sem streamUploadLimit.
+    this.uploadPolicy = new UploadPolicy({
+      normal: uploadLimit, stream: streamUploadLimit, restoreMs: uploadRestoreMs, now: clock, log,
+      apply: (rate) => (this.client ? this.client.throttleUpload(rate) : false),
+      activeSessions: () => this.limiter.snapshot().active,
+      seedPending: () => this.hasSeedObligation(),
+    });
     // Base usada quando o .torrent foi gravado sem announce (`--strip`).
     this.announceBase = announceBase;
     // Contabilidade persistente da regra 13.1 (72 h de seed após concluir).
@@ -160,6 +170,7 @@ class Bridge {
       file: path.join(storeDir, '..', 'seed-vault.json'),
     });
     this.seedTimer = null;
+    this.uploadTimer = null;
     this.lastTick = new Map();
     this.client = null;
     this.server = null;
@@ -249,6 +260,10 @@ class Bridge {
 
     this.completeTimer = setInterval(() => this.completionTick(), 30000);
     this.completeTimer.unref?.();
+
+    // Restaura o teto de upload sozinho (sessões expiram sem evento) e reavalia o piso de seed pendente.
+    this.uploadTimer = setInterval(() => this.uploadPolicy.evaluate(), 5000);
+    this.uploadTimer.unref?.();
 
     this.sampleTimer = setInterval(() => this.sampleTraffic(), 15000);
     this.sampleTimer.unref?.();
@@ -518,7 +533,12 @@ class Bridge {
   playbackSnapshot() {
     const snap = this.limiter.snapshot();
     const names = new Map((this.credentials?.list?.() ?? []).map((c) => [c.id, c.name]));
-    return { ...snap, credentials: snap.credentials.map((c) => ({ ...c, name: names.get(c.credentialId) ?? null })) };
+    return { ...snap, credentials: snap.credentials.map((c) => ({ ...c, name: names.get(c.credentialId) ?? null })), upload: this.uploadPolicy.snapshot() };
+  }
+
+  // Há obrigação de seed aberta (13.1): no cofre ou, quando o tracker foi lido, em seeds pendentes lá.
+  hasSeedObligation() {
+    return this.vault.summary().pendentes > 0 || (this.trackerPending?.length ?? 0) > 0;
   }
 
   snapshot(now = Date.now()) {
@@ -705,6 +725,7 @@ class Bridge {
         keepAwake: Boolean(this.keepAwake?.active),
         host: this.host,
         uploadLimit: this.uploadLimit,
+        streamUploadLimit: this.uploadPolicy.stream,
         diskReserveBytes: this.minFreeBytes,
         diskReservePercent: this.reservePercent,
       },
@@ -782,6 +803,7 @@ class Bridge {
 
   dropSessions(credentialId) {
     this.limiter.dropCredential(credentialId);
+    this.uploadPolicy.evaluate(); // as vagas sumiram: o teto reduzido segue só pela espera de restauração
     const set = this.sessions.get(credentialId);
     if (!set) return;
     log.info(`credencial revogada: ${set.size} resposta(s) de vídeo aberta(s) encerrada(s)`);
@@ -812,7 +834,12 @@ class Bridge {
     }
     const { lease } = r;
     // Só uma resposta de vídeo que começou (cabeçalhos enviados, < 400) mantém a vaga pela janela de inatividade.
-    const done = () => lease.release({ keep: Boolean(res.headersSent) && res.statusCode < 400 });
+    const done = () => {
+      lease.release({ keep: Boolean(res.headersSent) && res.statusCode < 400 });
+      this.uploadPolicy.evaluate(); // resposta de erro não segura vaga: não segura o teto reduzido
+    };
+    // Teto reduzido ANTES de transferir o fluxo (só há efeito se o operador configurou o de streaming).
+    this.uploadPolicy.evaluate();
     if (res.destroyed) done(); else res.once('close', done);
     return lease;
   }
@@ -1349,6 +1376,7 @@ class Bridge {
     if (this.seedTimer) clearInterval(this.seedTimer);
     if (this.completeTimer) clearInterval(this.completeTimer);
     if (this.sampleTimer) clearInterval(this.sampleTimer);
+    if (this.uploadTimer) clearInterval(this.uploadTimer);
     this.keepAwake?.stop();
     if (this.server) await new Promise((resolve) => this.server.close(resolve));
     if (this.client) await new Promise((resolve) => this.client.destroy(resolve));
