@@ -19,6 +19,7 @@ const hnr = require('./hnr-guard');
 const { posterRoute } = require('./stremio-status');
 const { KeepAwake } = require('./keepawake');
 const { logger, initFiles } = require('./logger');
+const { acquireInstance }  = require('./instance-lock');
 
 // Onde ficam passkey, sessão, cofre, logs, .torrent e cache. Fora do código para
 // sobreviver a atualizações (instalador, contêiner, Windows em %LOCALAPPDATA%).
@@ -58,12 +59,29 @@ async function main() {
   // com a passkey e cookies redigidos. Arquivos em private/logs/ (0600).
   fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   try { fs.chmodSync(DATA_DIR, 0o700); } catch { /* Windows/volume sem chmod */ }
+  // Antes de qualquer leitura ou gravação (settings.json, logs, cofre, motor): só um processo
+  // por instalação pode escrever o estado (portas diferentes não bastam). Liberada ao sair;
+  // ver src/instance-lock.js. Nesta primeira fase só o ambiente é conhecido.
+  const envTorrentDir = process.env.ASC_TORRENT_DIR || path.join(DATA_DIR, 'torrents');
+  const envStoreDir = process.env.BRIDGE_STORE || path.join(DATA_DIR, 'cache');
+  let instance = acquireInstance({ dataDir: DATA_DIR, torrentDir: envTorrentDir, storeDir: envStoreDir });
+  process.on('exit', () => instance.release());
   // Configuração central (src/settings.js): ambiente > DATA_DIR/settings.json > padrão.
   // Valor inválido, arquivo corrompido ou combinação insegura recusam a partida.
   const cfg = settings.load({ dataDir: DATA_DIR });
+  const v = cfg.values;
+  // ASC_TORRENT_DIR/BRIDGE_STORE vindos do settings.json também precisam de trava: se diferem
+  // do que o ambiente já travou, refaz a trava com o conjunto final (e confere que o arquivo
+  // não mudou nesse intervalo).
+  if (v.ASC_TORRENT_DIR !== envTorrentDir || v.BRIDGE_STORE !== envStoreDir) {
+    instance.release();
+    instance = acquireInstance({ dataDir: DATA_DIR, torrentDir: v.ASC_TORRENT_DIR, storeDir: v.BRIDGE_STORE });
+    if (settings.resolve({ dataDir: DATA_DIR }).revision !== cfg.revision) {
+      throw new Error('settings.json mudou durante a partida. Inicie de novo.');
+    }
+  }
   // Leitores antigos (safety, bridge, keepawake) consultam process.env: recebem só o que veio do arquivo.
   settings.applyToEnv(cfg);
-  const v = cfg.values;
   logger.setLevel(v.LOG_LEVEL);
   initFiles(path.join(DATA_DIR, 'logs'), { retentionDays: v.LOG_RETENTION_DAYS });
   logger.captureConsole();
