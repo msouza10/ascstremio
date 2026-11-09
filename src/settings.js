@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const network = require('./network');
 
 const FILE_NAME = 'settings.json';
 const FILE_VERSION = 1;
@@ -116,6 +117,14 @@ const SCHEMA = Object.freeze([
   {
     key: 'ALLOWED_HOSTS', type: 'hostlist', default: '', group: 'rede', access: 'advanced', restart: true,
     description: 'Nomes DNS adicionais aceitos no cabeçalho Host por addon e ponte (anti DNS rebinding), separados por vírgula.',
+  },
+  {
+    key: 'LAN_ADVERTISE_HOST', type: 'advhost', default: null, group: 'rede', access: 'advanced', restart: true,
+    description: 'Endereço (IPv4 ou nome DNS estável; IPv6 ainda não, pois a escuta é só IPv4, sem esquema, porta ou caminho) que os outros aparelhos usam para chegar aqui, nas URLs de instalação e de vídeo. Só vale no modo LAN. Não muda a escuta nem o Host aceito além deste próprio nome.',
+  },
+  {
+    key: 'LAN_INTERFACE', type: 'ifname', default: null, group: 'rede', access: 'advanced', restart: true,
+    description: 'Interface de rede (ex.: enp3s0, Wi-Fi) de onde tirar o endereço anunciado no modo LAN quando há várias. LAN_ADVERTISE_HOST, se definida, prevalece; as URLs públicas explícitas também.',
   },
   {
     key: 'STATUS_CATALOG', type: 'enum', values: ['on', 'off'], default: 'on', group: 'rede', access: 'editable', restart: true,
@@ -221,6 +230,14 @@ function coerce(entry, raw, fromEnv) {
       const bad = names.find((n) => !hostOk(n));
       if (bad) return fail(`"${bad.slice(0, 40)}" não é um nome de host válido (sem curinga, porta ou esquema).`);
       return { value: names.join(',') };
+    }
+    case 'advhost': {
+      const r = network.parseHost(raw);
+      return r.error ? fail(r.error) : { value: r.host };
+    }
+    case 'ifname': {
+      const r = network.parseInterfaceName(raw);
+      return r.error ? fail(r.error) : { value: r.name };
     }
     case 'path': {
       if (typeof raw !== 'string' || !raw.trim() || raw.includes('\0')) return fail('deve ser um caminho não vazio.');
@@ -330,7 +347,9 @@ function resolveDataDir(env) {
 
 // Não lança: devolve { ok, problems, warnings, ... } para que o terminal (#20) consiga
 // mostrar e consertar uma configuração quebrada. Use load() na partida.
-function resolve({ dataDir = resolveDataDir(process.env), env = process.env, file = undefined } = {}) {
+// `interfaces` (os.networkInterfaces simulado nos testes) e `strictNetwork` (endereço escolhido
+// que não é do host vira problema, usado ao salvar; na partida é só aviso: ver src/network.js).
+function resolve({ dataDir = resolveDataDir(process.env), env = process.env, file = undefined, interfaces = undefined, strictNetwork = false } = {}) {
   const problems = [];
   const warnings = [];
   let disk = file;
@@ -398,23 +417,17 @@ function resolve({ dataDir = resolveDataDir(process.env), env = process.env, fil
     else seen.set(p, k);
   }
 
+  const plan = network.evaluate({
+    mode, container, strict: strictNetwork,
+    ports: { addon: values.PORT, bridge: values.BRIDGE_PORT },
+    advertiseHost: values.LAN_ADVERTISE_HOST, interfaceName: values.LAN_INTERFACE,
+    bridgeUrl: values.BRIDGE_PUBLIC_URL, addonUrl: values.ADDON_PUBLIC_URL,
+    interfaces: mode === 'lan' && !container ? (interfaces ?? network.systemInterfaces()) : {},
+  });
+  problems.push(...plan.problems);
+  warnings.push(...plan.warnings);
   if (mode === 'lan') {
-    if (container) {
-      for (const k of ['BRIDGE_PUBLIC_URL', 'ADDON_PUBLIC_URL']) {
-        if (!values[k]) problems.push(`Modo LAN em contêiner exige ${k}: o IP interno do contêiner não serve aos outros aparelhos.`);
-      }
-    }
-    warnings.push('Modo LAN: addon e ponte escutam fora do loopback, sem login de usuário. Use só em rede doméstica confiável e para os seus próprios aparelhos; o painel continua restrito a este computador.');
-  } else if (!container) {
-    for (const k of ['BRIDGE_PUBLIC_URL', 'ADDON_PUBLIC_URL']) {
-      if (!values[k]) continue;
-      try {
-        const h = new URL(values[k]).hostname.replace(/^\[|\]$/g, '');
-        if (!['localhost', '::1'].includes(h) && !/^127\./.test(h)) {
-          warnings.push(`${k} aponta para ${h}, mas no modo local a escuta é só em loopback: outros aparelhos não chegarão. Use ASCSTREMIO_MODE=lan se for isso mesmo.`);
-        }
-      } catch { /* já invalidada acima */ }
-    }
+    warnings.push('Modo LAN: addon e ponte escutam fora do loopback; o acesso exige a credencial de instalação (sem TLS: o token trafega em HTTP na rede local). Use só em rede doméstica confiável e para os seus próprios aparelhos; o painel continua restrito a este computador.');
   }
 
   const bindHost = container || mode === 'lan' ? '0.0.0.0' : '127.0.0.1';
@@ -433,7 +446,7 @@ function resolve({ dataDir = resolveDataDir(process.env), env = process.env, fil
     extra: disk.extra || {},
     mode,
     container,
-    derived: { bindHost, mode },
+    derived: { bindHost, mode, network: plan },
   };
 }
 
@@ -450,7 +463,7 @@ function load(opts = {}) {
 // changes: { CHAVE: valor } ; valor null remove do arquivo (volta ao padrão/ambiente).
 // expectedRevision é obrigatório (controle otimista de concorrência: use snap.revision).
 // Retorna { snapshot, changed, restart }: restart lista as chaves alteradas que só valem ao reiniciar.
-function update({ dataDir = resolveDataDir(process.env), env = process.env, changes, expectedRevision } = {}) {
+function update({ dataDir = resolveDataDir(process.env), env = process.env, changes, expectedRevision, interfaces = undefined } = {}) {
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new SettingsError('invalid', 'Nenhuma alteração informada.');
   if (!Number.isInteger(expectedRevision)) throw new SettingsError('invalid', 'expectedRevision é obrigatório (use a revisão lida).');
 
@@ -471,7 +484,7 @@ function update({ dataDir = resolveDataDir(process.env), env = process.env, chan
     if (disk.revision !== expectedRevision) {
       throw new SettingsError('conflict', `A configuração mudou (revisão ${disk.revision}, esperada ${expectedRevision}). Releia e tente de novo.`);
     }
-    const antes = resolve({ dataDir, env, file: disk }).problems;
+    const antes = resolve({ dataDir, env, file: disk, interfaces, strictNetwork: true }).problems;
     // Nunca regrava por cima de um arquivo com problema próprio (ex.: segredo gravado à mão): conserte antes.
     const doArquivo = antes.filter((p) => p.startsWith(`${FILE_NAME}: `));
     if (doArquivo.length) throw new SettingsError('invalid', doArquivo);
@@ -486,12 +499,12 @@ function update({ dataDir = resolveDataDir(process.env), env = process.env, chan
       if (next[key] !== r.value) { next[key] = r.value; changed.push(key); }
     }
     const candidate = { ...disk, values: next };
-    const after = resolve({ dataDir, env, file: candidate });
+    const after = resolve({ dataDir, env, file: candidate, interfaces, strictNetwork: true });
     const fresh = after.problems.filter((p) => !before.has(p));
     if (fresh.length) throw new SettingsError('invalid', fresh); // nada gravado
     if (changed.length === 0) return { snapshot: after, changed, restart: [] };
     writeFileAtomic(dataDir, disk.revision + 1, next, disk.extra);
-    const snapshot = resolve({ dataDir, env });
+    const snapshot = resolve({ dataDir, env, interfaces });
     return { snapshot, changed, restart: changed.filter((k) => BY_KEY.get(k).restart) };
   });
 }
