@@ -64,7 +64,7 @@ function buildItems(snap, { panelUrl = 'http://127.0.0.1:7020' } = {}) {
 
   const critical = titles.some((t) => t.risk === 'crit') || Boolean(acc?.hitAndRuns) || Boolean(acc?.prisonUntil);
   const semLeitura = !st || st.ratio === null;
-  const warnAny = semLeitura || titles.some((t) => t.risk === 'warn') || Boolean(snap.notices?.length) || (st && st.ratio !== null && st.ratio < 1);
+  const warnAny = semLeitura || titles.some((t) => t.risk === 'warn') || Boolean(snap.notices?.length) || Boolean(s.disk?.blocked) || (st && st.ratio !== null && st.ratio < 1);
   const level = critical ? 'crit' : warnAny ? 'warn' : 'ok';
 
   const count = (f) => titles.filter(f).length;
@@ -73,7 +73,7 @@ function buildItems(snap, { panelUrl = 'http://127.0.0.1:7020' } = {}) {
     st ? `Ratio ${st.ratio === null ? '—' : num.format(st.ratio)} · enviado ${bytes(st.uploaded)} · baixado ${bytes(st.downloaded)}` : 'Ratio ainda não lido',
     `Biblioteca: ${s.total} filme(s) · ${emSeed} em seed · ${count((t) => t.state === 'completing')} baixando · ${count((t) => t.state === 'done')} cumprido(s)`,
     `Seed pendente: ${hours(s.hoursPending)} em ${s.pending} filme(s)${s.machineHoursPerDay ? ` · máquina ligada ≥ ${num.format(s.machineHoursPerDay)} h/dia` : ''}`,
-    `Disco: ${bytes(s.diskUsed)} ocupados · ${bytes(s.freeBytes)} livres`,
+    `Disco: ${bytes(s.diskUsed)} ocupados · ${s.freeBytes === null || s.freeBytes === undefined ? 'livres desconhecidos' : `${bytes(s.freeBytes)} livres`}${s.disk?.blocked ? ' · novos downloads bloqueados' : ''}`,
     `Hit-and-run: ${acc ? acc.hitAndRuns : '—'} · prisão: ${acc?.prisonUntil ? `até ${new Date(acc.prisonUntil).toLocaleDateString('pt-BR')}` : 'nenhuma'}`,
   ];
   const nCrit = titles.filter((t) => t.risk === 'crit').length;

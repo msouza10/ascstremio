@@ -12,6 +12,7 @@
     "check": "node --check src/ui/app.js && node --check src/ui/views.js && node --check src/ui/logs.js && node --test test/*.test.js",
     "credenciais": "node src/credenciais-cli.js",
     "configurar": "node src/configurar-cli.js",
+    "rede": "node src/rede-cli.js",
     "install-service": "bash scripts/install.sh"
   },
   "engines": {

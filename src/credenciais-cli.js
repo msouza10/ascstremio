@@ -21,10 +21,20 @@ function config(env = process.env) {
   // Portas e URL do addon seguem a configuração central (ambiente > settings.json > padrão).
   // Se ela estiver quebrada, cai no ambiente: a CLI só precisa achar a ponte.
   let v = {};
-  try { v = require('./settings').resolve({ dataDir, env }).values ?? {}; } catch { /* usa o ambiente */ }
+  let plan = null;
+  try {
+    const snap = require('./settings').resolve({ dataDir, env });
+    v = snap.values ?? {};
+    plan = snap.derived?.network ?? null;
+  } catch { /* usa o ambiente */ }
   const bridgePort = v.BRIDGE_PORT || env.BRIDGE_PORT || 7010;
-  const addon = String(v.ADDON_PUBLIC_URL || env.ADDON_PUBLIC_URL || `http://127.0.0.1:${v.PORT || env.PORT || 7000}`).replace(/\/$/, '');
-  return { dataDir, bridge: `http://127.0.0.1:${bridgePort}`, addon };
+  // Base do addon na URL de instalação: a mesma que o aplicativo anuncia (src/network.js),
+  // para a URL emitida valer no aparelho cliente e não só neste computador.
+  const addon = String(plan?.urls?.addon || v.ADDON_PUBLIC_URL || env.ADDON_PUBLIC_URL || `http://127.0.0.1:${v.PORT || env.PORT || 7000}`).replace(/\/$/, '');
+  let aviso = null;
+  if (plan?.mode === 'lan' && !plan.urls?.addon) aviso = 'sem endereço anunciado utilizável: defina LAN_ADVERTISE_HOST (veja: npm run rede)';
+  else if (plan?.ambiguous) aviso = 'várias interfaces candidatas: confira o endereço da URL (npm run rede)';
+  return { dataDir, bridge: `http://127.0.0.1:${bridgePort}`, addon, aviso };
 }
 
 async function call(cfg, method, route, doFetch) {
@@ -50,6 +60,8 @@ function showIssued(cfg, out, { credential, token }) {
   out(`Credencial ${credential.id} ("${credential.name}")${credential.status ? ', com acesso ao catálogo de status' : ''}.`);
   out('Instale no Stremio esta URL (ela não será mostrada de novo; trate como senha):');
   out(installUrl(cfg, token));
+  if (cfg.aviso) out(`Atenção: ${cfg.aviso}.`);
+  if (/^https?:\/\/(127\.|localhost|\[::1\])/.test(cfg.addon)) out('Esta URL só funciona neste computador (modo local). Para outros aparelhos, use o modo LAN (docs/configuracao.md).');
 }
 
 async function run(argv, { env = process.env, doFetch = fetch, out = console.log } = {}) {

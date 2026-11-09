@@ -92,11 +92,36 @@ Caminhos relativos fornecidos por variável são interpretados a partir do diret
 | `ASCSTREMIO_CONTAINER` | desligado | `1` faz os três servidores escutarem em `0.0.0.0` dentro do contêiner; a imagem já define |
 | `BRIDGE_PUBLIC_URL` | Calculada a partir da interface e da porta | URL da ponte nas fontes; não muda sozinha a interface de escuta |
 | `ADDON_PUBLIC_URL` | Calculada a partir da interface e da porta | Base das imagens do catálogo de status; não muda sozinha a interface de escuta |
+| `LAN_ADVERTISE_HOST` | ausente | Endereço anunciado aos outros aparelhos no modo LAN: IPv4 ou nome DNS (IPv6 ainda não: a escuta é só IPv4), sem esquema, porta ou caminho; ver [endereço anunciado](#endereço-anunciado-na-lan) |
+| `LAN_INTERFACE` | ausente | Interface de onde tirar o endereço anunciado quando há várias (`enp3s0`, `Wi-Fi`) |
 | `ALLOWED_HOSTS` | vazio | Nomes DNS adicionais aceitos por addon/ponte, separados por vírgula |
 | `STATUS_CATALOG` | `on` | `off` remove o catálogo de status e seus alertas das fontes |
 | `DEMO_MODE` | desligado | `true` adiciona uma fonte de demonstração externa |
 
 `PORT`, `BRIDGE_PORT` e `CONFIG_PORT` devem ser inteiros entre 1 e 65535. `ALLOWED_HOSTS` não muda o Host exato exigido pelo painel. Alterar a porta interna do contêiner exige ajustar a publicação da mesma porta no host para o painel. Os nomes em `BRIDGE_PUBLIC_URL`/`ADDON_PUBLIC_URL` também entram na lista de hosts aceitos por addon/ponte.
+
+### Endereço anunciado na LAN
+
+Três coisas são independentes: a **escuta** (interface de bind, definida pelo modo), o **endereço anunciado** (o que entra nas URLs de instalação e de vídeo que o Stremio de outro aparelho vai usar) e os **hosts aceitos** (cabeçalho `Host`, anti DNS rebinding). Escolher o endereço anunciado não amplia a escuta nem o `Host` aceito, exceto por incluir o próprio nome DNS escolhido, sem curingas; também não abre o painel pela LAN.
+
+Ordem de decisão por serviço (addon e ponte): URL explícita (`ADDON_PUBLIC_URL`/`BRIDGE_PUBLIC_URL`) > `LAN_ADVERTISE_HOST` + porta do serviço > endereço de `LAN_INTERFACE` > escolha automática. No modo local o resultado é sempre `127.0.0.1`, sem configurar nada.
+
+- **Escolha automática (modo LAN nativo).** Só considera redes locais comuns. São excluídos, com o motivo visível em `npm run rede`: loopback, link-local (`169.254/16`, `fe80::/10`), interfaces virtuais (Docker, `veth`, `virbr`, VirtualBox, VMware, Hyper-V/WSL) multicast e endereços IPv6 (a escuta é só IPv4, então anunciar IPv6 geraria URLs inalcançáveis). VPN/overlay (Tailscale, WireGuard, faixa `100.64.0.0/10`) só entra por escolha explícita. Com mais de uma interface candidata o programa **avisa no log** e continua com a primeira (para não impedir a retomada do seed), mas isso é ambiguidade: defina `LAN_ADVERTISE_HOST` ou `LAN_INTERFACE`.
+- **Endereço estável.** IP de DHCP muda. Reserve o IP no roteador ou use um nome do DNS local em `LAN_ADVERTISE_HOST`. mDNS (`.local`) não funciona em todo aparelho. Um nome DNS não é verificado (o programa não sabe se ele resolve para cá).
+- **Validação.** O IPv4 escolhido precisa pertencer a uma interface deste computador: ao **salvar** pela configuração central a divergência é recusada; na **partida** é só aviso (a rede pode estar subindo). URLs explícitas (proxy, NAT, DNS) não precisam pertencer a nenhuma interface. `LAN_ADVERTISE_HOST` e `LAN_INTERFACE` contraditórios são recusados.
+- **Interface perdida.** No modo LAN o aplicativo confere a cada 5 min se o endereço anunciado ainda existe aqui e registra um aviso uma vez por mudança. Nada é alterado em silêncio: as URLs já instaladas no Stremio continuam as mesmas (o programa não conhece o manifesto guardado em cada cliente); depois de corrigir o endereço, remova e reinstale o addon com a URL nova. Seed e dados não são tocados.
+- **Contêiner.** Dentro dele só se vê a interface interna, então o programa não adivinha: informe `LAN_ADVERTISE_HOST` (ou as duas URLs públicas) com o endereço do host e publique as portas com os mesmos números.
+- **Alcance pelo cliente é desconhecido.** Pertencer ao host não prova que a TV chega lá (roteador, firewall, isolamento de Wi-Fi). Não existe teste de URL arbitrária.
+
+Diagnóstico (só lê, não grava nem abre conexão):
+
+```bash
+npm run rede                          # modo, escuta, endereço anunciado, interfaces e justificativas, avisos
+npm run rede -- validar 192.168.1.10  # simula LAN_ADVERTISE_HOST sem gravar (mesma validação estrita do salvar)
+npm run rede -- --json
+```
+
+A URL de instalação aparece com `<credencial>`; o token real só sai uma vez em `npm run credenciais -- criar "<nome>"`, já com o endereço anunciado (e um aviso se ele não servir a outros aparelhos), e nunca vai para log. QR code não é gerado.
 
 Consulte [segurança e rede](seguranca.md) antes de habilitar LAN. Não use essas opções para hospedar uma conta compartilhada.
 
@@ -112,6 +137,23 @@ Consulte [segurança e rede](seguranca.md) antes de habilitar LAN. Não use essa
 | `BRIDGE_UPLOAD_LIMIT` | `-1` (sem limite) | Limite de upload em bytes/s |
 
 Não reduza a meta local como forma de contornar as regras do ASC. A conciliação continua subordinada ao tracker. Veja [seed](seed.md) para os efeitos de assistir só parte de um filme e de concluir o download.
+
+## Disco
+
+| Variável | Padrão | Comportamento |
+|---|---|---|
+| `DISK_RESERVE_GIB` | `2` | Reserva absoluta de espaço livre, em GiB (número ≥ 0; `0` desliga esta parte) |
+| `DISK_RESERVE_PERCENT` | `0` (desligado) | Reserva em percentual do tamanho do volume, de 0 a 90 |
+
+A reserva vale para o volume de `BRIDGE_STORE` (inclusive disco externo ou montagem; se a pasta ainda não existe, mede o volume onde ela será criada). Quando as duas coexistem, **vale a maior**. Se o percentual está ligado e o sistema não informa o tamanho do volume, a reserva não pode ser honrada e o estado é "desconhecido".
+
+A mesma política decide **todo novo download**: streaming sob demanda (`/s` e `/a`), conclusão em segundo plano (automática ou `POST /complete`) e retomada na partida. Um download novo só é aprovado se `livre - reserva - o que outros downloads em curso ainda vão gravar >= o que ele precisa`. A conta é feita de uma vez só, então dois filmes abertos juntos não usam a mesma folga duas vezes. Para o streaming, o necessário é o tamanho do torrent menos o que já ocupa disco (blocos alocados, pois o arquivo é esparso), porque o player pode seguir até o fim ou pular para o final; no Windows, sem arquivos esparsos garantidos, isso também cobre a escrita fora de ordem. Não se promete que 2 GiB bastem para qualquer vídeo: um filme de 40 GiB exige 40 GiB mais a reserva.
+
+- **Recusa antes de qualquer efeito:** sem folga, o player recebe `507` e o painel mostra o motivo, sem baixar o `.torrent` (snatch), abrir o torrent nem anunciar. Em `/a/<id>` o tamanho vem da listagem; sem ele, exige ao menos a reserva livre e confere o tamanho real ao abrir o torrent.
+- **Falha na medição (`statfs`):** o estado é "desconhecido" e novos downloads são recusados (`503`, com `Retry-After`), nunca tratados como espaço infinito. O que já está completo em disco continua abrindo e semeando, e nenhum torrent existente é encerrado por isso.
+- **`HEAD` e listagem de fontes** continuam sem efeito: não medem para reservar, não baixam `.torrent` nem anunciam.
+- **Nada é apagado** por esta política. Liberar espaço continua sendo `AFTER_SEED` e a retenção prevista na issue #27.
+- O painel (e o catálogo "ASC — status") mostra livres, reserva efetiva, espaço comprometido e disponível; o alerta de bloqueio tem histerese (entra ao esgotar a folga e só sai quando sobra a maior de 256 MiB ou 10% da reserva).
 
 ## Logs
 

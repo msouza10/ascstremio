@@ -15,7 +15,7 @@ As portas podem mudar por configuração. A publicação TCP de peers é distint
 
 ## Rede local e contêineres
 
-`BRIDGE_ALLOW_LAN=1` faz addon e ponte nativos escutarem fora do loopback. O painel nativo continua em `127.0.0.1`. As URLs anunciadas precisam ser alcançáveis pelo aparelho com o Stremio; `BRIDGE_PUBLIC_URL` e `ADDON_PUBLIC_URL` ajustam essas referências, sem por si mesmas mudar a escuta.
+`BRIDGE_ALLOW_LAN=1` faz addon e ponte nativos escutarem fora do loopback. O painel nativo continua em `127.0.0.1`. As URLs anunciadas precisam ser alcançáveis pelo aparelho com o Stremio; `BRIDGE_PUBLIC_URL` e `ADDON_PUBLIC_URL` ajustam essas referências, sem por si mesmas mudar a escuta. O endereço anunciado, a escuta e os hosts aceitos são independentes; `LAN_ADVERTISE_HOST`/`LAN_INTERFACE` escolhem o endereço e `npm run rede` o diagnostica (veja [configuração](configuracao.md#endereço-anunciado-na-lan)). Escolher um nome DNS inclui só esse nome entre os `Host` aceitos, sem curingas, e não abre o painel pela LAN.
 
 O addon e as URLs de vídeo exigem uma credencial de instalação revogável (veja a próxima seção), mas não há autenticação de usuários nem TLS: o token trafega em HTTP na rede local. O catálogo de status, que expõe ratio, títulos e avisos, só é entregue a credenciais emitidas com `--status`. O link de abrir o painel no catálogo continua apontando para `127.0.0.1`; em uma TV ele aponta para a própria TV.
 
