@@ -31,7 +31,12 @@ unzip -q "$OUT/cache/$zip" -d "$OUT/cache/node-unz"
 mkdir -p "$STAGE/node"; cp "$OUT/cache/node-unz"/*/node.exe "$STAGE/node/"; rm -rf "$OUT/cache/node-unz"
 
 cp -R src package.json package-lock.json "$STAGE/app/"
-( cd "$STAGE/app" && npm ci --omit=dev --no-audit --no-fund --ignore-scripts )
+( cd "$STAGE/app" && npm_config_platform=win32 npm_config_arch=x64 npm ci --omit=dev --no-audit --no-fund )
+# Os módulos nativos têm de ser binários do Windows (cabeçalho "MZ"), não os do host de build.
+for n in $(find "$STAGE/app/node_modules" -name '*.node'); do
+  case "$n" in *linux*|*darwin*|*android*) continue ;; esac
+  [ "$(head -c2 "$n")" = "MZ" ] || [ -n "$(echo "$n" | grep -E 'prebuilds/(linux|darwin)')" ] || { echo "módulo nativo que não é do Windows: $n" >&2; exit 1; }
+done
 cp windows/launcher.vbs windows/start.cmd windows/stop.cmd windows/open-panel.cmd "$STAGE/"
 cp README.md "$STAGE/LEIA-ME.md"
 echo "Pasta montada em $STAGE"
