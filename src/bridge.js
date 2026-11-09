@@ -16,6 +16,7 @@ const { isLoopbackRequest, inContainer, hostAllowed } = require('./safety');
 const { timingSafeEqual } = require('crypto');
 const { currentToken } = require('./credentials');
 const hnr = require('./hnr-guard');
+const { DiskGuard, DEFAULT_RESERVE_BYTES } = require('./disk-policy');
 const { logger } = require('./logger');
 const log = logger.child('ponte');
 const tlog = logger.child('torrent');
@@ -84,12 +85,14 @@ class Bridge {
     trackerCheck = null,
     backgroundMode = 'off',
     idleMs = 10 * 60 * 1000,
-    minFreeBytes = 2 * 1024 ** 3,
-    freeSpace = null,
+    minFreeBytes = DEFAULT_RESERVE_BYTES, // reserva absoluta de disco (DISK_RESERVE_GIB)
+    reservePercent = 0, // reserva em % do volume (DISK_RESERVE_PERCENT); vale a maior das duas
+    freeSpace = null, // injeção para testes: (dir) => livres | { free, total }
     afterSeed = 'delete',
     keepAwake = null,
     resumeOnStart = true,
     ascResolver = null,
+    ascSizeHint = null, // (ascId) => bytes da listagem, para reservar espaço antes de baixar o .torrent
   }) {
     this.torrentDir = torrentDir;
     this.storeDir = storeDir;
@@ -107,10 +110,9 @@ class Bridge {
     this.backgroundMode = backgroundMode;
     this.idleMs = idleMs;
     this.minFreeBytes = minFreeBytes;
-    this.freeSpace = freeSpace ?? ((dir) => {
-      const s = fs.statfsSync(dir);
-      return s.bavail * s.bsize;
-    });
+    this.reservePercent = reservePercent;
+    // Política única de disco para streaming, conclusão e retomada (src/disk-policy.js).
+    this.disk = new DiskGuard({ dir: storeDir, reserveBytes: minFreeBytes, reservePercent, measure: freeSpace });
     // O que fazer quando o limite (72 h ou ratio 1.0) é cumprido e o tracker
     // confirma: delete = encerra e apaga os dados; stop = encerra e mantém os
     // dados; keep = continua semeando.
@@ -123,6 +125,7 @@ class Bridge {
     // `async (ascId) => ({ infoHash, fileIdx })`: baixa o .torrent do release SÓ no
     // momento do play (GET em /a/<id>) e o registra na biblioteca. Vem do provedor ASC.
     this.ascResolver = ascResolver;
+    this.ascSizeHint = ascSizeHint;
     this.streams = new Map(); // infoHash -> streams HTTP abertos agora
     this.lastStreamEnd = new Map(); // infoHash -> ms do último stream encerrado
     this.completing = new Set(); // infoHash com o torrent inteiro selecionado
@@ -190,9 +193,17 @@ class Bridge {
       this.handle(req, res).catch((err) => {
         log.error(`falha ao atender ${req.method} ${String(req.url).split('?')[0]}: ${err?.message ?? err}`, { stack: err?.stack });
         if (!res.headersSent) {
-          res.writeHead(err.status || 500, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.writeHead(err.status || 500, {
+            'Content-Type': 'application/json; charset=utf-8',
+            ...(err.expose && err.status === 503 ? { 'Retry-After': '60' } : {}),
+          });
         }
-        if (!res.writableEnded) res.end(JSON.stringify({ error: 'Falha ao preparar streaming' }));
+        // Recusa de disco tem mensagem própria e segura; o resto continua genérico.
+        if (!res.writableEnded) {
+          res.end(JSON.stringify(err.expose
+            ? { error: err.message, disco: err.detail }
+            : { error: 'Falha ao preparar streaming' }));
+        }
       });
     });
 
@@ -331,10 +342,54 @@ class Bridge {
       try {
         await this.getTorrent(pendencia.infoHash);
         console.log(`[vault] retomando seed: ${String(pendencia.name).slice(0, 50)}`);
-      } catch {
-        console.error('[vault] não foi possível retomar um seed pendente');
+      } catch (err) {
+        // Recusa de disco não derruba nada: o download não recomeça e a próxima rodada tenta de novo.
+        console.error(err?.expose
+          ? `[vault] retomada adiada: ${err.message}`
+          : '[vault] não foi possível retomar um seed pendente');
       }
     }
+  }
+
+  // O que ainda falta gravar de um download admitido, para o orçamento de disco. Número = falta
+  // isso; null = terminou (promessa cai); false = não está no motor; undefined = ainda abrindo.
+  // Função de instância (arrow) porque é repassada ao DiskGuard.
+  liveRemaining = (holder) => {
+    if (!/^[0-9a-f]{40}$/.test(holder) || this.loading.has(holder)) return undefined;
+    const t = (this.client?.torrents ?? []).find((x) => x.infoHash === holder);
+    if (!t) return false;
+    if (t.done || (t.progress ?? 0) >= 1) return null;
+    if (!(t.length > 0)) return undefined;
+    return Math.max(0, Math.round(t.length * (1 - (t.progress || 0))));
+  };
+
+  // Bytes que abrir este torrent ainda vai gravar: tamanho total menos o que já ocupa disco
+  // (blocos alocados, não o tamanho aparente: o arquivo é esparso). No Windows (sem `blocks`)
+  // vale o tamanho do arquivo. Streaming pode andar até o fim, então reserva o restante todo.
+  neededBytes(infoHash) {
+    const lib = this.entries.get(infoHash);
+    const files = lib?.files ?? [];
+    let total = 0;
+    let onDisk = 0;
+    for (const f of files) {
+      total += f.length || 0;
+      try {
+        const st = fs.statSync(path.join(this.storeDir, f.path));
+        if (st.isFile()) onDisk += Math.min(f.length || 0, typeof st.blocks === 'number' ? st.blocks * 512 : st.size);
+      } catch { /* ainda não existe */ }
+    }
+    return Math.max(0, total - onDisk);
+  }
+
+  // Admissão de um torrent que ainda NÃO está no motor. Já completo em disco = só semear, sem
+  // custo de espaço: não passa pela reserva. Lança DiskRefusal antes de qualquer efeito.
+  admitTorrent(infoHash) {
+    // Já no motor (ou abrindo): a admissão foi feita na abertura; novos Range/seek não pagam de novo.
+    if (this.loading.has(infoHash) || (this.client?.torrents ?? []).some((t) => t.infoHash === infoHash)) return;
+    // Só dispensa quem o cofre registra como CONCLUÍDO (e com os arquivos inteiros): o tamanho aparente
+    // sozinho engana, pois um arquivo esparso de streaming que o player levou até o fim parece cheio.
+    if (this.vault.get(infoHash)?.completedAt && this.diskState(infoHash) === 'full') return;
+    this.disk.require({ holder: infoHash, need: this.neededBytes(infoHash), live: this.liveRemaining });
   }
 
   // Conclusão em segundo plano: depois que o usuário para de assistir, baixa o
@@ -357,17 +412,18 @@ class Bridge {
         if ((this.streams.get(torrent.infoHash) ?? 0) > 0 || now - idleSince < this.idleMs) continue;
       }
 
+      // Mesma política de disco do streaming e da retomada; sem medida confiável não começa
+      // (fail-closed). Só impede NOVO download: o que já está em disco segue semeando.
       const restante = Math.max(0, (torrent.length || 0) - (torrent.downloaded || 0));
-      let livre = Infinity;
-      try { livre = this.freeSpace(this.storeDir); } catch { /* sem como medir: segue */ }
-      if (livre < restante + this.minFreeBytes) {
+      const adm = this.disk.admit({ holder: torrent.infoHash, need: restante, live: this.liveRemaining });
+      if (!adm.ok) {
         if (!entry?.noSpaceWarned) {
-          console.warn(`[conclusão] espaço insuficiente para concluir "${String(torrent.name).slice(0, 40)}"`
-            + ` (faltam ${(restante / 1024 ** 3).toFixed(1)} GB, livres ${(livre / 1024 ** 3).toFixed(1)} GB)`);
+          console.warn(`[conclusão] não inicia "${String(torrent.name).slice(0, 40)}": ${adm.message}`);
           if (entry) entry.noSpaceWarned = true;
         }
         continue;
       }
+      if (entry?.noSpaceWarned) entry.noSpaceWarned = false;
 
       // Prioridade 0: o streaming (prioridade crítica) sempre passa na frente.
       torrent.select(0, torrent.pieces.length - 1, 0);
@@ -595,8 +651,8 @@ class Bridge {
     const pending = titles.filter((t) => ['seeding', 'paused', 'missing', 'awaiting', 'hnr'].includes(t.state));
     const hoursPending = pending.reduce(
       (acc, t) => acc + Math.max(0, t.requiredHours - t.seededHours), 0);
-    let freeBytes = null;
-    try { freeBytes = this.freeSpace(this.storeDir); } catch { /* sem como medir */ }
+    const disk = this.disk.status(this.liveRemaining);
+    const freeBytes = disk.free;
 
     return {
       generatedAt: new Date(now).toISOString(),
@@ -617,6 +673,8 @@ class Bridge {
         upSpeed: Math.round(this.client?.uploadSpeed || 0),
         downSpeed: Math.round(this.client?.downloadSpeed || 0),
         freeBytes,
+        // Política de disco: reserva efetiva, comprometido com downloads e motivo de bloqueio.
+        disk,
         diskUsed: du.total,
         // Sem uso para nenhuma obrigação: dados de filmes só em streaming ou nunca
         // concluídos, mais arquivos que não pertencem a torrent nenhum da biblioteca.
@@ -633,6 +691,8 @@ class Bridge {
         keepAwake: Boolean(this.keepAwake?.active),
         host: this.host,
         uploadLimit: this.uploadLimit,
+        diskReserveBytes: this.minFreeBytes,
+        diskReservePercent: this.reservePercent,
       },
       account: this.account
         ? {
@@ -772,6 +832,9 @@ class Bridge {
       err.status = 404;
       throw err;
     }
+
+    // Antes de qualquer efeito (abrir, anunciar, gravar): sem folga ou sem medida, recusa.
+    this.admitTorrent(infoHash);
 
     const task = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('timeout ao abrir o torrent')), 30000);
@@ -1066,17 +1129,25 @@ class Bridge {
           res.end(JSON.stringify({ error: 'download sob demanda indisponível' }));
           return;
         }
+        // Reserva espaço ANTES de baixar o .torrent (que cria o snatch): o tamanho vem da listagem;
+        // sem ele, exige ao menos a reserva livre (o tamanho real é conferido ao abrir o torrent).
+        const holder = `asc:${ascId}`;
         try {
+          this.disk.require({ holder, need: this.ascSizeHint?.(ascId) || 0, live: this.liveRemaining });
           ({ infoHash, fileIdx } = await this.ascResolver(ascId));
         } catch (err) {
           const status = Number.isInteger(err?.status) ? err.status : 502;
           log.warn(`play de #${ascId} recusado (${status}): ${err?.message ?? err}`);
-          res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({ error: err?.message || 'Não foi possível preparar o filme.' }));
+          res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...(status === 503 && err?.detail ? { 'Retry-After': '60' } : {}) });
+          res.end(JSON.stringify({ error: err?.message || 'Não foi possível preparar o filme.', ...(err?.detail ? { disco: err.detail } : {}) }));
           return;
+        } finally {
+          this.disk.release(holder);
         }
         // Credencial revogada (ou cliente que saiu) enquanto o .torrent era preparado: não abre o torrent.
         if (res.destroyed) return;
+        // Troca a promessa provisória pela do torrent sem deixar brecha entre as duas.
+        this.admitTorrent(infoHash);
       }
     }
 

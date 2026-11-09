@@ -72,6 +72,7 @@ A redação automática não remove necessariamente dados pessoais, títulos ou 
 | Play retorna 503 | Ausência de seeders na fonte online, antes de criar download |
 | Play retorna 504 | Primeiro trecho não chegou no prazo; pode haver peers indisponíveis ou falta de conectividade |
 | Vídeo sem áudio/imagem no player | Compatibilidade do contêiner/codec do cliente; o servidor não transcodifica |
+| Play retorna 507/503 | Sem folga além da reserva de disco (507) ou espaço não medido (503); veja [Disco](configuracao.md#disco) e ajuste `DISK_RESERVE_GIB`/`DISK_RESERVE_PERCENT` ou libere espaço |
 | Disco não foi liberado | Confirmação do tracker pendente, falha de sessão/rede ou `AFTER_SEED=stop/keep` |
 | Conta ainda não lida | Aguarde a consulta e examine sessão/rede; ausência de dados não significa tudo em dia |
 | Seed para quando o PC suspende | Verifique `KEEP_AWAKE`, ferramenta do sistema e energia do host, especialmente em contêiner |

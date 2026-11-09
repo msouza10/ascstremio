@@ -32,7 +32,7 @@ A data de login guardada pelo addon é um lembrete local: acesse o ASC no navega
 
 O player pode baixar apenas as partes que usa. Para concluir o restante, abra o filme no painel e use **Concluir download em segundo plano**. A ação é explícita e pode incluir um release que não seja freeleech, com impacto no ratio.
 
-Por padrão, a conclusão automática está desligada. `BACKGROUND_COMPLETE=auto` considera apenas freeleech elegíveis sem atividade há `BACKGROUND_IDLE_MINUTES` (10 por padrão), com verificação de espaço em disco e prioridade baixa. Completar abre a obrigação de seed; não é uma opção para evitar a conclusão.
+Por padrão, a conclusão automática está desligada. `BACKGROUND_COMPLETE=auto` considera apenas freeleech elegíveis sem atividade há `BACKGROUND_IDLE_MINUTES` (10 por padrão), com a mesma verificação de espaço em disco (reserva configurável, veja [configuração](configuracao.md#disco)) e prioridade baixa. Completar abre a obrigação de seed; não é uma opção para evitar a conclusão.
 
 ## O que acontece depois do cumprimento
 
