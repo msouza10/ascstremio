@@ -18,3 +18,11 @@ targetRules = ["generic-api-key"]
 paths = ['''^test/logger\.test\.js$''']
 regexTarget = "line"
 regexes = ['''brazuka-2026-11-07\.log/\.\./\.\./etc/passwd''']
+
+[[allowlists]]
+description = "Valor sintético de segredo usado para provar que a rota do painel recusa e não o devolve"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^test/panel-settings\.test\.js$''']
+regexTarget = "line"
+regexes = ['''(?m)^    const sec = await tenta\(\{ PASSKEY: 'abc123segredo' \}\);$''']

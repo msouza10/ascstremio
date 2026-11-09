@@ -475,8 +475,9 @@ function load(opts = {}) {
 
 // changes: { CHAVE: valor } ; valor null remove do arquivo (volta ao padrão/ambiente).
 // expectedRevision é obrigatório (controle otimista de concorrência: use snap.revision).
+// dryRun: true valida tudo e devolve o resultado sem gravar nada.
 // Retorna { snapshot, changed, restart }: restart lista as chaves alteradas que só valem ao reiniciar.
-function update({ dataDir = resolveDataDir(process.env), env = process.env, changes, expectedRevision, interfaces = undefined } = {}) {
+function update({ dataDir = resolveDataDir(process.env), env = process.env, changes, expectedRevision, interfaces = undefined, dryRun = false } = {}) {
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new SettingsError('invalid', 'Nenhuma alteração informada.');
   if (!Number.isInteger(expectedRevision)) throw new SettingsError('invalid', 'expectedRevision é obrigatório (use a revisão lida).');
 
@@ -515,6 +516,8 @@ function update({ dataDir = resolveDataDir(process.env), env = process.env, chan
     const after = resolve({ dataDir, env, file: candidate, interfaces, strictNetwork: true });
     const fresh = after.problems.filter((p) => !before.has(p));
     if (fresh.length) throw new SettingsError('invalid', fresh); // nada gravado
+    // dryRun: mesma validação e mesmos conflitos, sem gravar (prévia do painel antes de salvar).
+    if (dryRun) return { snapshot: after, changed, restart: changed.filter((k) => BY_KEY.get(k).restart), dryRun: true };
     if (changed.length === 0) return { snapshot: after, changed, restart: [] };
     writeFileAtomic(dataDir, disk.revision + 1, next, disk.extra);
     const snapshot = resolve({ dataDir, env, interfaces });
