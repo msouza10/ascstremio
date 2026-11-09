@@ -211,10 +211,15 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      # Por nome: o build do Docker também deixa artefatos (.dockerbuild) que conflitam na extração.
       - uses: actions/download-artifact@v4
         with:
+          name: pacote-linux
           path: artefatos
-          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: instalador-windows
+          path: artefatos
       - name: Resumo de SHA-256
         working-directory: artefatos
         run: |
