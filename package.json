@@ -16,6 +16,7 @@
     "retencao": "node src/retencao-cli.js",
     "admin-painel": "node src/admin-cli.js",
     "alertas": "node src/alertas-cli.js",
+    "bench:reproducao": "node --max-http-header-size=65536 scripts/bench-playback.js",
     "install-service": "bash scripts/install.sh"
   },
   "engines": {
