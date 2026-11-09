@@ -126,7 +126,7 @@ async function main() {
     afterSeed, backgroundMode, idleMinutes, keepAwake: v.KEEP_AWAKE,
     reservaDiscoGiB: v.DISK_RESERVE_GIB, reservaDiscoPercent: v.DISK_RESERVE_PERCENT,
     limiteReproducoes: v.PLAYBACK_MAX_SESSIONS, limiteReproducoesPorCredencial: v.PLAYBACK_MAX_PER_CREDENTIAL,
-    nivelDeLog: logger.level, uploadLimit, passkeyConfigurada: Boolean(passkey),
+    nivelDeLog: logger.level, uploadLimit, uploadLimitReproducao: v.BRIDGE_STREAM_UPLOAD_LIMIT, passkeyConfigurada: Boolean(passkey),
   });
 
   // Credenciais de reprodução (token por instalação, só o verificador em disco). A antiga
@@ -142,7 +142,8 @@ async function main() {
   logger.addSecret(adminKey);
   const bridge = new Bridge({
     torrentDir, storeDir, port: bridgePort, host, publicUrl, passkey, strictHost: true,
-    credentials, adminKey, uploadLimit, announceBase, vault,
+    credentials, adminKey, uploadLimit, announceBase,
+    streamUploadLimit: v.BRIDGE_STREAM_UPLOAD_LIMIT, uploadRestoreMs: v.BRIDGE_UPLOAD_RESTORE_SECONDS * 1000, vault,
     backgroundMode, idleMs: idleMinutes * 60 * 1000, afterSeed,
     minFreeBytes: Math.round(v.DISK_RESERVE_GIB * 1024 ** 3), reservePercent: v.DISK_RESERVE_PERCENT,
     maxPlaybacks: v.PLAYBACK_MAX_SESSIONS, maxPlaybacksPerCredential: v.PLAYBACK_MAX_PER_CREDENTIAL,

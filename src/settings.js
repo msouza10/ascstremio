@@ -157,7 +157,15 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'BRIDGE_UPLOAD_LIMIT', type: 'int', min: -1, default: -1, unit: 'B/s', group: 'seed', access: 'advanced', restart: true,
-    description: 'Limite de upload em bytes por segundo. -1 = sem limite.',
+    description: 'Limite de upload em bytes por segundo. -1 = sem limite. 0 desliga o envio e é respeitado como está (afeta o ratio da regra 13.1).',
+  },
+  {
+    key: 'BRIDGE_STREAM_UPLOAD_LIMIT', type: 'int', min: 16384, special: [-1], default: -1, unit: 'B/s', group: 'seed', access: 'advanced', restart: true,
+    description: 'Teto de upload enquanto há reprodução ativa; vale o menor entre este e BRIDGE_UPLOAD_LIMIT. -1 = não reduz (padrão). Mínimo 16384 (16 KiB/s); com seed pendente o piso efetivo é 65536 (64 KiB/s). Nunca zera o envio.',
+  },
+  {
+    key: 'BRIDGE_UPLOAD_RESTORE_SECONDS', type: 'int', min: 0, max: 300, default: 15, unit: 's', group: 'seed', access: 'advanced', restart: true,
+    description: 'Espera sem reprodução (depois da carência da sessão) antes de voltar ao teto normal de upload. Só vale com BRIDGE_STREAM_UPLOAD_LIMIT.',
   },
   {
     key: 'DISK_RESERVE_GIB', type: 'number', min: 0, max: 1048576, default: 2, unit: 'GiB', group: 'disco', access: 'editable', restart: true,
@@ -212,7 +220,8 @@ function coerce(entry, raw, fromEnv) {
       if (!Number.isFinite(n) || (type === 'int' && !Number.isInteger(n))) {
         return fail(type === 'int' ? 'deve ser um inteiro.' : 'deve ser um número.');
       }
-      if ((entry.min !== undefined && n < entry.min) || (entry.max !== undefined && n > entry.max)) {
+      const especial = (entry.special ?? []).includes(n); // valor sentinela permitido fora da faixa (ex.: -1)
+      if (!especial && ((entry.min !== undefined && n < entry.min) || (entry.max !== undefined && n > entry.max))) {
         return fail(`deve ser um ${type === 'int' ? 'inteiro' : 'número'}${range()}.`);
       }
       return { value: n };
