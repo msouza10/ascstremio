@@ -1159,6 +1159,13 @@ class Bridge {
     let infoHash = m ? m[1].toLowerCase() : null;
     let fileIdx = m ? (m[2] === undefined ? 0 : Number(m[2])) : 0;
 
+    // Vídeo só por GET/HEAD: outro método não pode contornar a quota nem disparar download.
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8', Allow: 'GET, HEAD, OPTIONS' });
+      res.end(JSON.stringify({ error: 'método não permitido' }));
+      return;
+    }
+
     // Quota de reproduções: só o GET (HEAD nunca ocupa vaga) e antes de qualquer efeito.
     let lease = null;
     if (req.method === 'GET') {

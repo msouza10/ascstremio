@@ -140,7 +140,7 @@ const store = new CredentialStore({ file: path.join(tmpdir('play-cred-'), 'crede
 
 function ponte(over = {}) {
   const b = new Bridge({
-    torrentDir: '/tmp', storeDir: '/tmp', port: 7098, publicUrl: 'http://127.0.0.1:7098', credentials: store,
+    torrentDir: tmpdir('play-t-'), storeDir: tmpdir('play-s-'), freeSpace: () => ({ free: 1024 ** 4, total: 1024 ** 4 }), port: 7098, publicUrl: 'http://127.0.0.1:7098', credentials: store,
     vault: new SeedVault({ file: path.join(tmpdir('play-'), 'v.json') }), ...over,
   });
   b.client = { torrents: [] };
@@ -297,4 +297,19 @@ test('configuração: chaves novas existem com padrão sem limite e validam faix
   assert.equal(r.values.PLAYBACK_SESSION_GRACE_SECONDS, 30);
   const ruim = settings.resolve({ dataDir: dir, env: { PLAYBACK_MAX_SESSIONS: '-1', PLAYBACK_SESSION_GRACE_SECONDS: '1' } });
   assert.ok(ruim.problems.length >= 2);
+});
+
+test('ponte: método diferente de GET/HEAD nas rotas de vídeo é recusado sem efeitos nem vaga', async () => {
+  const b = ponte({ maxPlaybacks: 1 });
+  const a = store.create({ name: 'tv' });
+  let efeitos = 0;
+  b.ascResolver = async () => { efeitos++; return { infoHash: HASH, fileIdx: 0 }; };
+  b.getTorrent = async () => { efeitos++; return null; };
+  for (const url of [`/s/${HASH}/0`, '/a/3']) {
+    const r = resposta();
+    await b.handle(get(a.token, url, 'POST'), r);
+    assert.equal(r.statusCode, 405);
+  }
+  assert.equal(efeitos, 0);
+  assert.equal(b.limiter.snapshot().active, 0);
 });
