@@ -60,7 +60,10 @@ async function findPoster(title, type = 'movie') {
 }
 
 // `status` (opcional): { snapshot(), posterBase, panelUrl } — liga o catálogo "ASC — status".
-function createAddon({ provider = amigosShare, demo = false, library = [], bridgeUrl = null, remote = null, status = null } = {}) {
+function createAddon({ provider = amigosShare, demo = false, library = [], bridgeUrl = null, remote = null, status = null, statusAllowed = () => true } = {}) {
+  // `statusAllowed` decide por requisição se o cliente enxerga ratio/avisos de status. Em produção
+  // o index.js liga isso à credencial (negado por padrão); o padrão aberto serve só aos testes.
+  const showStatus = () => Boolean(status) && statusAllowed();
   const byHash = new Map(library.map((entry) => [entry.infoHash, entry]));
   const urlFor = bridgeUrl ?? ((infoHash, idx) => `http://127.0.0.1:7010/s/${infoHash}/${idx}`);
 
@@ -87,14 +90,14 @@ function createAddon({ provider = amigosShare, demo = false, library = [], bridg
   };
   // Aviso de risco crítico no topo das fontes de filmes ASC.
   const withAlert = (streams) => {
-    if (!status || !Array.isArray(streams)) return streams;
+    if (!showStatus() || !Array.isArray(streams)) return streams;
     try { const a = statusKit.alertStream(status.snapshot(), status.panelUrl); return a ? [a, ...streams] : streams; } catch { return streams; }
   };
 
   builder.defineCatalogHandler(async ({ type, id, extra }) => {
     log.debug(`catálogo pedido: ${type}/${id}${extra?.search ? ' (com busca)' : ''}`);
-    if (status && type === 'movie' && id === 'asc-status') {
-      return { metas: statusKit.catalogMetas(statusItems(), status.posterBase), cacheMaxAge: 0 };
+    if (type === 'movie' && id === 'asc-status') {
+      return showStatus() ? { metas: statusKit.catalogMetas(statusItems(), status.posterBase), cacheMaxAge: 0 } : { metas: [], cacheMaxAge: 0 };
     }
     if (remote && type === 'movie' && id === 'asc-online') {
       return { metas: await remote.catalog(extra?.search || ''), cacheMaxAge: 0 };
@@ -113,7 +116,7 @@ function createAddon({ provider = amigosShare, demo = false, library = [], bridg
 
   builder.defineMetaHandler(async ({ type, id }) => {
     log.debug(`meta pedido: ${type}/${id}`);
-    if (status && String(id).startsWith(statusKit.STATUS_PREFIX)) return { meta: statusKit.metaFor(statusItems(), id, status.posterBase), cacheMaxAge: 0 };
+    if (String(id).startsWith(statusKit.STATUS_PREFIX)) return showStatus() ? { meta: statusKit.metaFor(statusItems(), id, status.posterBase), cacheMaxAge: 0 } : { meta: null };
     if (remote && type === 'movie' && /^ascfilm:\d+$/.test(id)) return { meta: remote.meta(id.slice(8)) };
     const local = parseLocalId(id);
     if (local) {
@@ -147,7 +150,7 @@ function createAddon({ provider = amigosShare, demo = false, library = [], bridg
 
   builder.defineStreamHandler(async ({ type, id }) => {
     log.debug(`stream pedido pelo Stremio: ${type}/${id}`);
-    if (status && String(id).startsWith(statusKit.STATUS_PREFIX)) return { streams: statusKit.statusStreams(status.panelUrl), cacheMaxAge: 0 };
+    if (String(id).startsWith(statusKit.STATUS_PREFIX)) return { streams: showStatus() ? statusKit.statusStreams(status.panelUrl) : [], cacheMaxAge: 0 };
     if (remote && type === 'movie' && /^ascfilm:\d+$/.test(id)) return { streams: withAlert(await remote.streamsFor(id.slice(8))), cacheMaxAge: 0 };
     // 1) Item do catálogo local: caminho principal.
     const local = parseLocalId(id);

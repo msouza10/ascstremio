@@ -59,6 +59,9 @@ class Logger {
     return out
       .replace(/\/announce\/[0-9a-fA-F]{16,}/g, '/announce/[redigido]')
       .replace(/(passkey|pass|token|key)=([^&\s"']+)/gi, '$1=[redigido]')
+      // credencial de instalação: token solto (caminho do addon), `?k=` das URLs de vídeo
+      .replace(/ascc_[A-Za-z0-9_-]{8,}/g, 'ascc_[redigido]')
+      .replace(/(?<![A-Za-z0-9_])k=[^&\s"']+/g, 'k=[redigido]')
       .replace(/(set-cookie|cookie|authorization):\s*[^\n]+/gi, '$1: [redigido]')
       .replace(/\b(XSRF-TOKEN|[a-z0-9-]*session|remember_web_[0-9a-f]+)=[^;\s]+/gi, '$1=[redigido]')
       // passkey (32 hex) e token CSRF (64 hex) soltos; infoHash (40 hex) fica

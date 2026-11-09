@@ -143,7 +143,10 @@ test('HEAD responde pelos metadados locais, sem abrir o torrent', async () => {
     writeHead(s, h) { this.status = s; Object.assign(this.headers, h || {}); },
     end() {},
   };
-  await b.handle({ method: 'HEAD', url: `/s/${HASH}/0`, headers: {}, socket: LOCAL }, res);
+  const { CredentialStore } = require('../src/credentials');
+  b.credentials = new CredentialStore({ file: path.join(tmpdir('head-cred-'), 'credentials.json') });
+  const { token } = b.credentials.create({ name: 'teste' });
+  await b.handle({ method: 'HEAD', url: `/s/${HASH}/0?k=${token}`, headers: {}, socket: LOCAL }, res);
 
   assert.equal(res.status, 200);
   assert.equal(res.headers['Content-Length'], '123456');

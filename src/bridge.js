@@ -14,6 +14,7 @@ const { announceWithPasskey } = require('./passkey');
 const { SeedVault } = require('./seedvault');
 const { isLoopbackRequest, inContainer, hostAllowed } = require('./safety');
 const { timingSafeEqual } = require('crypto');
+const { currentToken } = require('./credentials');
 const hnr = require('./hnr-guard');
 const { logger } = require('./logger');
 const log = logger.child('ponte');
@@ -72,7 +73,7 @@ class Bridge {
     host = '127.0.0.1',
     publicUrl = null,
     adminKey = null, // credencial das rotas administrativas (cabeçalho X-Admin-Token); sem ela elas recusam tudo
-    accessKey = null, // chave nas URLs de stream (?k=): barra CSRF e páginas web que adivinham /a/<id>
+    credentials = null, // CredentialStore: token de instalação nas URLs de stream (?k=); sem ele /s e /a recusam tudo
     strictHost = false, // recusa Host que não seja IP/localhost (anti DNS rebinding)
     firstByteTimeoutMs = 60000,
     passkey = null,
@@ -132,7 +133,10 @@ class Bridge {
     this.account = null;
     this.trackerPending = [];
     this.publicUrl = publicUrl;
-    this.accessKey = accessKey;
+    this.credentials = credentials;
+    // Respostas de vídeo abertas por credencial: a revogação as derruba na hora.
+    this.sessions = new Map();
+    this.credentials?.on('revoked', (id) => this.dropSessions(id));
     this.adminKey = adminKey;
     this.strictHost = strictHost;
     this.firstByteTimeoutMs = firstByteTimeoutMs;
@@ -682,13 +686,31 @@ class Bridge {
     return `${base.replace(/\/$/, '')}/s/${infoHash}/${fileIdx}${this.keyQuery()}`;
   }
 
-  keyQuery() { return this.accessKey ? `?k=${this.accessKey}` : ''; }
+  // O token é o da credencial que pediu a lista de fontes (contexto da requisição ao addon).
+  // Fora desse contexto não há token: a URL sai sem ele e a ponte a recusa (fail-closed).
+  keyQuery() {
+    const token = currentToken();
+    return token ? `?k=${token}` : '';
+  }
 
+  // Credencial ativa da requisição, ou null (sem token, errado ou revogado).
   keyOk(url) {
-    if (!this.accessKey) return true;
-    const given = Buffer.from(url.searchParams.get('k') ?? '');
-    const want = Buffer.from(this.accessKey);
-    return given.length === want.length && timingSafeEqual(given, want);
+    return this.credentials?.verify(url.searchParams.get('k') ?? '') ?? null;
+  }
+
+  trackSession(credentialId, res) {
+    if (!this.sessions.has(credentialId)) this.sessions.set(credentialId, new Set());
+    const set = this.sessions.get(credentialId);
+    set.add(res);
+    res.once?.('close', () => { set.delete(res); if (set.size === 0) this.sessions.delete(credentialId); });
+  }
+
+  dropSessions(credentialId) {
+    const set = this.sessions.get(credentialId);
+    if (!set) return;
+    log.info(`credencial revogada: ${set.size} resposta(s) de vídeo aberta(s) encerrada(s)`);
+    for (const res of [...set]) res.destroy?.();
+    this.sessions.delete(credentialId);
   }
 
   adminOk(req) {
@@ -696,6 +718,34 @@ class Bridge {
     const given = Buffer.from(String(req.headers?.['x-admin-token'] ?? ''));
     const want = Buffer.from(this.adminKey);
     return given.length === want.length && timingSafeEqual(given, want);
+  }
+
+  // Gestão das credenciais de instalação (rotas administrativas, já autenticadas por adminOk).
+  // O token só aparece na resposta que o emite; a lista traz apenas id, nome e datas.
+  handleCredentials(req, res, url) {
+    const send = (status, body) => {
+      res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(body));
+    };
+    if (!this.credentials) return send(503, { error: 'credenciais indisponíveis' });
+    const id = url.searchParams.get('id') ?? '';
+    try {
+      if (url.pathname === '/credentials' && req.method === 'GET') return send(200, { credentials: this.credentials.list() });
+      if (url.pathname === '/credentials' && req.method === 'POST') {
+        const status = ['1', 'true'].includes(url.searchParams.get('status') ?? '');
+        return send(201, this.credentials.create({ name: url.searchParams.get('name'), status }));
+      }
+      if (url.pathname === '/credentials/revoke' && req.method === 'POST') {
+        return this.credentials.revoke(id) ? send(200, { revoked: id }) : send(404, { error: 'credencial inexistente' });
+      }
+      if (url.pathname === '/credentials/rotate' && req.method === 'POST') {
+        const next = this.credentials.rotate(id);
+        return next ? send(201, { ...next, revoked: id }) : send(404, { error: 'credencial inexistente ou já revogada' });
+      }
+    } catch (err) {
+      return send(400, { error: String(err?.message ?? err) });
+    }
+    return send(405, { error: 'método não permitido' });
   }
 
   async getTorrent(infoHash) {
@@ -877,11 +927,16 @@ class Bridge {
     // sem Origin (navegadores o enviam em POST/fetch entre origens) e, fora do
     // contêiner, vindas de loopback. No contêiner o endereço de origem é o do gateway
     // ou de outro contêiner, então só o token vale; ele é independente da chave ?k=.
-    const admin = ['/cleanup', '/seed-status', '/status', '/complete'].includes(url.pathname);
+    const admin = ['/cleanup', '/seed-status', '/status', '/complete', '/credentials', '/credentials/revoke', '/credentials/rotate'].includes(url.pathname);
     if (admin && (!this.adminOk(req) || req.headers?.origin || !(inContainer() || isLoopbackRequest(req)))) {
       log.warn(`rota administrativa recusada: ${req.method} ${url.pathname} (origem ${req.socket?.remoteAddress ?? '?'}${req.headers?.origin ? `, Origin ${req.headers.origin}` : ''})`);
       res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'rota administrativa: exige token administrativo, fora de navegador' }));
+      return;
+    }
+
+    if (['/credentials', '/credentials/revoke', '/credentials/rotate'].includes(url.pathname)) {
+      this.handleCredentials(req, res, url);
       return;
     }
 
@@ -972,12 +1027,16 @@ class Bridge {
     const lazy = /^\/a\/(\d{1,9})$/.exec(url.pathname);
     // Quem não tem a chave (por exemplo, uma página web que adivinhou /a/<id>) não
     // dispara download nem anúncio no tracker com a sua conta.
-    if ((m || lazy) && !this.keyOk(url)) {
-      log.warn(`${req.method} ${url.pathname.replace(/[0-9a-f]{40}/i, (h) => short(h))} recusado: chave de acesso ausente ou errada`);
+    // A verificação é feita a cada GET/HEAD/Range, então URL guardada em cache pelo player
+    // não contorna a revogação.
+    const credential = (m || lazy) ? this.keyOk(url) : null;
+    if ((m || lazy) && !credential) {
+      log.warn(`${req.method} ${url.pathname.replace(/[0-9a-f]{40}/i, (h) => short(h))} recusado: credencial ausente, inválida ou revogada`);
       res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: 'chave de acesso ausente: reabra a fonte pelo Stremio' }));
+      res.end(JSON.stringify({ error: 'credencial ausente, inválida ou revogada: reabra a fonte pelo Stremio' }));
       return;
     }
+    if (credential) this.trackSession(credential.id, res);
     if (!m && !lazy) {
       res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: 'rota desconhecida' }));

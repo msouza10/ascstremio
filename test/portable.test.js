@@ -42,10 +42,16 @@ test('Host: IP literal e localhost passam; nome DNS (rebinding) não, salvo auto
   assert.equal(hostAllowed('nas.casa', { BRIDGE_PUBLIC_URL: 'http://nas.casa:7010' }), true);
 });
 
-test('ponte: chave nas URLs e recusa de /a/ e /s/ sem ela; Host estranho recusado', async () => {
-  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', port: 7097, publicUrl: 'http://127.0.0.1:7097', accessKey: 'ab'.repeat(16), strictHost: true });
-  assert.match(b.lazyUrl(12), /\/a\/12\?k=abab/);
-  assert.match(b.urlFor('a'.repeat(40), 0), /\/s\/a{40}\/0\?k=abab/);
+test('ponte: credencial nas URLs e recusa de /a/ e /s/ sem ela; Host estranho recusado', async () => {
+  const { CredentialStore, runWith } = require('../src/credentials');
+  const { tmpdir } = require('./tmp-helper');
+  const store = new CredentialStore({ file: require('path').join(tmpdir('portable-'), 'credentials.json') });
+  const { credential, token } = store.create({ name: 'teste' });
+  const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', port: 7097, publicUrl: 'http://127.0.0.1:7097', credentials: store, strictHost: true });
+  runWith(credential, token, () => {
+    assert.match(b.lazyUrl(12), /\/a\/12\?k=ascc_/);
+    assert.match(b.urlFor('a'.repeat(40), 0), /\/s\/a{40}\/0\?k=ascc_/);
+  });
   const call = async (path, host = '127.0.0.1:7097') => {
     const out = { status: 0 };
     await b.handle({ method: 'GET', url: path, headers: { host }, socket: { remoteAddress: '127.0.0.1' } },

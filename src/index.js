@@ -15,7 +15,8 @@ const { SeedVault } = require('./seedvault');
 const crypto = require('crypto');
 const { bridgeHost, inContainer, hostAllowed } = require('./safety');
 const hnr = require('./hnr-guard');
-const { posterRoute } = require('./stremio-status');
+const { CredentialStore, currentCredential, currentToken } = require('./credentials');
+const { createAddonHandler } = require('./addon-auth');
 const { KeepAwake } = require('./keepawake');
 const { logger, initFiles } = require('./logger');
 
@@ -127,13 +128,20 @@ async function main() {
     nivelDeLog: logger.level, uploadLimit, passkeyConfigurada: Boolean(passkey),
   });
 
-  const accessKey = loadAccessKey(path.join(DATA_DIR, 'bridge-key'));
-  logger.addSecret(accessKey);
+  // Credenciais de reprodução (token por instalação, só o verificador em disco). A antiga
+  // chave única `bridge-key` não vale mais: as URLs antigas passam a dar 403.
+  const credentials = new CredentialStore({ file: path.join(DATA_DIR, 'credentials.json') });
+  if (fs.existsSync(path.join(DATA_DIR, 'bridge-key'))) {
+    log.warn('bridge-key (chave única antiga) é ignorada e pode ser removida; emita uma credencial: npm run credenciais -- criar "Stremio" e reinstale o addon com a URL nova');
+  }
+  if (!credentials.hasActive()) {
+    log.warn('nenhuma credencial de reprodução ativa: o addon recusa tudo. Emita uma: npm run credenciais -- criar "Stremio"');
+  }
   const adminKey = loadAccessKey(path.join(DATA_DIR, 'admin-key'));
   logger.addSecret(adminKey);
   const bridge = new Bridge({
     torrentDir, storeDir, port: bridgePort, host, publicUrl, passkey, strictHost: true,
-    accessKey, adminKey, uploadLimit, announceBase, vault,
+    credentials, adminKey, uploadLimit, announceBase, vault,
     backgroundMode, idleMs: idleMinutes * 60 * 1000, afterSeed,
     resumeOnStart: false, // painel e addon sobem primeiro; os torrents retomam em seguida
     keepAwake: new KeepAwake({ mode: (process.env.KEEP_AWAKE || 'auto').toLowerCase() }),
@@ -162,7 +170,8 @@ async function main() {
   const addonBase = process.env.ADDON_PUBLIC_URL || `http://${advertisedHost(host)}:${addonPort}`;
   const status = (process.env.STATUS_CATALOG || 'on').toLowerCase() === 'off' ? null : {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
-    posterBase: addonBase,
+    // Os cartões saem sob o prefixo da credencial de quem pediu (o Stremio não envia cabeçalhos).
+    get posterBase() { return `${addonBase}/${currentToken()}`; },
     panelUrl: `http://127.0.0.1:${envInt('CONFIG_PORT', 7020)}`,
   };
   const addon = createAddon({
@@ -171,15 +180,13 @@ async function main() {
     library,
     bridgeUrl: (infoHash, fileIdx) => bridge.urlFor(infoHash, fileIdx),
     demo: process.env.DEMO_MODE === 'true',
+    statusAllowed: () => currentCredential()?.status === true,
   });
 
   // serveHTTP do SDK escuta em todas as interfaces e não aceita host: monta o
   // roteador do SDK num servidor próprio, preso ao mesmo host da ponte.
   const router = getRouter(addon);
-  const handleAddon = (req, res) => (status && posterRoute(req, res, status.snapshot, status.panelUrl)) || router(req, res, () => {
-    res.writeHead(404);
-    res.end();
-  });
+  const handleAddon = createAddonHandler({ addon, router, store: credentials, status });
   // Anti DNS rebinding: só IP literal/localhost/hosts autorizados (ver safety.hostAllowed).
   const server = http.createServer((req, res) => {
     if (!hostAllowed(req.headers.host)) { res.writeHead(403); res.end(); return; }
@@ -189,9 +196,9 @@ async function main() {
     server.once('error', reject);
     server.listen(addonPort, host, resolve);
   });
-  console.log(`[addon] instale em http://${advertisedHost(host)}:${addonPort}/manifest.json`);
+  console.log(`[addon] instale pela URL emitida: http://${advertisedHost(host)}:${addonPort}/<credencial>/manifest.json (npm run credenciais)`);
   console.log(`[config] login em http://127.0.0.1:${envInt('CONFIG_PORT', 7020)}/`);
-  console.log(`[ponte] stream em ${publicUrl}/s/<infoHash>/<fileIdx>`);
+  console.log(`[ponte] stream em ${publicUrl}/s/<infoHash>/<fileIdx>?k=<credencial>`);
 
   // Anti-HnR: concilia o cofre com o myHistory do tracker (ele vence), retoma
   // obrigações reveladas por ele e avisa de prazo/torrent inativo.
