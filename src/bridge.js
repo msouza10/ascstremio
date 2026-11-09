@@ -1498,10 +1498,12 @@ class Bridge {
         }),
       ]).finally(() => clearTimeout(timer));
     } catch (err) {
-      trace.timeout(); // conta o timeout já, antes de esperar o iterador fechar
-      await iterator.return?.().catch(() => {});
+      trace.timeout();
+      // Responde primeiro: com next() pendente, o return() de um iterador assíncrono só termina
+      // depois do next(), então esperar por ele aqui impediria o 504 de sair (issue #52).
       res.writeHead(504, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ error: err.message, peers: torrent.numPeers }));
+      iterator.return?.().catch(() => {}); // solta a seleção de peças em segundo plano
       return;
     }
 
