@@ -181,6 +181,31 @@ A mesma política decide **todo novo download**: streaming sob demanda (`/s` e `
 - **Nada é apagado** por esta política. Liberar espaço continua sendo `AFTER_SEED` e a retenção prevista na issue #27.
 - O painel (e o catálogo "ASC — status") mostra livres, reserva efetiva, espaço comprometido e disponível; o alerta de bloqueio tem histerese (entra ao esgotar a folga e só sai quando sobra a maior de 256 MiB ou 10% da reserva).
 
+## Alertas por webhook
+
+Desligados por padrão. Enviam avisos curtos de operação a um destino HTTP escolhido por você (por exemplo um tópico do [ntfy](https://docs.ntfy.sh/publish/)). Habilitar exige o host do destino em `ALERT_WEBHOOK_ALLOWED_HOSTS`, um destino configurado e `ALERTS_ENABLED=true`. Os valores abaixo valem na hora quando alterados pelo painel.
+
+| Opção | Padrão | Função |
+|---|---|---|
+| `ALERTS_ENABLED` | `false` | Liga a entrega. Recusado sem hosts permitidos ou sem destino |
+| `ALERT_WEBHOOK_URL` | ausente | URL completa do destino. **Segredo**: só pelo ambiente; nunca vai ao `settings.json` |
+| `ALERT_WEBHOOK_URL_FILE` | ausente | Arquivo protegido (0600) com a URL |
+| `ALERT_WEBHOOK_TOKEN` | ausente | Token bearer opcional (segredo, só ambiente) |
+| `ALERT_WEBHOOK_FORMAT` | `json` | `json` ou `text` (somente a mensagem, `text/plain`, ideal para ntfy) |
+| `ALERT_WEBHOOK_ALLOWED_HOSTS` | vazio | Hosts exatos aprovados, sem curinga e sem IPv6 literal |
+| `ALERT_WEBHOOK_ALLOW_PRIVATE` | `false` | Permite destino em rede privada (RFC1918) e `http://` nela |
+| `ALERT_HNR_WITHIN_HOURS` | 48 | Prazo de seed (confirmado pelo tracker) a partir do qual avisar |
+| `ALERT_DISK_FREE_GIB` | 10 | Espaço livre abaixo do qual avisar (0 desliga); recupera 1 GiB acima, por 5 min |
+| `ALERT_TRACKER_FAILURE_MINUTES` | 15 | Tempo desde a primeira falha do tracker sem recuperação |
+| `ALERT_NO_PEERS_MINUTES` | 15 | Download em conclusão sem peers nem progresso |
+| `ALERT_COOLDOWN_MINUTES` | 60 | Intervalo mínimo para repetir o mesmo alerta aberto (dobra a cada desistência, até 8x) |
+
+Sem variável de ambiente, o destino pode ser salvo pelo painel (Configurações, "Destino dos alertas") ou por `npm run alertas -- definir` (a URL é lida da entrada, nunca de argumento) em `DATA_DIR/alert-webhook.json`, modo 0600. O ambiente sempre vence e bloqueia a escrita. Comandos: `npm run alertas -- estado|definir|remover|testar|ativar|desativar`; o painel tem salvar, remover e "Enviar mensagem de teste" (1 por minuto).
+
+Eventos (um por tipo, sem título nem hash): `hnr_deadline` (obrigação de seed perto do prazo ou vencida, prazo confirmado pelo tracker), `disk_low`, `account_inactivity` (perto de 90 dias sem login, regra 2.6), `tracker_unavailable` e `download_no_peers`. Cada um envia "aberto", depois um lembrete após o cooldown enquanto continuar aberto, e "resolvido" uma vez. O estado de deduplicação fica em `DATA_DIR/alerts-state.json` (sem segredos): reiniciar não repete avisos já entregues.
+
+Campos do JSON: `schemaVersion`, `eventId` (aleatório, não deriva de nada), `type`, `severity` (`info`, `warning`, `critical`), `state` (`open`, `resolved`, `test`), `occurredAt`, `message` e, quando faz sentido, `count`. Nada além disso.
+
 ## Logs
 
 | Variável | Padrão | Comportamento |

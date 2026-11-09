@@ -53,6 +53,17 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 
 **Limite de reproduções.** A quota opcional de reproduções simultâneas (`PLAYBACK_MAX_SESSIONS`, `PLAYBACK_MAX_PER_CREDENTIAL`) é contada por credencial, nunca por IP, e é verificada depois da credencial e antes de qualquer download. O diagnóstico (`GET /playback`) é administrativo e traz só contagens; um aparelho não consulta o histórico de outro. Detalhes em [configuração](configuracao.md#reproduções-simultâneas).
 
+## Alertas por webhook
+
+Modelo de ameaça: o operador escolhe o destino; o risco é o aplicativo ser induzido a falar com a rede interna (SSRF) ou a vazar dados da conta.
+
+- A URL do destino é segredo (pode conter token). Fica no ambiente ou em `alert-webhook.json` (0600, fora do controle de versão); não vai ao `settings.json`, ao painel, à CLI, a respostas nem a logs, e é registrada no redator de logs. Erros viram códigos fixos (por exemplo "tempo esgotado"); o corpo da resposta do destino é lido até 4 KiB e nunca registrado.
+- Só `http`/`https`, sem usuário, sem fragmento, com host em `ALERT_WEBHOOK_ALLOWED_HOSTS`. Loopback, link-local, metadata de nuvem, multicast, reservados e o próprio addon/ponte/painel são sempre recusados. Rede privada exige `ALERT_WEBHOOK_ALLOW_PRIVATE`; `http://` só vale para rede privada.
+- O endereço é validado no momento da conexão (todos os endereços do nome precisam passar), contra DNS rebinding. Sem redirecionamentos, sem cookies, sem proxy do ambiente, timeout de 5 s.
+- O conteúdo é texto fixo mais contador. Nunca passkey, cookies, tokens, caminhos, títulos, hashes, ratio ou URLs.
+- Configurar e testar só pelo painel local (Host, Origin, CSRF e sessão do ASC) ou pela CLI no host. A falha do destino não interrompe seed, reprodução nem conciliação.
+- Limitação: a mensagem atravessa a internet com o sigilo do TLS do destino; o texto genérico reduz o que um destino comprometido aprende.
+
 ## Controles atuais
 
 - Addon e ponte validam `Host`, aceitando IP literal, localhost e nomes explicitamente configurados. Isso combate DNS rebinding; não autentica o cliente.
