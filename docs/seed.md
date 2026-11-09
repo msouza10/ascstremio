@@ -44,7 +44,7 @@ Por padrão, a conclusão automática está desligada. `BACKGROUND_COMPLETE=auto
 
 Reabrir um filme cujos dados foram apagados baixa novamente e pode criar nova obrigação. O aplicativo tenta avisar nas fontes. Não apague manualmente cache, cofre ou torrents pendentes para liberar espaço: isso remove meios de cumprir o seed, sem cancelar a cobrança no ASC.
 
-Existe uma exceção perigosa na API atual: `/cleanup?force=1` ignora a conferência de seed. Ela está sob revisão na [issue #10](https://github.com/msouza10/ascstremio/issues/10) e não deve fazer parte da manutenção normal.
+Não existe atalho para pular a conferência de seed: `/cleanup` sempre consulta o tracker e recusa (409) o que ainda está devido. Se o tracker não puder ser consultado, nada é liberado.
 
 ## Suspensão e desligamento
 

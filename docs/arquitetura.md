@@ -50,12 +50,12 @@ Rotas relativas a `http://127.0.0.1:7010`, com as verificações de Host habilit
 | `GET /health` | Saúde do processo e quantidade de torrents | Host permitido; não comprova sessão ou regularidade da conta |
 | `GET/HEAD /a/<id>` | Fonte online resolvida sob demanda | Chave `?k=`; HEAD não baixa torrent |
 | `GET/HEAD /s/<hash>/<idx>` | Arquivo de torrent da biblioteca | Chave `?k=`; suporte a Range na reprodução |
-| `GET /status` | Estado dos torrents no motor | Endereço classificado como local, sem Origin |
-| `GET /seed-status` | Cofre, pendências e avisos | Endereço classificado como local, sem Origin |
-| `POST /complete?hash=<infoHash>` | Solicita download completo em segundo plano | Endereço classificado como local, sem Origin; valida hash |
-| `POST /cleanup[?hash=<infoHash>]` | Remove torrents e armazenamento após conferir obrigações | Endereço classificado como local, sem Origin; consulta tracker |
+| `GET /status` | Estado dos torrents no motor | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback |
+| `GET /seed-status` | Cofre, pendências e avisos | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback |
+| `POST /complete?hash=<infoHash>` | Solicita download completo em segundo plano | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback; valida hash |
+| `POST /cleanup[?hash=<infoHash>]` | Remove torrents e armazenamento após conferir obrigações | `X-Admin-Token`, sem Origin; fora do contêiner, também loopback; consulta o tracker |
 
-`/cleanup?force=1` pula a conferência de seed e pode apagar dados ainda devidos. A classificação de IPs privados no contêiner também amplia o acesso administrativo. Ambas as limitações estão na [issue #10](https://github.com/msouza10/ascstremio/issues/10); consulte [segurança](seguranca.md).
+As quatro rotas administrativas exigem o cabeçalho `X-Admin-Token`, com o conteúdo de `DATA_DIR/admin-key` (a chave de reprodução `?k=` não vale aqui). O token nunca vai na URL. Sem ele, ou com `Origin`, a resposta é 403 antes de qualquer leitura ou efeito. `/cleanup` não aceita mais `force=1`: só libera o que o tracker confirmou cumprido, e responde 409 com o que falta. Detalhes em [segurança](seguranca.md).
 
 ## Painel HTTP
 
