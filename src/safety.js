@@ -33,7 +33,7 @@ function bridgeHost(env = process.env) {
 // Defesa contra DNS rebinding: um site qualquer pode apontar o próprio nome para
 // 127.0.0.1 e falar com a ponte como se fosse "mesma origem". Esses pedidos chegam
 // com Host = nome DNS. Só aceitamos IP literal, localhost ou hosts listados em
-// ALLOWED_HOSTS / BRIDGE_PUBLIC_URL / ADDON_PUBLIC_URL (nome próprio, ex.: um NAS).
+// ALLOWED_HOSTS / LAN_ADVERTISE_HOST / BRIDGE_PUBLIC_URL / ADDON_PUBLIC_URL (nome próprio, ex.: um NAS).
 function hostAllowed(hostHeader, env = process.env) {
   if (!hostHeader) return false;
   const m = /^(\[[0-9a-f:.]+\]|[^:/\s]+)(?::\d{1,5})?$/i.exec(String(hostHeader).trim());
@@ -41,6 +41,8 @@ function hostAllowed(hostHeader, env = process.env) {
   const name = m[1].toLowerCase();
   if (name === 'localhost' || name.startsWith('[') || /^\d{1,3}(\.\d{1,3}){3}$/.test(name)) return true;
   const extra = String(env.ALLOWED_HOSTS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  // Nome DNS escolhido para anunciar (LAN_ADVERTISE_HOST): aceita só esse nome, sem curinga.
+  if (env.LAN_ADVERTISE_HOST) extra.push(String(env.LAN_ADVERTISE_HOST).trim().toLowerCase().replace(/^\[|\]$/g, ''));
   for (const key of ['BRIDGE_PUBLIC_URL', 'ADDON_PUBLIC_URL']) {
     try { if (env[key]) extra.push(new URL(env[key]).hostname.toLowerCase()); } catch { /* URL inválida: ignora */ }
   }

@@ -1,6 +1,5 @@
 const fs = require('fs');
 const http = require('http');
-const os = require('os');
 const path = require('path');
 
 const { getRouter } = require('stremio-addon-sdk');
@@ -13,7 +12,8 @@ const { createAscProvider } = require('./asc-provider');
 const { readPasskey, DEFAULT_ANNOUNCE_BASE } = require('./passkey');
 const { SeedVault } = require('./seedvault');
 const crypto = require('crypto');
-const { inContainer, hostAllowed } = require('./safety');
+const { hostAllowed } = require('./safety');
+const network = require('./network');
 const settings = require('./settings');
 const hnr = require('./hnr-guard');
 const { CredentialStore, currentCredential, currentToken } = require('./credentials');
@@ -35,21 +35,6 @@ function loadAccessKey(file) {
   const key = crypto.randomBytes(16).toString('hex');
   fs.writeFileSync(file, key, { mode: 0o600 });
   return key;
-}
-
-// Endereço que o Stremio deve usar para chegar aqui. No contêiner o IP interno não
-// serve: a porta é publicada no 127.0.0.1 da máquina.
-function advertisedHost(host) {
-  return host === '127.0.0.1' || inContainer() ? '127.0.0.1' : lanAddress();
-}
-
-function lanAddress() {
-  for (const interfaces of Object.values(os.networkInterfaces())) {
-    for (const net of interfaces ?? []) {
-      if (net.family === 'IPv4' && !net.internal) return net.address;
-    }
-  }
-  return '127.0.0.1';
 }
 
 const log = logger.child('app');
@@ -101,8 +86,11 @@ async function main() {
   // Por padrão a ponte só escuta em loopback (conta pessoal, regra 2.2 do ASC).
   // BRIDGE_ALLOW_LAN=1 libera a rede local, por sua conta e risco.
   const host = cfg.derived.bindHost;
-  const publicUrl = v.BRIDGE_PUBLIC_URL
-    || `http://${advertisedHost(host)}:${bridgePort}`;
+  // O endereço anunciado é decidido por src/network.js (LAN_ADVERTISE_HOST, LAN_INTERFACE, URLs
+  // públicas ou, no modo local, 127.0.0.1); bind e Host aceito são coisas separadas.
+  const net = cfg.derived.network;
+  for (const info of net.info) log.info(info);
+  const publicUrl = net.urls.bridge ?? `http://127.0.0.1:${bridgePort}`;
 
   // A passkey não fica nos .torrent: vem de PASSKEY_FILE (0600) ou PASSKEY.
   const passkey = readPasskey({ file: path.join(DATA_DIR, 'passkey.txt') });
@@ -174,7 +162,7 @@ async function main() {
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).
   bridge.ascResolver = (ascId) => remote.resolve(ascId);
   // Catálogo "ASC — status" dentro do Stremio (STATUS_CATALOG=off desliga).
-  const addonBase = v.ADDON_PUBLIC_URL || `http://${advertisedHost(host)}:${addonPort}`;
+  const addonBase = net.urls.addon ?? `http://127.0.0.1:${addonPort}`;
   const status = v.STATUS_CATALOG === 'off' ? null : {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
     // Os cartões saem sob o prefixo da credencial de quem pediu (o Stremio não envia cabeçalhos).
@@ -203,9 +191,23 @@ async function main() {
     server.once('error', reject);
     server.listen(addonPort, host, resolve);
   });
-  console.log(`[addon] instale pela URL emitida: http://${advertisedHost(host)}:${addonPort}/<credencial>/manifest.json (npm run credenciais)`);
+  console.log(`[addon] instale pela URL emitida: ${addonBase}/<credencial>/manifest.json (npm run credenciais; diagnóstico: npm run rede)`);
   console.log(`[config] login em http://127.0.0.1:${configPort}/`);
   console.log(`[ponte] stream em ${publicUrl}/s/<infoHash>/<fileIdx>?k=<credencial>`);
+
+  // Modo LAN: se o endereço anunciado sumir (interface caiu, DHCP trocou o IP), avisa uma vez
+  // por mudança. Não altera URLs já entregues nem presume o que o Stremio guardou.
+  if (cfg.mode === 'lan') {
+    let avisado = null;
+    const vigiaRede = () => {
+      const aviso = network.staleWarning(net);
+      if (aviso && aviso !== avisado) log.warn(aviso);
+      if (!aviso && avisado) log.info('endereço anunciado voltou a existir neste computador');
+      avisado = aviso;
+    };
+    vigiaRede();
+    setInterval(vigiaRede, 300_000).unref();
+  }
 
   // Anti-HnR: concilia o cofre com o myHistory do tracker (ele vence), retoma
   // obrigações reveladas por ele e avisa de prazo/torrent inativo.
