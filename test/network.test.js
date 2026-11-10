@@ -1,5 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const network = require('../src/network');
 const settings = require('../src/settings');
 const { hostAllowed } = require('../src/safety');
@@ -305,4 +307,19 @@ test('credenciais: a URL de instalação usa o endereço anunciado, não o loopb
   assert.equal(cli.installUrl(lan, 'ascc_x'), 'http://nas.casa.lan:7000/ascc_x/manifest.json');
   const local = cli.config({ DATA_DIR: novo() });
   assert.equal(local.addon, 'http://127.0.0.1:7000');
+});
+
+test('credenciais porta: segue o settings.json e o ambiente vence (atalho do Windows)', async () => {
+  const cli = require('../src/credenciais-cli');
+  const dir = novo();
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 1, revision: 1, values: { BRIDGE_PORT: 7110 } }));
+  const saida = [];
+  assert.equal(await cli.run(['porta'], { env: { DATA_DIR: dir }, out: (l) => saida.push(l) }), 0);
+  assert.deepEqual(saida, ['7110']);
+  const comEnv = [];
+  await cli.run(['porta'], { env: { DATA_DIR: dir, BRIDGE_PORT: '7210' }, out: (l) => comEnv.push(l) });
+  assert.deepEqual(comEnv, ['7210']);
+  const padrao = [];
+  await cli.run(['porta'], { env: { DATA_DIR: novo() }, out: (l) => padrao.push(l) });
+  assert.deepEqual(padrao, ['7010']);
 });

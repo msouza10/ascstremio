@@ -6,11 +6,17 @@ rem à CLI (listar, criar "Nome", rotacionar, revogar). ASC_SEM_PAUSA=1 dispensa
 setlocal
 set "HERE=%~dp0"
 if not defined DATA_DIR set "DATA_DIR=%LOCALAPPDATA%\AscStremio\data"
-if not defined BRIDGE_PORT set "BRIDGE_PORT=7010"
 if not exist "%DATA_DIR%" mkdir "%DATA_DIR%"
+rem Porta efetiva da ponte, pela configuração central (ambiente > settings.json > padrão). Não se
+rem exporta padrão para o ambiente: ele venceria o settings.json e a CLI olharia a porta errada.
+set "PORTA="
+pushd "%HERE%app"
+for /f "delims=" %%P in ('""%HERE%node\node.exe" src\credenciais-cli.js porta"') do set "PORTA=%%P"
+popd
+if not defined PORTA set "PORTA=7010"
 rem A CLI fala com a ponte: garante que o serviço está de pé e espera ela responder.
-powershell -NoProfile -Command "try{(Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:%BRIDGE_PORT%/health)|Out-Null;exit 0}catch{exit 1}" || wscript "%HERE%launcher.vbs"
-powershell -NoProfile -Command "foreach($i in 1..60){try{(Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:%BRIDGE_PORT%/health)|Out-Null;exit 0}catch{Start-Sleep 1}};exit 1"
+powershell -NoProfile -Command "try{(Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:%PORTA%/health)|Out-Null;exit 0}catch{exit 1}" || wscript "%HERE%launcher.vbs"
+powershell -NoProfile -Command "foreach($i in 1..60){try{(Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:%PORTA%/health)|Out-Null;exit 0}catch{Start-Sleep 1}};exit 1"
 if errorlevel 1 (
   echo A ponte nao respondeu. Veja %DATA_DIR%\service.log e tente de novo.
   set "RC=1"
