@@ -70,6 +70,11 @@ async function run(argv, { env = process.env, doFetch = fetch, out = console.log
   const flags = args.filter((a) => a.startsWith('--'));
   const pos = args.filter((a) => !a.startsWith('--'));
   const enc = encodeURIComponent;
+  // Usado pelos atalhos do Windows para sondar a ponte na porta efetiva (ambiente > settings.json > padrão).
+  if (cmd === 'porta') {
+    out(String(new URL(cfg.bridge).port));
+    return 0;
+  }
   if (cmd === 'listar') {
     const { credentials } = await call(cfg, 'GET', '/credentials', doFetch);
     if (credentials.length === 0) out('Nenhuma credencial emitida.');

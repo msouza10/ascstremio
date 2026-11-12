@@ -14,10 +14,19 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\open-panel.cmd"
 !define MUI_FINISHPAGE_RUN_TEXT "Iniciar e abrir o painel de login"
+; Segunda caixa da última página: abre o console da primeira credencial. No modo silencioso (/S)
+; a página não aparece, então o CI e instalações automáticas nunca emitem nem mostram token.
+!define MUI_FINISHPAGE_SHOWREADME
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "Obter a URL do addon para o Stremio (mostrada uma única vez)"
+!define MUI_FINISHPAGE_SHOWREADME_FUNCTION AbrirCredenciais
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "PortugueseBR"
+
+Function AbrirCredenciais
+  Exec 'cmd.exe /c ""$INSTDIR\credenciais.cmd""'
+FunctionEnd
 
 Section "Instalar"
   ; Atualização: encerra a versão em execução antes de trocar os arquivos.
@@ -27,6 +36,7 @@ Section "Instalar"
   CreateDirectory "$SMPROGRAMS\Amigos Share Stremio"
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Abrir painel.lnk" "$INSTDIR\open-panel.cmd" "" "$INSTDIR\node\node.exe"
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Parar servico.lnk" "$INSTDIR\stop.cmd"
+  CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Obter URL do addon.lnk" "cmd.exe" '/c ""$INSTDIR\credenciais.cmd""'
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Configuração.lnk" "cmd.exe" '/k ""$INSTDIR\configurar.cmd""'
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Pasta de dados.lnk" "$LOCALAPPDATA\AscStremio\data"
   ; Inicia sozinho ao entrar no Windows (precisa semear por 72 h).
