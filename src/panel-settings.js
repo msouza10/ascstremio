@@ -73,7 +73,7 @@ function fromSettingsError(err) {
 // efetivos em uso agora (cfg.values da partida); applyLive(key, value): aplica sem reiniciar
 // (hoje só LOG_LEVEL), devolve true se aplicou; credentials: CredentialStore; addonBase: URL
 // do addon que os aparelhos usam (cfg.derived.network.urls.addon).
-function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => false, credentials = null, addonBase = null, addSecret = () => {}, interfaces = undefined, playback = null, peerPort = null, alertsGuard = null } = {}) {
+function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => false, credentials = null, addonBase = null, addSecret = () => {}, interfaces = undefined, playback = null, peerPort = null, alertsGuard = null, activity = null } = {}) {
   if (!dataDir || !bootEnv || !running) throw new Error('panel-settings: dataDir, bootEnv e running são obrigatórios');
   const live = { ...running };
   const wizardPath = path.join(dataDir, WIZARD_FILE);
@@ -328,7 +328,11 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     }
     addSecret(made.token); // o token também fica redigido nos logs
     const manifest = `${info.url}/${made.token}/manifest.json`;
+    // Stremio Web abre o diálogo de instalação com ?addon=<manifesto codificado>. Fora do
+    // loopback, o Stremio exige HTTPS (docs do SDK), então este link só vale para 127.0.0.1.
+    const webUrl = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifest)}`;
     return {
+      webUrl,
       credential: made.credential,
       token: made.token,
       manifestUrl: manifest,
@@ -337,7 +341,20 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     };
   }
 
-  return { state, preview, save, wizardState, wizardMark, createCredential, listCredentials: () => (credentials ? credentials.list() : []) };
+  // Conexão do Stremio por credencial ativa (só leitura; vem do que o addon recebeu, ver
+  // src/addon-activity.js). Sem o módulo, tudo fica "aguardando": nunca se afirma instalação.
+  function connection() {
+    const list = credentials ? credentials.list().filter((c) => !c.revokedAt) : [];
+    return {
+      credentials: list.map((c) => ({
+        id: c.id,
+        name: c.name,
+        ...(activity ? activity.get(c.id) : { state: 'aguardando', manifestAt: null, catalogAt: null, streamAt: null, lastSeenAt: null }),
+      })),
+    };
+  }
+
+  return { state, preview, save, wizardState, wizardMark, createCredential, connection, listCredentials: () => (credentials ? credentials.list() : []) };
 }
 
 module.exports = { createPanelSettings, PanelError, NETWORK_KEYS, WIZARD_FILE };

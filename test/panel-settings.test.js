@@ -8,6 +8,7 @@ const settings = require('../src/settings');
 const { startConfig } = require('../src/config-server');
 const { createPanelSettings } = require('../src/panel-settings');
 const { CredentialStore } = require('../src/credentials');
+const { createAddonActivity } = require('../src/addon-activity');
 const { Logger } = require('../src/logger');
 const M = require('../src/ui/settings-model');
 const { tmpdir } = require('./tmp-helper');
@@ -22,8 +23,9 @@ async function setup({ env = {}, connected = true, interfaces = NET } = {}) {
   const snap = settings.load({ dataDir, env: bootEnv, interfaces });
   const credentials = new CredentialStore({ file: path.join(dataDir, 'credentials.json') });
   const levels = [];
+  const activity = createAddonActivity();
   const panel = createPanelSettings({
-    dataDir, bootEnv, running: snap.values, credentials, interfaces, peerPort: () => require('../src/network').evaluatePeerPort({ engine: { known: true, listening: true, port: 7030 }, configuredPort: 7030 }), playback: () => ({ active: 1, maxSessions: 2, maxPerCredential: 0, graceSeconds: 30, credentials: [] }),
+    activity, dataDir, bootEnv, running: snap.values, credentials, interfaces, peerPort: () => require('../src/network').evaluatePeerPort({ engine: { known: true, listening: true, port: 7030 }, configuredPort: 7030 }), playback: () => ({ active: 1, maxSessions: 2, maxPerCredential: 0, graceSeconds: 30, credentials: [] }),
     addonBase: snap.derived.network.urls.addon,
     applyLive: (key, value) => { if (key === 'LOG_LEVEL') { levels.push(value); return true; } return false; },
   });
@@ -36,7 +38,7 @@ async function setup({ env = {}, connected = true, interfaces = NET } = {}) {
   const post = (route, body, headers = good) => fetch(`${base}/api/${route}`, { method: 'POST', headers, body: JSON.stringify(body) });
   const get = async (route) => (await fetch(`${base}/api/${route}`)).json();
   return {
-    dataDir, base, port, panel, asc, post, get, good, levels, credentials,
+    dataDir, base, port, panel, asc, post, get, good, levels, credentials, activity,
     close: () => new Promise((r) => server.close(r)),
   };
 }
@@ -337,4 +339,28 @@ test('modelo da UI: agrupa na ordem do esquema, associa problemas aos campos e e
   assert.match(M.AFTER_SEED_EFFECT.delete, /APAGADOS/);
   assert.equal(M.shouldOfferWizard({ wizard: { completed: false, dismissed: false } }), true);
   assert.equal(M.shouldOfferWizard({ wizard: { completed: true, dismissed: false } }), false);
+});
+
+test('conexão do Stremio: link do Stremio Web e estado por credencial, sem afirmar instalação sem catálogo', async () => {
+  const s = await setup();
+  try {
+    const r = await s.post('credentials', { name: 'Sala' });
+    assert.equal(r.status, 201);
+    const made = await r.json();
+    assert.equal(made.webUrl, `https://web.stremio.com/#/addons?addon=${encodeURIComponent(made.manifestUrl)}`);
+
+    const id = made.credential.id;
+    const state = async () => (await s.get('addon-connection')).credentials.find((c) => c.id === id);
+    assert.equal((await state()).state, 'aguardando');
+    s.activity.record(id, '/manifest.json');
+    assert.equal((await state()).state, 'manifesto_lido');
+    s.activity.record(id, '/catalog/movie/asc.json');
+    const done = await state();
+    assert.equal(done.state, 'instalado');
+    assert.ok(done.lastSeenAt);
+    assert.equal(JSON.stringify(done).includes(made.token), false, 'o token nunca volta na consulta');
+
+    s.asc.connected = false;
+    assert.equal((await fetch(`${s.base}/api/addon-connection`)).status, 401);
+  } finally { await s.close(); }
 });

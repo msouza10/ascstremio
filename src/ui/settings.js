@@ -147,9 +147,57 @@
     return box;
   }
 
+  // Observa se o Stremio já pediu algo ao addon com esta credencial (src/addon-activity.js).
+  // O Stremio não avisa instalação: ler o manifesto só prova que o link foi aberto; só um pedido
+  // de catálogo/stream prova que o addon está instalado. Sem sinal, nunca se diz "conectado".
+  const WATCH_MS = 2500;
+  const WATCH_MAX = 120; // ~5 min; depois pede para verificar de novo, em vez de insistir
+  function connectionWatch(credentialId, onChange = () => {}) {
+    const box = el('div', 'stack');
+    const line = el('p', 'muted');
+    line.setAttribute('role', 'status');
+    line.setAttribute('aria-live', 'polite');
+    const again = el('button', 'btn btn-outline btn-sm', 'Verificar de novo'); again.type = 'button'; again.hidden = true;
+    box.append(line, again);
+    const hhmm = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    let timer = null;
+    let tries = 0;
+    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+    function show(me) {
+      const state = me?.state ?? 'aguardando';
+      onChange(state);
+      if (state === 'instalado' || state === 'em_uso') {
+        setText(line, `Conectado: o Stremio pediu o catálogo às ${hhmm(me.lastSeenAt)}. O addon está instalado neste aparelho.`);
+        box.dataset.state = 'conectado';
+        return true;
+      }
+      box.dataset.state = state;
+      setText(line, state === 'manifesto_lido'
+        ? 'O Stremio leu o addon. Confirme em "Instalar" na janela do Stremio; esta mensagem muda sozinha quando ele abrir o catálogo.'
+        : 'Aguardando o Stremio: clique em "Abrir no Stremio" e confirme a instalação.');
+      return false;
+    }
+    async function poll() {
+      tries += 1;
+      try {
+        const out = await app().call('GET', 'addon-connection');
+        if (show(out.credentials.find((c) => c.id === credentialId))) { stop(); again.hidden = true; return; }
+      } catch { setText(line, 'Não foi possível consultar a conexão agora; tentando de novo.'); }
+      if (!box.isConnected || tries >= WATCH_MAX) {
+        stop();
+        if (box.isConnected) { setText(line, 'Ainda não confirmado. Se o Stremio não abriu, copie a URL e cole em Addons. Remover o addon no Stremio não é detectado aqui.'); again.hidden = false; }
+      }
+    }
+    function start() { stop(); tries = 0; again.hidden = true; poll(); timer = setInterval(poll, WATCH_MS); }
+    again.addEventListener('click', start);
+    start();
+    return box;
+  }
+
   // Emite uma credencial de instalação e mostra a URL do addon (uma vez). Só mostra o formulário
-  // quando a URL se aplica (sem mudança de rede esperando reinício).
-  function installCard(getState, defaultName) {
+  // quando a URL se aplica (sem mudança de rede esperando reinício). `onConnection(estado)`
+  // avisa o chamador (o assistente) do que o addon já viu do Stremio.
+  function installCard(getState, defaultName, onConnection = () => {}) {
     const c = card();
     c.append(cardHead('Instalar o addon no Stremio'));
     const body = el('div', 'stack');
@@ -190,10 +238,16 @@
       code.tabIndex = 0;
       const btns = el('div', 'item-badges');
       const cp = el('button', 'btn btn-outline', 'Copiar URL'); cp.type = 'button';
-      const open = el('a', 'btn btn-outline', 'Abrir no Stremio'); open.href = made.stremioUrl;
+      const open = el('a', 'btn btn-primary', 'Abrir no Stremio'); open.href = made.stremioUrl;
       cp.addEventListener('click', () => copy(made.manifestUrl, status));
-      btns.append(cp, open);
+      btns.append(open, cp);
+      // O Stremio exige HTTPS fora de 127.0.0.1; o link do Stremio Web só faz sentido no loopback.
+      if (made.manifestUrl.startsWith('http://127.0.0.1')) {
+        const web = el('a', 'btn btn-outline', 'Abrir no Stremio Web'); web.href = made.webUrl; web.target = '_blank'; web.rel = 'noopener noreferrer';
+        btns.append(web);
+      }
       box.append(h, code, btns, el('p', 'foot', 'No Stremio: Addons, cole a URL no campo de busca de addons (ou use o botão acima neste computador). Em outro aparelho, cole a mesma URL lá. Não compartilhe esta URL com outras pessoas.'));
+      box.append(connectionWatch(made.credential.id, onConnection));
       out.append(box);
     }
     c.append(err.root, body, out, status);
@@ -445,6 +499,8 @@
     let step = 'modo';
     let saved = false;
     let lastPreview = null;
+    let connection = 'aguardando';
+    let finish = null;
     const errBox = errorBox();
     const live = liveRegion();
     const LABELS = { modo: 'Uso', endereco: 'Endereço', seed: 'Seed e disco', revisar: 'Revisar', instalar: 'Instalar' };
@@ -494,7 +550,7 @@
       else if (step === 'revisar') drawReview(c);
       else drawInstall(c);
       body.append(c);
-      if (step === 'instalar') body.append(installCard(() => state, M.copyName(mode)).root);
+      if (step === 'instalar') body.append(installCard(() => state, M.copyName(mode), (s) => { connection = s; syncFinish(); }).root);
       body.append(live);
     }
 
@@ -641,12 +697,20 @@
           : 'Crie a credencial deste computador e instale a URL no Stremio.'));
       }
       c.append(alertBox('primary', 'Quase pronto', saved ? 'A configuração foi salva.' : 'Nada precisou mudar.'));
-      c.append(nav([
-        button('Voltar', 'btn-ghost', () => go('revisar')),
-        button('Concluir assistente', 'btn-primary', async () => {
-          try { await app().call('POST', 'wizard/complete', {}); app().nav('/configuracoes'); } catch (ex) { errBox.show('Não foi possível registrar a conclusão', [ex.message]); }
-        }),
-      ]));
+      finish = button('Concluir sem confirmar a instalação', 'btn-outline', async () => {
+        try { await app().call('POST', 'wizard/complete', {}); app().nav('/configuracoes'); } catch (ex) { errBox.show('Não foi possível registrar a conclusão', [ex.message]); }
+      });
+      syncFinish();
+      c.append(nav([button('Voltar', 'btn-ghost', () => go('revisar')), finish]));
+    }
+
+    // O botão final destaca quando o Stremio já falou com o addon; concluir sem isso segue
+    // permitido (outro aparelho, instalação depois), mas o texto deixa claro que não foi confirmado.
+    function syncFinish() {
+      if (!finish) return;
+      const ok = connection === 'instalado' || connection === 'em_uso';
+      finish.textContent = ok ? 'Concluir assistente' : 'Concluir sem confirmar a instalação';
+      finish.className = `btn ${ok ? 'btn-primary' : 'btn-outline'}`;
     }
 
     (async () => {

@@ -24,6 +24,7 @@ const { KeepAwake } = require('./keepawake');
 const { logger, initFiles } = require('./logger');
 const { acquireInstance }  = require('./instance-lock');
 const { createPanelSettings } = require('./panel-settings');
+const { createAddonActivity } = require('./addon-activity');
 const adminAccess = require('./admin-access');
 const { AdminCredential } = require('./admin-auth');
 const { AlertManager, configFromValues, OBSERVE_INTERVAL_MS } = require('./alerts');
@@ -142,6 +143,7 @@ async function main() {
   // Credenciais de reprodução (token por instalação, só o verificador em disco). A antiga
   // chave única `bridge-key` não vale mais: as URLs antigas passam a dar 403.
   const credentials = new CredentialStore({ file: path.join(DATA_DIR, 'credentials.json') });
+  const addonActivity = createAddonActivity();
   if (fs.existsSync(path.join(DATA_DIR, 'bridge-key'))) {
     log.warn('bridge-key (chave única antiga) é ignorada e pode ser removida; emita uma credencial: npm run credenciais -- criar "Stremio" e reinstale o addon com a URL nova');
   }
@@ -207,7 +209,7 @@ async function main() {
       return probe.configProblem();
     },
     dataDir: DATA_DIR, bootEnv, running: cfg.values, credentials,
-    addonBase: net.urls.addon,
+    addonBase: net.urls.addon, activity: addonActivity,
     playback: () => bridge.playbackSnapshot(),
     peerPort: peerPortNow,
     addSecret: (secret) => logger.addSecret(secret),
@@ -261,7 +263,7 @@ async function main() {
   // serveHTTP do SDK escuta em todas as interfaces e não aceita host: monta o
   // roteador do SDK num servidor próprio, preso ao mesmo host da ponte.
   const router = getRouter(addon);
-  const handleAddon = createAddonHandler({ addon, router, store: credentials, status });
+  const handleAddon = createAddonHandler({ addon, router, store: credentials, status, activity: addonActivity });
   // Anti DNS rebinding: só IP literal/localhost/hosts autorizados (ver safety.hostAllowed).
   const server = http.createServer((req, res) => {
     if (!hostAllowed(req.headers.host)) { res.writeHead(403); res.end(); return; }

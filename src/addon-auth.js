@@ -31,7 +31,7 @@ function manifestFor(manifest, credential) {
   };
 }
 
-function createAddonHandler({ addon, router, store, status = null }) {
+function createAddonHandler({ addon, router, store, status = null, activity = null }) {
   return (req, res) => {
     const m = PREFIX.exec(String(req.url ?? ''));
     const credential = m && TOKEN_RE.test(m[1]) ? store.verify(m[1]) : null;
@@ -43,6 +43,8 @@ function createAddonHandler({ addon, router, store, status = null }) {
     const rest = m[2] || '/';
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) || !ROUTES.test(rest)) { deny(res, 404, 'rota desconhecida'); return; }
     req.url = rest + (m[3] ?? '');
+    // Só GET de credencial válida conta: HEAD/OPTIONS (sondas, preflight) não provam uso.
+    if (req.method === 'GET') activity?.record(credential.id, rest);
 
     runWith(credential, m[1], () => {
       if (rest === '/manifest.json' && req.method !== 'OPTIONS') {
