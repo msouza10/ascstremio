@@ -390,7 +390,8 @@ class Bridge {
   async resumeOnce(run = { stats: null }) {
     const pendencias = this.vault.list().filter((e) => (
       (e.completedAt && !e.satisfiedAt) || (e.backgroundComplete && !e.completedAt)
-      || (e.completedAt && e.satisfiedAt && (e.seedChoice === 'keep' || (this.afterSeed === 'manual' && !e.releasedAs && !['stop', 'delete'].includes(e.seedChoice))))
+      || (e.completedAt && e.satisfiedAt && !e.releasedAs
+        && (e.seedChoice === 'keep' || (this.afterSeed === 'manual' && !['stop', 'delete'].includes(e.seedChoice))))
     ) && this.entries.has(e.infoHash)
       // Já no motor ou abrindo: nada a fazer, e a passada ociosa não apaga a medição da retomada real.
       && !this.loading.has(e.infoHash) && !this.client.torrents.some((t) => t.infoHash === e.infoHash));

@@ -173,3 +173,38 @@ test('reinício retoma conteúdo cumprido no modo manual e respeita decisão de 
   s.vault.setSeedChoice(HASH, 'stop');
   await s.b.resumePending(); assert.equal(resumed, 1);
 });
+
+test('retenção confirmada prevalece sobre keep, mesmo quando o arquivo fica em uso', async (t) => {
+  for (const locked of [false, true]) {
+    const s = setup();
+    s.vault.setBackground(HASH, true);
+    await s.b.manageSeed(HASH, 'keep');
+    if (locked) t.mock.method(fs, 'unlinkSync', () => { throw Object.assign(new Error('ocupado'), { code: 'EBUSY' }); });
+    const result = await s.b.retention.retire({ infoHash: HASH, name: 'Teste', files: ['video.mkv'] });
+    assert.equal(result.failed.length, locked ? 1 : 0);
+    t.mock.restoreAll();
+    s.b.vault = new SeedVault({ file: s.vault.file });
+    assert.equal(s.b.vault.get(HASH).seedChoice, 'stop');
+    let resumed = 0;
+    s.b.getTorrent = async () => { resumed++; return { length: 10 }; };
+    await s.b.resumePending();
+    assert.equal(resumed, 0, 'a limpeza não pode ser desfeita por um download automático');
+    assert.equal(fs.existsSync(s.file), locked);
+  }
+});
+
+test('liberação salva prevalece sobre keep antigo; uma nova escolha explícita pode retomar', async () => {
+  const s = setup();
+  await s.b.manageSeed(HASH, 'keep');
+  s.vault.markReleased(HASH, 'retencao');
+  const torrent = s.b.client.torrents[0];
+  s.b.client.torrents = [];
+  let resumed = 0;
+  s.b.getTorrent = async () => { resumed++; return { length: 10 }; };
+  await s.b.resumePending(); assert.equal(resumed, 0);
+  s.b.client.torrents = [torrent];
+  await s.b.manageSeed(HASH, 'keep');
+  assert.equal(s.vault.get(HASH).releasedAs, undefined);
+  s.b.client.torrents = [];
+  await s.b.resumePending(); assert.equal(resumed, 1);
+});
