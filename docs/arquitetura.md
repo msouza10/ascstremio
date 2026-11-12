@@ -22,7 +22,7 @@ sequenceDiagram
     Note over P,B: Seed continua conforme política e confirmação do tracker
 ```
 
-O download do torrent usa a sessão do site. O announce usa a passkey, injetada em memória. Listagem e HEAD não entram no swarm. O cofre mantém obrigações locais, e o vigia reconcilia com o histórico/atividade do tracker.
+O download do torrent usa a sessão do site e preserva os bytes recebidos, que podem conter a passkey. Quando configurada separadamente, a passkey monta o announce do motor em memória; isso não sanitiza o `.torrent` salvo. Listagem e HEAD não entram no swarm. O cofre mantém obrigações locais, e o vigia reconcilia com o histórico/atividade do tracker.
 
 ## Componentes
 

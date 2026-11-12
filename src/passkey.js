@@ -1,12 +1,10 @@
-// Passkey do tracker fora do disco do catálogo.
+// Configuração separada da passkey para montar o announce em memória.
 //
-// Os .torrent em private/torrents são gravados com o token do announce
-// zerado (tools/torrent_sanitize.py --strip ou sem --strip). A credencial
-// real fica em um único arquivo 0600 ou em variável de ambiente, e é
-// injetada no announce apenas no momento de abrir o torrent no motor.
+// A integração salva os .torrent como recebidos do ASC: eles podem conter a
+// passkey no announce. Definir PASSKEY ou PASSKEY_FILE não limpa esses arquivos.
 //
-// Consequência: publicar o repositório, um print, um backup ou a pasta de
-// torrents não expõe a conta.
+// Os .torrent, a passkey separada e os backups são pessoais: devem permanecer
+// protegidos e fora do repositório, de capturas e de compartilhamentos.
 
 const fs = require('fs');
 
@@ -60,7 +58,7 @@ function sanitize(value) {
   return /^[A-Za-z0-9]{8,}$/.test(trimmed) ? trimmed : null;
 }
 
-// URL de announce pronta para o motor. A passkey entra só aqui, em memória.
+// Monta a URL de announce em memória; não altera o .torrent salvo no disco.
 function announceWithPasskey(base, passkey) {
   const clean = announceBaseOf(base) || DEFAULT_ANNOUNCE_BASE;
   if (!passkey) return clean;

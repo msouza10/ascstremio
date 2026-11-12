@@ -31,7 +31,7 @@ commits em português do Brasil, com acentuação.
 | `src/panel-settings.js` | assistente e página de configurações do painel: prévia/gravação via `settings.update`, estado do assistente (`wizard.json`), emissão de credencial |
 | `src/seedvault.js`, `src/hnr-guard.js` | cofre de seed e conciliação com o tracker (o tracker sempre vence) |
 | `src/safety.js` | loopback, `Host` anti-rebinding, modo contêiner, aviso de inatividade |
-| `src/passkey.js` | passkey fora dos `.torrent` (injetada em memória) |
+| `src/passkey.js` | passkey configurada separadamente para o announce em memória; não sanitiza os `.torrent` salvos |
 | `src/logger.js` | logs com redação de segredos, buffer, arquivos NDJSON, `/logs` |
 | `src/keepawake.js` | bloqueia a suspensão enquanto há seed pendente (Linux, macOS, Windows) |
 | `src/stremio-status.js` | catálogo "ASC — status" dentro do Stremio |

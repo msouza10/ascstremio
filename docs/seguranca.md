@@ -109,11 +109,11 @@ Modelo de ameaça: o operador escolhe o destino; o risco é o aplicativo ser ind
 | Token administrativo | `admin-key` | Dá acesso às rotas administrativas da ponte; nunca em URL, log ou captura |
 | Obrigações de seed | `seed-vault.json` | Histórico local e referências a torrents |
 | Metadados de fontes | `meta-cache.json` | Só nome, tamanho e selos de releases por filme; sem cookie, passkey, credencial, URL, seeders ou freeleech. Modo restrito, até 90 dias. Pode ser apagado |
-| Biblioteca | `torrents/` | Metadados dos torrents; manter privados mesmo sanitizados |
+| Biblioteca | `torrents/` | Arquivos `.torrent` recebidos do ASC; podem conter a passkey no announce e não devem ser compartilhados |
 | Arquivos recebidos | `cache/` | Conteúdo baixado e partes de vídeos |
 | Logs | `logs/` | Eventos e identificadores podem revelar hábitos de uso |
 
-A passkey é removida dos torrents obtidos pela integração e injetada no announce em memória. Isso não torna seguro publicar todo o diretório de dados ou torrents importados por outros meios. Arquivos sensíveis usam modos restritos em sistemas Unix; no Windows, a proteção depende também das permissões da conta e da pasta.
+Os `.torrent` obtidos pela integração são salvos como recebidos do ASC e podem conter a passkey no announce. Configurar `PASSKEY` ou `PASSKEY_FILE` permite montar o announce do motor em memória, mas não remove a credencial dos arquivos salvos. Trate todos os `.torrent` como pessoais, inclusive os importados por outros meios; não publique a pasta de torrents nem backups dos dados. Os `.torrent` baixados pela integração são gravados com permissão `0600` em sistemas Unix (leitura e escrita somente pelo usuário); no Windows, a proteção depende também das permissões da conta e da pasta.
 
 Não compartilhe URLs de instalação ou de reprodução, capturas com `/<token>/` ou `?k=`, cookies ou backups. Para invalidar uma credencial comprometida, use `revogar` ou `rotacionar` (próxima seção). O token administrativo é outra coisa e funciona assim: para trocá-lo, pare a instância, remova `admin-key` e reinicie; ferramentas que o usavam precisam ler o novo valor. Isso não revoga a passkey nem a sessão do ASC. Se estas vazarem, use os mecanismos do próprio tracker para revogá-las.
 
