@@ -271,7 +271,7 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         if (!asc.connected) return send(401, { error: 'Conecte e confirme a sessão do ASC para abrir as configurações.' });
         return send(200, alerts.status());
       }
-      const routes = [...ALERT_POSTS, '/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/logs/level', ...PANEL_POSTS];
+      const routes = [...ALERT_POSTS, '/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/seed', '/api/logs/level', ...PANEL_POSTS];
       if (req.method !== 'POST' || !routes.includes(url.pathname)) return send(404, { error: 'Página inexistente.' });
       const csrfOk = guard ? safeEqual(req.headers['x-csrf-token'], admin.csrf) : req.headers['x-csrf-token'] === token;
       if (req.headers.origin !== channel.origin || !csrfOk || req.headers['content-type'] !== 'application/json') {
@@ -306,6 +306,19 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         if (typeof body.nivel !== 'string' || !logs.setLevel(body.nivel)) return send(400, { error: 'Nível inválido.' });
         log.info(`nível mínimo de gravação alterado para ${body.nivel}`);
         return send(200, { level: logs.level });
+      }
+      if (url.pathname === '/api/seed') {
+        if (!monitor?.manageSeed) return send(404, { error: 'Ações de seed indisponíveis.' });
+        if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
+        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash) || !['keep', 'stop', 'delete'].includes(body.action)) return send(400, { error: 'Conteúdo ou ação inválida.' });
+        try {
+          const result = await monitor.manageSeed(body.infoHash, body.action);
+          log.info(`decisão de seed pelo painel: ${body.action}`);
+          return send(200, result);
+        } catch (err) {
+          if (err.expose) return send(err.status, { error: err.message });
+          throw err;
+        }
       }
       if (url.pathname === '/api/complete') {
         if (!monitor) return send(404, { error: 'Painel indisponível.' });

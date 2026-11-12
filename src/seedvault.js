@@ -195,6 +195,13 @@ class SeedVault {
     return entry;
   }
 
+  setSeedChoice(infoHash, choice) {
+    const entry = this.entries.get(infoHash);
+    if (!entry) return;
+    entry.seedChoice = choice;
+    this.save();
+  }
+
   get(infoHash) {
     return this.entries.get(infoHash) ?? null;
   }

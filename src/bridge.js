@@ -20,6 +20,7 @@ const { DiskGuard, DEFAULT_RESERVE_BYTES } = require('./disk-policy');
 const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { Retention } = require('./retention-service');
+const { manageSeed } = require('./seed-actions');
 const { logger } = require('./logger');
 const { rankPending, runLimited } = require('./resume-policy');
 const { StreamMetrics } = require('./stream-metrics');
@@ -389,6 +390,7 @@ class Bridge {
   async resumeOnce(run = { stats: null }) {
     const pendencias = this.vault.list().filter((e) => (
       (e.completedAt && !e.satisfiedAt) || (e.backgroundComplete && !e.completedAt)
+      || (e.completedAt && e.satisfiedAt && (e.seedChoice === 'keep' || (this.afterSeed === 'manual' && !e.releasedAs && !['stop', 'delete'].includes(e.seedChoice))))
     ) && this.entries.has(e.infoHash)
       // Já no motor ou abrindo: nada a fazer, e a passada ociosa não apaga a medição da retomada real.
       && !this.loading.has(e.infoHash) && !this.client.torrents.some((t) => t.infoHash === e.infoHash));
@@ -582,13 +584,17 @@ class Bridge {
   // Cumpriu o limite? Então não há motivo para ocupar disco nem rede. Só age
   // quando o TRACKER confirma (nunca pela estimativa local) e sem ninguém
   // assistindo. Devolve o que foi liberado.
+  manageSeed(infoHash, action) {
+    return manageSeed(this, infoHash, action);
+  }
+
   async releaseSatisfied() {
     const released = [];
-    if (this.afterSeed === 'keep' || !this.client) return released;
+    if (['keep', 'manual'].includes(this.afterSeed) || !this.client) return released;
     for (const torrent of [...this.client.torrents]) {
       const hash = torrent.infoHash;
       const entry = this.vault.get(hash);
-      if (!hnr.trackerConfirmed(entry)) continue;
+      if (!hnr.trackerConfirmed(entry) || entry.seedChoice === 'keep' || entry.seedChoice === 'stop') continue;
       if ((this.streams.get(hash) ?? 0) > 0 || this.retention.isRetiring(hash)) continue;
       await new Promise((resolve) => {
         torrent.destroy({ destroyStore: this.afterSeed === 'delete' }, () => resolve());
@@ -719,6 +725,7 @@ class Bridge {
         onDisk: this.diskState(infoHash),
         backgroundComplete: Boolean(entry?.backgroundComplete),
         released: entry?.releasedAs ?? null,
+        seedChoice: entry?.seedChoice ?? null,
         progress: torrent ? Number((torrent.progress || 0).toFixed(4)) : (completed ? 1 : 0),
         downloaded: down,
         uploaded: up,
@@ -1219,6 +1226,11 @@ class Bridge {
         ? this.client.torrents.filter((t) => t.infoHash === victim.toLowerCase())
         : this.client.torrents;
 
+      if (targets.some((t) => this.retention.isRetiring(t.infoHash))) {
+        res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'Conteúdo em manutenção; tente novamente depois.' }));
+        return;
+      }
       const blocked = [];
       // O tracker decide: confirma antes de liberar (falha de rede não libera).
       await this.trackerCheck?.(targets.map((t) => t.infoHash)).catch(() => {});

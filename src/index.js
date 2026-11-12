@@ -226,6 +226,7 @@ async function main() {
   const config = await startConfig(asc, configPort, {
     snapshot: () => ({ ...bridge.snapshot(), stats: asc.accountStats }),
     complete: (infoHash) => bridge.requestCompletion(infoHash),
+    manageSeed: (infoHash, action) => bridge.manageSeed(infoHash, action),
   }, undefined, panel, alerts, { plan: remoteAdmin, credential: adminCredential });
   // Alertas: avaliação a cada minuto sobre o snapshot (leitura pura); a entrega é assíncrona e
   // nunca bloqueia nem derruba o aplicativo.
