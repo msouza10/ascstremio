@@ -208,3 +208,71 @@ test('liberação salva prevalece sobre keep antigo; uma nova escolha explícita
   s.b.client.torrents = [];
   await s.b.resumePending(); assert.equal(resumed, 1);
 });
+
+test('a fila respeita parar ou excluir enquanto outro torrent ainda está abrindo', async () => {
+  for (const action of ['stop', 'delete']) {
+    const s = setup();
+    await s.b.manageSeed(HASH, 'keep');
+    const queued = 'c'.repeat(40);
+    const file = path.join(s.dir, 'fila.mkv');
+    fs.writeFileSync(file, 'fila');
+    s.b.entries.set(queued, { files: [{ path: 'fila.mkv', length: 4 }] });
+    s.vault.markSeen(queued, { torrentPath: path.join(s.dir, 'asc-124.torrent') });
+    s.vault.markCompleted(queued); s.vault.setBackground(queued, true);
+    s.vault.setTracker(queued, { satisfied: true, completedAtMs: s.vault.get(queued).completedAt, remainingMs: 0, hitAndRun: false });
+    s.b.client.torrents = [];
+    s.b.trackerCheck = async ([hash]) => {
+      const entry = s.vault.get(hash);
+      s.vault.setTracker(hash, { ...entry.tracker, completedAtMs: entry.completedAt });
+      return { checked: 1, failed: 0, semRegistro: 0 };
+    };
+    let release; let started;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const opening = new Promise((resolve) => { started = resolve; });
+    const opened = [];
+    s.b.getTorrent = async (hash) => { opened.push(hash); started(); await gate; return { length: 10 }; };
+    const run = s.b.resumePending();
+    await opening;
+    assert.deepEqual(opened, [HASH], 'o primeiro ocupa o único worker');
+    await s.b.manageSeed(queued, action);
+    release(); await run;
+    assert.deepEqual(opened, [HASH], 'o item parado/excluído não é aberto ao chegar sua vez');
+    assert.equal(fs.existsSync(file), action === 'stop');
+  }
+});
+
+test('cleanup reserva os alvos durante a consulta e libera a trava em sucesso ou recusa', async () => {
+  for (const satisfied of [true, false]) {
+    const s = setup();
+    s.b.adminKey = 'ab'.repeat(16);
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    s.b.trackerCheck = async () => {
+      await gate;
+      s.vault.setTracker(HASH, { satisfied, completedAtMs: s.vault.get(HASH).completedAt, remainingMs: satisfied ? 0 : 1000, hitAndRun: false });
+      return { checked: 1, failed: 0, semRegistro: 0 };
+    };
+    let removed = 0;
+    s.b.client.torrents[0].destroy = (options, callback) => { assert.equal(options.destroyStore, true); removed++; callback(); };
+    const res = { setHeader() {}, writeHead(status) { this.status = status; }, end() {} };
+    const request = { method: 'POST', url: `/cleanup?hash=${HASH}`, headers: { 'x-admin-token': s.b.adminKey }, socket: { remoteAddress: '127.0.0.1' } };
+    const cleanup = s.b.handle(request, res);
+    assert.equal(s.b.retention.isRetiring(HASH), true);
+    await assert.rejects(s.b.manageSeed(HASH, 'keep'), (e) => e.status === 409);
+    await assert.rejects(s.b.getTorrent(HASH), (e) => e.status === 503);
+    release(); await cleanup;
+    assert.equal(res.status, satisfied ? 200 : 409);
+    assert.equal(removed, satisfied ? 1 : 0);
+    assert.equal(s.b.retention.isRetiring(HASH), false);
+  }
+});
+
+test('obrigação reaberta pelo tracker exige retomada mesmo após uma decisão de parar', async () => {
+  const s = setup();
+  await s.b.manageSeed(HASH, 'stop');
+  s.vault.setTracker(HASH, { satisfied: false, completedAtMs: s.vault.get(HASH).completedAt, remainingMs: 1000, hitAndRun: false });
+  let resumed = 0;
+  s.b.getTorrent = async () => { resumed++; return { length: 10 }; };
+  await s.b.resumePending();
+  assert.equal(resumed, 1, 'o tracker prevalece, sem liberar obrigação indevidamente');
+});

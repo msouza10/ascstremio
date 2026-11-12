@@ -360,6 +360,15 @@ class Bridge {
     this.trackerPending = pending;
   }
 
+  shouldResume(entry) {
+    if (!entry) return false;
+    // Uma obrigação reaberta pelo tracker prevalece sobre decisões anteriores.
+    if (entry.completedAt && !entry.satisfiedAt) return true;
+    if (entry.backgroundComplete && !entry.completedAt) return true;
+    return Boolean(entry.completedAt && entry.satisfiedAt && !entry.releasedAs
+      && (entry.seedChoice === 'keep' || (this.afterSeed === 'manual' && !['stop', 'delete'].includes(entry.seedChoice))));
+  }
+
   // Retoma pendências: se o processo caiu no meio das 72 h, volta a semear
   // sem intervenção, em vez de deixar o prazo de 12 dias correr. Idempotente:
   // chamada de novo depois de conciliar com o tracker, que pode revelar
@@ -388,11 +397,8 @@ class Bridge {
   // `resumeConcurrency` ao mesmo tempo. Cada abertura passa por getTorrent (admissão de disco
   // inclusive) e é medida; a falha de uma não interrompe as outras.
   async resumeOnce(run = { stats: null }) {
-    const pendencias = this.vault.list().filter((e) => (
-      (e.completedAt && !e.satisfiedAt) || (e.backgroundComplete && !e.completedAt)
-      || (e.completedAt && e.satisfiedAt && !e.releasedAs
-        && (e.seedChoice === 'keep' || (this.afterSeed === 'manual' && !['stop', 'delete'].includes(e.seedChoice))))
-    ) && this.entries.has(e.infoHash)
+    const pendencias = this.vault.list().filter((e) => this.shouldResume(e) && this.entries.has(e.infoHash)
+      && !this.retention.isRetiring(e.infoHash)
       // Já no motor ou abrindo: nada a fazer, e a passada ociosa não apaga a medição da retomada real.
       && !this.loading.has(e.infoHash) && !this.client.torrents.some((t) => t.infoHash === e.infoHash));
     const ranked = rankPending(pendencias, { vault: this.vault, now: this.clock() });
@@ -430,8 +436,10 @@ class Bridge {
 
     try {
       await runLimited(ranked, this.resumeConcurrency, async (item) => {
-        const pendencia = item.entry;
-        const hash = pendencia.infoHash;
+        const hash = item.infoHash;
+        const pendencia = this.vault.get(hash);
+        // Uma ação do painel pode ter parado/excluído enquanto este item aguardava na fila.
+        if (!this.shouldResume(pendencia) || this.retention.isRetiring(hash)) { stats.skipped += 1; return; }
         // Reavalia na vez dela: pode ter sido aberto por um play ou por outra passada.
         if (this.client.torrents.some((t) => t.infoHash === hash) || this.loading.has(hash)) { stats.skipped += 1; return; }
         // Obrigação concluída mas sem o arquivo completo: não anuncia (viraria um
@@ -1225,39 +1233,46 @@ class Bridge {
       log.info(`cleanup pedido${victim ? ` para ${short(victim)}` : ' para todos'}`);
       const targets = victim
         ? this.client.torrents.filter((t) => t.infoHash === victim.toLowerCase())
-        : this.client.torrents;
+        : [...this.client.torrents];
 
       if (targets.some((t) => this.retention.isRetiring(t.infoHash))) {
         res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: 'Conteúdo em manutenção; tente novamente depois.' }));
         return;
       }
-      const blocked = [];
-      // O tracker decide: confirma antes de liberar (falha de rede não libera).
-      await this.trackerCheck?.(targets.map((t) => t.infoHash)).catch(() => {});
-      for (const t of targets) {
-        const state = this.seedState(t);
-        if (!state.met) blocked.push({ infoHash: t.infoHash, ...state });
-      }
-      if (blocked.length > 0) {
-        log.warn(`cleanup recusado: ${blocked.length} torrent(s) com obrigação de seed pendente (regra 13.1)`);
-        res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({
-          removed: 0,
-          blocked,
-          hint: 'regra 13.1: 72 h de seed ou ratio 1.0 no torrent',
-        }, null, 2));
-        return;
-      }
+      // Reserva todos antes da consulta assíncrona: nenhuma ação do painel pode
+      // prometer preservar um arquivo que esta limpeza já está prestes a remover.
+      for (const t of targets) this.retention.retiring.add(t.infoHash);
+      try {
+        const blocked = [];
+        // O tracker decide: confirma antes de liberar (falha de rede não libera).
+        await this.trackerCheck?.(targets.map((t) => t.infoHash)).catch(() => {});
+        for (const t of targets) {
+          const state = this.seedState(t);
+          if (!state.met) blocked.push({ infoHash: t.infoHash, ...state });
+        }
+        if (blocked.length > 0) {
+          log.warn(`cleanup recusado: ${blocked.length} torrent(s) com obrigação de seed pendente (regra 13.1)`);
+          res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({
+            removed: 0,
+            blocked,
+            hint: 'regra 13.1: 72 h de seed ou ratio 1.0 no torrent',
+          }, null, 2));
+          return;
+        }
 
-      await Promise.all(targets.map((t) => new Promise((resolve) => {
-        t.destroy({ destroyStore: true }, () => resolve());
-      })));
-      for (const t of targets) this.startedAt.delete(t.infoHash);
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      log.info(`cleanup concluído: ${targets.length} torrent(s) removido(s)`);
-      res.end(JSON.stringify({ removed: targets.length }));
-      return;
+        await Promise.all(targets.map((t) => new Promise((resolve) => {
+          t.destroy({ destroyStore: true }, () => resolve());
+        })));
+        for (const t of targets) this.startedAt.delete(t.infoHash);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        log.info(`cleanup concluído: ${targets.length} torrent(s) removido(s)`);
+        res.end(JSON.stringify({ removed: targets.length }));
+        return;
+      } finally {
+        for (const t of targets) this.retention.retiring.delete(t.infoHash);
+      }
     }
 
     // Retenção por orçamento (issue #27). GET = prévia (só leitura). POST /retention/run?plan=<id>
