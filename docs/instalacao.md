@@ -168,7 +168,7 @@ As portas HTTP 7000/7010/7020 ficam em `127.0.0.1` do host. A porta TCP 7030 de 
 
 Execute `AscStremio-Setup-<versão>.exe` de uma distribuição confiável. Ele contém Node e dependências e instala por usuário, sem administrador, em `%LOCALAPPDATA%\Programs\AscStremio`.
 
-O Menu Iniciar recebe atalhos para abrir o painel, parar o processo, abrir a pasta de dados e a configuração no terminal (`configurar.cmd`). Um atalho na pasta Inicializar sobe o programa ao entrar no Windows. A máquina precisa continuar ligada e a sessão de usuário precisa permitir sua execução. A desinstalação mantém os dados.
+O Menu Iniciar recebe atalhos para abrir o painel, parar o processo, abrir a pasta de dados, a configuração no terminal (`configurar.cmd`) e **Obter URL do addon** (`credenciais.cmd`). Na última página do instalador há uma caixa marcada com o mesmo nome: ela sobe o serviço, emite a primeira credencial só se ainda não houver nenhuma ativa e mostra a URL do Stremio **uma única vez**, numa janela de console local (sem log, arquivo ou área de transferência; copie-a antes de fechar). Com o instalador silencioso (`/S`) nada é emitido nem mostrado. Atualizar ou reinstalar não troca nem revoga credenciais; rodar o atalho de novo só informa que já existe uma (para outro aparelho: `credenciais.cmd criar "Nome"`). Um atalho na pasta Inicializar sobe o programa ao entrar no Windows. A máquina precisa continuar ligada e a sessão de usuário precisa permitir sua execução. A desinstalação mantém os dados.
 
 O instalador não é assinado; o SmartScreen pode mostrar um aviso. A porta de peers pode provocar uma solicitação do firewall. Os serviços HTTP permanecem em loopback. O comando de parar encerra o processo à força; o cofre é salvo a cada minuto. A CI possui teste de instalação silenciosa e inicialização em Windows; isso não comprova compatibilidade de reprodução com todos os players e codecs.
 
@@ -205,7 +205,7 @@ O exemplo é para Bash e para o `DATA_DIR` padrão do código. Em uma instalaç�
 
 1. Abra **http://127.0.0.1:7020/** e faça login no ASC. A senha é usada para entrar; a sessão é salva em disco.
 2. Mantenha **somente freeleech** ativado até entender as regras de ratio e seed.
-3. Emita a credencial de reprodução (o instalador Linux já emite a primeira): `npm run credenciais -- garantir`; no contêiner, `scripts/docker.sh credenciais garantir`; no Windows, `node\node.exe app\src\credenciais-cli.js garantir` na pasta de instalação (com `DATA_DIR` igual ao do aplicativo). Instale no Stremio a URL `http://127.0.0.1:7000/<credencial>/manifest.json` mostrada na saída; ela aparece só uma vez.
+3. Emita a credencial de reprodução (o instalador Linux já emite a primeira): `npm run credenciais -- garantir`; no contêiner, `scripts/docker.sh credenciais garantir`; no Windows, o atalho **Obter URL do addon** (ou `credenciais.cmd` na pasta de instalação). Instale no Stremio a URL `http://127.0.0.1:7000/<credencial>/manifest.json` mostrada na saída; ela aparece só uma vez.
 4. Confira os dados da conta no painel. Se ainda não foram lidos, não interprete a ausência de avisos como regularidade.
 
 Siga para [uso](uso.md) ou [diagnóstico](manutencao.md#diagnóstico).

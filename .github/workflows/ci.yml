@@ -137,6 +137,7 @@ jobs:
     name: Windows - instala em silêncio e sobe
     runs-on: windows-latest
     needs: windows-installer
+    timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -153,6 +154,7 @@ jobs:
             if (-not (Test-Path (Join-Path $dir $f))) { throw "faltou $f na instalação" }
           }
       - name: Sobe o serviço e consulta a ponte
+        timeout-minutes: 4
         shell: pwsh
         run: |
           $dir = Join-Path $env:LOCALAPPDATA 'Programs\AscStremio'
@@ -162,13 +164,46 @@ jobs:
             try { if ((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7010/health -TimeoutSec 2).StatusCode -eq 200) { $ok = $true; break } } catch { Start-Sleep 1 }
           }
           if (-not $ok) { Get-Content "$env:LOCALAPPDATA\AscStremio\data\service.log" -ErrorAction SilentlyContinue | Select-Object -Last 40; throw 'a ponte não respondeu' }
-          (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7020/).StatusCode
+          (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7020/ -TimeoutSec 10).StatusCode
           # O addon exige credencial: sem ela 403; com a emitida pelo CLI, 200.
           $env:DATA_DIR = Join-Path $env:LOCALAPPDATA 'AscStremio\data'
-          try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7000/manifest.json | Out-Null; throw 'o addon respondeu sem credencial' } catch { if ($_.Exception.Message -eq 'o addon respondeu sem credencial') { throw }; if ($_.Exception.Response.StatusCode.value__ -ne 403) { throw 'esperava 403 sem credencial' } }
-          $url = (& "$dir\node\node.exe" "$dir\app\src\credenciais-cli.js" criar ci | Select-String 'manifest\.json$').Line
+          try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7000/manifest.json -TimeoutSec 10 | Out-Null; throw 'o addon respondeu sem credencial' } catch { if ($_.Exception.Message -eq 'o addon respondeu sem credencial') { throw }; if ($_.Exception.Response.StatusCode.value__ -ne 403) { throw 'esperava 403 sem credencial' } }
+          # Primeira credencial pelo mesmo caminho do atalho do Menu Iniciar (sem pausa). A saída
+          # não é impressa: o token não pode ir para o log da esteira.
+          $env:ASC_SEM_PAUSA = '1'
+          # Captura somente em memória, com prazo por execução. Nunca grava a credencial
+          # em arquivo/outputs nem imprime o stdout do atalho na esteira.
+          function Invoke-Credenciais {
+            $p = [System.Diagnostics.Process]::new()
+            $p.StartInfo.FileName = $env:ComSpec
+            $p.StartInfo.Arguments = '/d /s /c ""' + (Join-Path $dir 'credenciais.cmd') + '""'
+            $p.StartInfo.UseShellExecute = $false
+            $p.StartInfo.RedirectStandardOutput = $true
+            $p.StartInfo.RedirectStandardError = $true
+            $p.StartInfo.RedirectStandardInput = $true
+            try {
+              $p.Start() | Out-Null
+              $p.StandardInput.Close()
+              $stdout = $p.StandardOutput.ReadToEndAsync()
+              $stderr = $p.StandardError.ReadToEndAsync()
+              if (-not $p.WaitForExit(60000)) { $p.Kill($true); throw 'credenciais.cmd excedeu 60 segundos' }
+              $output = $stdout.GetAwaiter().GetResult()
+              $null = $stderr.GetAwaiter().GetResult()
+              if ($p.ExitCode -ne 0) { throw "credenciais.cmd falhou (código $($p.ExitCode)); saída omitida para proteger tokens" }
+              return $output
+            } finally { $p.Dispose() }
+          }
+          Write-Host 'Ponte e painel responderam; emitindo a primeira credencial pelo atalho.'
+          $url = ((Invoke-Credenciais) -split "`r?`n" | Select-String 'manifest\.json$').Line
           if (-not $url) { throw 'a credencial não foi emitida' }
-          $code = (Invoke-WebRequest -UseBasicParsing $url).StatusCode
+          # Idempotente: com credencial ativa, uma segunda execução não emite outra.
+          Write-Host 'Primeira credencial emitida; verificando idempotência.'
+          $again = Invoke-Credenciais
+          if ($again -match 'manifest\.json' -or $again -notmatch 'existe credencial ativa') { throw 'credenciais.cmd emitiu de novo' }
+          # O token não pode estar no log do serviço.
+          $tok = ($url -split '/')[3]
+          if ((Get-Content "$env:LOCALAPPDATA\AscStremio\data\service.log" -Raw -ErrorAction SilentlyContinue) -match [regex]::Escape($tok)) { throw 'token apareceu no service.log' }
+          $code = (Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 10).StatusCode
           if ($code -ne 200) { throw "addon com credencial -> $code" }
       - name: Para e desinstala
         shell: pwsh
