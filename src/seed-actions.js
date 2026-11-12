@@ -53,11 +53,16 @@ async function manageSeed(bridge, infoHash, action) {
     }
     // O destroy é assíncrono: reconfere o estado antes de tocar nos arquivos.
     if (!confirmed() || busy()) throw fail(409, 'O estado mudou. Os arquivos foram preservados.');
+    // Uma exclusão parcial (arquivo em uso no Windows, por exemplo) também é
+    // uma decisão de parar. Grave antes do primeiro unlink: uma queda ou falha
+    // não pode fazer a conclusão em segundo plano baixar os dados novamente.
+    bridge.vault.setSeedChoice(infoHash, 'stop');
+    bridge.vault.markReleased(infoHash, 'stop');
     if (action === 'delete') {
       inspect();
       const result = files.removeFiles(bridge.storeDir, paths);
       bridge.duCache = null;
-      if (result.failed.length) throw fail(409, 'Alguns arquivos não puderam ser removidos. Confira o disco e tente novamente.');
+      if (result.failed.length) throw fail(409, 'O seed foi parado, mas alguns arquivos não puderam ser removidos. Confira o disco e tente novamente.');
     }
     bridge.vault.setSeedChoice(infoHash, action);
     bridge.vault.markReleased(infoHash, action);

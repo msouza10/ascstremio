@@ -129,6 +129,40 @@ test('falha ao encerrar o motor ou obrigação reaberta durante a parada preserv
   }
 });
 
+test('exclusão parcial persiste a parada e não volta a baixar após reiniciar', async (t) => {
+  const s = setup();
+  s.vault.setBackground(HASH, true);
+  const locked = path.join(s.dir, 'em-uso.mkv');
+  fs.writeFileSync(locked, 'arquivo em uso');
+  s.b.entries.get(HASH).files.push({ path: 'em-uso.mkv', length: fs.statSync(locked).size });
+  const unlink = fs.unlinkSync;
+  t.mock.method(fs, 'unlinkSync', (file) => {
+    if (file === locked) throw Object.assign(new Error('arquivo em uso'), { code: 'EBUSY' });
+    return unlink(file);
+  });
+  await assert.rejects(s.b.manageSeed(HASH, 'delete'), (e) => e.status === 409);
+  assert.equal(fs.existsSync(s.file), false, 'o primeiro arquivo já saiu');
+  assert.ok(fs.existsSync(locked), 'o arquivo em uso permaneceu');
+  s.b.vault = new SeedVault({ file: s.vault.file });
+  assert.equal(s.b.vault.get(HASH).backgroundComplete, true);
+  assert.equal(s.b.vault.get(HASH).seedChoice, 'stop');
+  assert.equal(s.b.vault.get(HASH).releasedAs, 'stop');
+  let resumed = 0;
+  s.b.getTorrent = async () => { resumed++; return { length: 10 }; };
+  await s.b.resumePending();
+  assert.equal(resumed, 0, 'nem a retomada nem a conclusão podem recriar o download');
+  t.mock.restoreAll();
+  // O transporte simulado precisa atualizar o cofre recarregado, como o tracker real faz.
+  s.b.trackerCheck = async () => {
+    const entry = s.b.vault.get(HASH);
+    s.b.vault.setTracker(HASH, { ...entry.tracker, completedAtMs: entry.completedAt });
+    return { checked: 1, failed: 0, semRegistro: 0 };
+  };
+  await s.b.manageSeed(HASH, 'delete');
+  assert.equal(fs.existsSync(locked), false, 'uma nova tentativa remove o que sobrou');
+  assert.equal(s.b.vault.get(HASH).seedChoice, 'delete');
+});
+
 test('reinício retoma conteúdo cumprido no modo manual e respeita decisão de parar', async () => {
   const s = setup();
   await s.b.trackerCheck([HASH], { force: true }); s.b.client.torrents = [];
