@@ -46,6 +46,7 @@ find "$STAGE/app/node_modules" -type d \( -name 'linux-*' -o -name 'darwin-*' -o
 [ "$(head -c2 "$STAGE/app/node_modules/node-datachannel/build/Release/node_datachannel.node")" = "MZ" ] \
   || { echo "node-datachannel não é binário do Windows" >&2; exit 1; }
 cp windows/launcher.vbs windows/start.cmd windows/stop.cmd windows/open-panel.cmd windows/configurar.cmd windows/credenciais.cmd "$STAGE/"
+node windows/prepare-scripts.js "$STAGE"
 cp README.md "$STAGE/LEIA-ME.md"
 cp README.md LICENSE AGENTS.md CHANGELOG.md release-please-config.json "$STAGE/"
 # Evita empacotar notas privadas que também possam existir em docs/.
