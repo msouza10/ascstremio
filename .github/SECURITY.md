@@ -28,8 +28,13 @@ quando já houver versão corrigida.
   um valor falso. Também o `admin-key` e qualquer conteúdo de `private/` ou `DATA_DIR`.
 - Logs sem redação, backups dos dados e arquivos `.torrent` (podem conter a passkey no announce).
 
-Se algo disso vazou, revogue antes: `npm run credenciais -- rotacionar <id>` ou `revogar`, e gere nova
-passkey no site do ASC.
+Se algo disso vazou, a recuperação depende do que foi exposto; uma ação não invalida as outras:
+
+- **Credencial do addon** (`/<token>/`, `?k=`): `npm run credenciais -- rotacionar <id>` ou `revogar`.
+- **Token administrativo** (`admin-key`): pare a instância, remova `admin-key` e reinicie.
+- **Senha do painel ou do ASC:** troque a senha afetada.
+- **Passkey ou sessão do ASC:** não se revogam pelo programa; gere uma nova passkey no site do
+  Amigos Share e encerre a sessão pelo tracker.
 
 ## O que consideramos vulnerabilidade
 
