@@ -100,7 +100,8 @@ async function main() {
   for (const info of net.info) log.info(info);
   const publicUrl = net.urls.bridge ?? `http://127.0.0.1:${bridgePort}`;
 
-  // A passkey não fica nos .torrent: vem de PASSKEY_FILE (0600) ou PASSKEY.
+  // Passkey separada para o announce do motor, via PASSKEY_FILE (0600) ou PASSKEY.
+  // Isso não remove uma credencial que já esteja no .torrent recebido do ASC.
   const passkey = readPasskey({ file: path.join(DATA_DIR, 'passkey.txt') });
   const uploadLimit = v.BRIDGE_UPLOAD_LIMIT;
 
@@ -168,8 +169,8 @@ async function main() {
     },
   });
   console.log(passkey
-    ? '[ponte] passkey carregada em memória (não existe nos .torrent)'
-    : '[ponte] sem passkey: torrents privados ficarão sem peers (veja PASSKEY_FILE)');
+    ? '[ponte] passkey separada carregada para o announce em memória; os .torrent continuam pessoais'
+    : '[ponte] sem passkey separada: a conexão depende do announce do .torrent (veja PASSKEY_FILE)');
   await bridge.start();
   // Porta de peers (issue #34): só observa o motor já aberto (escuta e conexões de ENTRADA, em
   // contadores sem endereço). Não abre porta, não abre torrent e não consulta serviço externo.
