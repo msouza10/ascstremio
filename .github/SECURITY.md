@@ -12,15 +12,14 @@ Só a **última versão publicada** recebe correções de segurança (veja os
 
 **Não publique detalhes exploráveis, segredos nem reproduções com dados reais em issue pública.**
 
-O relato privado do GitHub (*Private vulnerability reporting*) **ainda não está habilitado** neste
-repositório, e não há outro canal privado divulgado. Até o mantenedor definir um, o único canal
-disponível é uma [issue](https://github.com/msouza10/ascstremio/issues) **mínima**: diga apenas que
-encontrou um problema de segurança, a versão e a área afetada (por exemplo, "ponte" ou "painel"), sem
-passos de reprodução, e peça um contato privado. Os detalhes só devem ser enviados depois que o
-mantenedor indicar um canal privado na própria issue. Quando o relato privado for habilitado, esta
-página passa a apontá-lo.
+Use o relato privado do GitHub: [abrir um relato de vulnerabilidade](https://github.com/msouza10/ascstremio/security/advisories/new)
+(aba *Security* → *Report a vulnerability*). Só o mantenedor vê o relato. Informe a versão, a área
+afetada (por exemplo, "ponte" ou "painel") e os passos para reproduzir, com valores falsos no lugar de
+qualquer credencial.
 
-Não há prazo garantido de resposta enquanto não houver canal privado.
+O projeto é mantido por uma pessoa, em tempo livre: a resposta é por melhor esforço e **não há prazo
+garantido**. Se o relato for aceito, a correção segue o fluxo normal de releases e o aviso é publicado
+quando já houver versão corrigida.
 
 ### O que nunca enviar (em issue, relato, captura ou log)
 

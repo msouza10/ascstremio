@@ -138,4 +138,4 @@ A licença do código ([MIT](../LICENSE)) não dá acesso ao ASC nem direitos so
 
 Para defeitos comuns, abra uma [issue](https://github.com/msouza10/ascstremio/issues) com versão, plataforma, forma de instalação, comportamento esperado e trecho de log revisado. Não anexe a pasta de dados nem `.torrent` reais.
 
-Para vulnerabilidades, siga a [política de segurança](../.github/SECURITY.md), que define o relato privado pelo GitHub, escopo e prazo de primeira resposta. Não envie credenciais nem dados reais na reprodução. As limitações conhecidas são acompanhadas nas issues, sem promessa de correção já entregue.
+Para vulnerabilidades, siga a [política de segurança](../.github/SECURITY.md), que define o relato privado pelo GitHub, o escopo e o que esperar de resposta (melhor esforço, sem prazo garantido). Não envie credenciais nem dados reais na reprodução. As limitações conhecidas são acompanhadas nas issues, sem promessa de correção já entregue.
