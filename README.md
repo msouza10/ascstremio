@@ -2,7 +2,7 @@
 
 Addon independente para usar sua conta do Amigos Share (ASC) no Stremio, com reprodução por uma ponte local e acompanhamento das obrigações de seed.
 
-**Uma conta, uma pessoa, uma instalação.** O projeto não fornece conteúdo nem credenciais. A máquina que executa o ASCStremio baixa e compartilha os arquivos por BitTorrent; ela precisa permanecer ligada durante o seed. Não exponha os serviços HTTP à internet nem ofereça acesso a terceiros.
+**Projeto independente, sem vínculo, afiliação ou endosso do Amigos Share.** **Uma conta, uma pessoa, uma instalação.** O projeto não fornece conteúdo nem credenciais e não garante conformidade com as regras do tracker. A máquina que executa o ASCStremio baixa e compartilha os arquivos por BitTorrent; ela precisa permanecer ligada durante o seed. Não exponha os serviços HTTP à internet nem ofereça acesso a terceiros.
 
 ## O que você encontra
 
@@ -62,7 +62,7 @@ O [índice dos guias](docs/README.md) organiza a leitura por tarefa. O [changelo
 
 ## Limites atuais
 
-Os serviços HTTP ficam no loopback do host por padrão. O modo LAN é opcional e tem limitações; a administração da ponte exige um token próprio (`admin-key`), separado das credenciais de reprodução, que são individuais e revogáveis. A porta de peers BitTorrent tem exposição diferente dos serviços HTTP. Consulte [segurança e rede](docs/seguranca.md) antes de alterar a instalação.
+Os serviços HTTP ficam no loopback do host por padrão. O modo LAN é opcional e tem limitações; a administração da ponte exige um token próprio (`admin-key`), separado das credenciais de reprodução, que são individuais e revogáveis. A porta de peers BitTorrent tem exposição diferente dos serviços HTTP. Portas, modos e variáveis estão na [tabela de rede](docs/seguranca.md#portas-e-interfaces); TV e celular só precisam do streaming, nunca do painel. A `?k=` e a URL do addon são credenciais reutilizáveis: não as compartilhe em capturas, chats ou diagnósticos. Consulte [segurança e rede](docs/seguranca.md) antes de alterar a instalação.
 
 A auditoria completa do histórico e a validação das regras do ASC para distribuição pública estão pendentes ([#11](https://github.com/msouza10/ascstremio/issues/11), [#14](https://github.com/msouza10/ascstremio/issues/14)). O código é distribuído sob a [licença MIT](LICENSE). O uso de conta individual não equivale a autorização do tracker nem concede direitos sobre conteúdo de terceiros.
 

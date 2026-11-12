@@ -10,16 +10,27 @@ Só a **última versão publicada** recebe correções de segurança (veja os
 
 ## Como reportar uma vulnerabilidade
 
-**Não abra issue pública.** Use o relato privado do GitHub:
+**Não publique detalhes exploráveis, segredos nem reproduções com dados reais em issue pública.**
 
-1. Abra [Security → Report a vulnerability](https://github.com/msouza10/ascstremio/security/advisories/new).
-2. Descreva o problema, a versão, o sistema (Linux, Windows ou Docker) e como reproduzir.
-3. **Não inclua** sua passkey, cookies, `.torrent` ou o conteúdo de `private/`. Se o exemplo precisar de
-   um segredo, troque por um valor falso.
+O relato privado do GitHub (*Private vulnerability reporting*) **ainda não está habilitado** neste
+repositório, e não há outro canal privado divulgado. Até o mantenedor definir um, o único canal
+disponível é uma [issue](https://github.com/msouza10/ascstremio/issues) **mínima**: diga apenas que
+encontrou um problema de segurança, a versão e a área afetada (por exemplo, "ponte" ou "painel"), sem
+passos de reprodução, e peça um contato privado. Os detalhes só devem ser enviados depois que o
+mantenedor indicar um canal privado na própria issue. Quando o relato privado for habilitado, esta
+página passa a apontá-lo.
 
-Você recebe uma primeira resposta em até **7 dias**. Mantemos você informado, corrigimos com
-prioridade e publicamos a correção com crédito a quem reportou (se quiser), depois de a versão
-corrigida estar disponível.
+Não há prazo garantido de resposta enquanto não houver canal privado.
+
+### O que nunca enviar (em issue, relato, captura ou log)
+
+- Passkey do tracker, cookies/sessão do ASC (`asc-session.json`), senha do ASC ou do painel.
+- A chave `?k=` e a URL do addon com `/<token>/` (`ascc_…`): são credenciais reutilizáveis; troque por
+  um valor falso. Também o `admin-key` e qualquer conteúdo de `private/` ou `DATA_DIR`.
+- Logs sem redação, backups dos dados e arquivos `.torrent` (podem conter a passkey no announce).
+
+Se algo disso vazou, revogue antes: `npm run credenciais -- rotacionar <id>` ou `revogar`, e gere nova
+passkey no site do ASC.
 
 ## O que consideramos vulnerabilidade
 
@@ -35,6 +46,10 @@ corrigida estar disponível.
 
 ## Fora do escopo
 
+- Hospedagem remota ou compartilhada: o programa é de uma pessoa por instalação e não tem suporte a
+  exposição na internet.
+- A porta de peers (TCP 7030 no contêiner) estar publicada: é o recebimento de conexões BitTorrent, não a
+  API HTTP; só é problema se permitir acesso a addon, ponte ou painel.
 - Uso deliberadamente inseguro: expor as portas à internet, `BRIDGE_ALLOW_LAN=1` em rede não
   confiável, publicar as portas do contêiner em `0.0.0.0`, compartilhar a conta.
 - Problemas do site do Amigos Share, do Stremio ou do tracker (reporte a eles).
