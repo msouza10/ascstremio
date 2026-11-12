@@ -244,6 +244,8 @@ test('a fila respeita parar ou excluir enquanto outro torrent ainda está abrind
 test('cleanup reserva os alvos durante a consulta e libera a trava em sucesso ou recusa', async () => {
   for (const satisfied of [true, false]) {
     const s = setup();
+    s.vault.setBackground(HASH, true);
+    s.vault.setSeedChoice(HASH, 'keep');
     s.b.adminKey = 'ab'.repeat(16);
     let release;
     const gate = new Promise((resolve) => { release = resolve; });
@@ -264,6 +266,15 @@ test('cleanup reserva os alvos durante a consulta e libera a trava em sucesso ou
     assert.equal(res.status, satisfied ? 200 : 409);
     assert.equal(removed, satisfied ? 1 : 0);
     assert.equal(s.b.retention.isRetiring(HASH), false);
+    if (satisfied) {
+      assert.equal(s.vault.get(HASH).seedChoice, 'delete');
+      assert.equal(s.vault.get(HASH).releasedAs, 'delete');
+      assert.equal(s.vault.get(HASH).backgroundComplete, false);
+      s.b.client.torrents = [];
+      let resumed = 0;
+      s.b.getTorrent = async () => { resumed++; return { length: 10 }; };
+      await s.b.resumePending(); assert.equal(resumed, 0);
+    }
   }
 });
 
@@ -275,4 +286,26 @@ test('obrigação reaberta pelo tracker exige retomada mesmo após uma decisão 
   s.b.getTorrent = async () => { resumed++; return { length: 10 }; };
   await s.b.resumePending();
   assert.equal(resumed, 1, 'o tracker prevalece, sem liberar obrigação indevidamente');
+});
+
+test('falha na destruição por cleanup mantém a parada e libera a trava sem anunciar sucesso', async () => {
+  const s = setup();
+  await s.b.manageSeed(HASH, 'keep');
+  s.vault.setBackground(HASH, true);
+  s.b.adminKey = 'ab'.repeat(16);
+  const check = s.b.trackerCheck;
+  s.b.trackerCheck = (hashes) => check(hashes, { force: true });
+  s.b.client.torrents[0].destroy = (options, callback) => callback(new Error('arquivo ocupado'));
+  const res = { setHeader() {}, writeHead(status) { this.status = status; }, end() {} };
+  const request = { method: 'POST', url: `/cleanup?hash=${HASH}`, headers: { 'x-admin-token': s.b.adminKey }, socket: { remoteAddress: '127.0.0.1' } };
+  await assert.rejects(s.b.handle(request, res), (e) => e.status === 503);
+  assert.notEqual(res.status, 200);
+  assert.equal(s.b.retention.isRetiring(HASH), false);
+  assert.equal(s.vault.get(HASH).seedChoice, 'stop');
+  assert.equal(s.vault.get(HASH).backgroundComplete, false);
+  assert.ok(fs.existsSync(s.file));
+  s.b.client.torrents = [];
+  let resumed = 0;
+  s.b.getTorrent = async () => { resumed++; return { length: 10 }; };
+  await s.b.resumePending(); assert.equal(resumed, 0);
 });

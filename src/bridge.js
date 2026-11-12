@@ -1262,10 +1262,29 @@ class Bridge {
           return;
         }
 
-        await Promise.all(targets.map((t) => new Promise((resolve) => {
-          t.destroy({ destroyStore: true }, () => resolve());
+        // A limpeza antiga também deve substituir keep/conclusão em segundo plano:
+        // uma falha parcial não pode recriar o download na conciliação seguinte.
+        for (const t of targets) {
+          this.vault.setSeedChoice(t.infoHash, 'stop');
+          this.vault.setBackground(t.infoHash, false);
+        }
+        const results = await Promise.allSettled(targets.map((t) => new Promise((resolve, reject) => {
+          t.destroy({ destroyStore: true }, (err) => err ? reject(err) : resolve());
         })));
-        for (const t of targets) this.startedAt.delete(t.infoHash);
+        results.forEach((result, i) => {
+          if (result.status !== 'fulfilled') return;
+          const hash = targets[i].infoHash;
+          this.startedAt.delete(hash);
+          this.completing.delete(hash);
+          this.lastTick.delete(hash);
+          this.vault.setSeedChoice(hash, 'delete');
+          this.vault.markReleased(hash, 'delete');
+        });
+        if (results.some((r) => r.status === 'rejected')) {
+          const err = new Error('A limpeza não foi concluída para todos os conteúdos. Confira os arquivos restantes.');
+          err.status = 503; err.expose = true;
+          throw err;
+        }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         log.info(`cleanup concluído: ${targets.length} torrent(s) removido(s)`);
         res.end(JSON.stringify({ removed: targets.length }));
