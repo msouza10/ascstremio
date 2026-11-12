@@ -309,3 +309,25 @@ test('falha na destruição por cleanup mantém a parada e libera a trava sem an
   s.b.getTorrent = async () => { resumed++; return { length: 10 }; };
   await s.b.resumePending(); assert.equal(resumed, 0);
 });
+
+test('liberação automática também impede decisão concorrente do painel e libera a trava após erro', async () => {
+  for (const failed of [false, true]) {
+    const s = setup(); s.b.afterSeed = 'delete';
+    await s.b.trackerCheck([HASH], { force: true });
+    let finish;
+    s.b.client.torrents[0].destroy = (options, callback) => { finish = callback; };
+    const releasing = s.b.releaseSatisfied();
+    assert.equal(s.b.retention.isRetiring(HASH), true);
+    await assert.rejects(s.b.manageSeed(HASH, 'keep'), (e) => e.status === 409);
+    await assert.rejects(s.b.getTorrent(HASH), (e) => e.status === 503);
+    finish(failed ? new Error('falha do motor') : null);
+    if (failed) {
+      await assert.rejects(releasing);
+      assert.equal(s.vault.get(HASH).releasedAs, undefined);
+    } else {
+      await releasing;
+      assert.equal(s.vault.get(HASH).releasedAs, 'delete');
+    }
+    assert.equal(s.b.retention.isRetiring(HASH), false);
+  }
+});

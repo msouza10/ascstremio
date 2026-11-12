@@ -605,16 +605,21 @@ class Bridge {
       const entry = this.vault.get(hash);
       if (!hnr.trackerConfirmed(entry) || entry.seedChoice === 'keep' || entry.seedChoice === 'stop') continue;
       if ((this.streams.get(hash) ?? 0) > 0 || this.retention.isRetiring(hash)) continue;
-      await new Promise((resolve) => {
-        torrent.destroy({ destroyStore: this.afterSeed === 'delete' }, () => resolve());
-      });
-      this.completing.delete(hash);
-      this.startedAt.delete(hash);
-      this.lastTick.delete(hash);
-      this.vault.markReleased(hash, this.afterSeed);
-      released.push({ infoHash: hash, name: entry.name, mode: this.afterSeed });
-      console.log(`[liberar] limite cumprido e confirmado pelo tracker: "${String(entry.name).slice(0, 50)}"`
-        + ` (${this.afterSeed === 'delete' ? 'rede e arquivos liberados' : 'rede liberada, arquivos mantidos'})`);
+      // Todos os caminhos de liberação usam a mesma trava: uma confirmação do
+      // painel não pode disputar com a exclusão automática já iniciada.
+      this.retention.retiring.add(hash);
+      try {
+        await new Promise((resolve, reject) => {
+          torrent.destroy({ destroyStore: this.afterSeed === 'delete' }, (err) => err ? reject(err) : resolve());
+        });
+        this.completing.delete(hash);
+        this.startedAt.delete(hash);
+        this.lastTick.delete(hash);
+        this.vault.markReleased(hash, this.afterSeed);
+        released.push({ infoHash: hash, name: entry.name, mode: this.afterSeed });
+        console.log(`[liberar] limite cumprido e confirmado pelo tracker: "${String(entry.name).slice(0, 50)}"`
+          + ` (${this.afterSeed === 'delete' ? 'rede e arquivos liberados' : 'rede liberada, arquivos mantidos'})`);
+      } finally { this.retention.retiring.delete(hash); }
     }
     return released;
   }
