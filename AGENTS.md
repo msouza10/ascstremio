@@ -63,6 +63,7 @@ scripts/smoke-install.sh dist && scripts/smoke-container.sh IMAGEM
 scripts/check-no-secrets.sh .             # barreira de segredos (rode antes de todo commit)
 node scripts/audit-check.js               # npm audit com exceções justificadas
 scripts/audit-secrets.sh [--head]           # gitleaks: todas as refs (antes de publicar) ou só o commit atual (CI)
+scripts/audit-secrets.sh --image IMG | --dir PASTA   # gitleaks na imagem do contêiner ou no instalador extraído (CI)
 shellcheck -S warning scripts/*.sh windows/build.sh && actionlint .github/workflows/*.yml
 ```
 

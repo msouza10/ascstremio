@@ -129,6 +129,11 @@ jobs:
           node-version: 22
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nsis unzip
       - run: windows/build.sh
+      - name: Nenhum segredo no instalador (gitleaks sobre o .exe extraído)
+        run: |
+          command -v 7z >/dev/null || sudo apt-get install -y --no-install-recommends 7zip
+          7z x -y -o"$RUNNER_TEMP/exe" dist/AscStremio-Setup-*.exe >/dev/null
+          scripts/audit-secrets.sh --dir "$RUNNER_TEMP/exe"
       - uses: actions/upload-artifact@v4
         with:
           name: instalador-windows
@@ -193,6 +198,8 @@ jobs:
           tags: ascstremio:release-test
           cache-from: type=gha
       - run: scripts/smoke-container.sh ascstremio:release-test
+      - name: Nenhum segredo na imagem (gitleaks sobre o sistema de arquivos)
+        run: scripts/audit-secrets.sh --image ascstremio:release-test
       - id: push
         uses: docker/build-push-action@v6
         with:

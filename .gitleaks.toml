@@ -37,3 +37,11 @@ regexes = [
   '''(?m)^    assert\.equal\(\(await t\.login\(\{ body: \{ password: 'outra-senha-bem-longa-77' \} \}\)\)\.status, 200\);$''',
   '''(?m)^    assert\.equal\(\(await t\.login\(\{ body: \{ password: 'outra-senha-bem-longa-77' \} \}\)\)\.status, 403, 'sem senha o Host da LAN fecha'\);$''',
 ]
+
+[[allowlists]]
+description = "Cabeçalho do Node (imagem do contêiner): identificador C++ que o gitleaks lê como chave, linha exata"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''usr/local/include/node/v8-internal\.h$''']
+regexTarget = "line"
+regexes = ['''(?m)^const int kApiTaggedSize = kApiInt32Size;$''']
