@@ -246,6 +246,9 @@ class Retention {
       b.startedAt.delete(hash);
       b.lastTick.delete(hash);
     }
+    // A exclusão confirmada substitui uma escolha antiga de continuar semeando.
+    // Mesmo sem conseguir remover o primeiro arquivo, o motor já foi parado.
+    b.vault.setSeedChoice(hash, 'stop');
     const r = retention.removeFiles(b.storeDir, item.files);
     if (r.removed > 0) b.vault.markReleased(hash, 'retencao');
     log.info(`retenção: "${item.name.slice(0, 50)}" (${short(hash)}) ${r.removed} arquivo(s), ${fmtBytes(r.bytes)}${r.failed.length ? `, ${r.failed.length} permaneceram (${[...new Set(r.failed.map((f) => f.reason))].join(', ')})` : ''}`);

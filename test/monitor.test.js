@@ -20,6 +20,7 @@ test('servidor: estáticos, painel só com sessão confirmada, ação protegida 
   const server = await startConfig(asc, PORT, {
     snapshot: () => ({ titles: [] }),
     complete: async (hash) => { chamadas.push(hash); return { infoHash: hash }; },
+    manageSeed: async (hash, action) => { chamadas.push(action); return { action }; },
   });
   try {
     // páginas: todas devolvem o mesmo shell; o roteador do cliente escolhe a view
@@ -59,7 +60,17 @@ test('servidor: estáticos, painel só com sessão confirmada, ação protegida 
     assert.equal((await post(bom, { infoHash: H('a') })).status, 202);
     assert.deepEqual(chamadas, [H('a')]);
 
+    const seed = (headers, body) => fetch(`${BASE}/api/seed`, { method: 'POST', headers, body: JSON.stringify(body) });
+    const choice = { infoHash: H('a'), action: 'delete' };
+    assert.equal((await seed({ 'Content-Type': 'application/json' }, choice)).status, 403);
+    assert.equal((await seed({ ...bom, Origin: 'https://externo.invalid' }, choice)).status, 403);
+    assert.equal((await seed(bom, { ...choice, action: 'force' })).status, 400);
+    assert.equal((await seed(bom, { ...choice, infoHash: '../arquivo' })).status, 400);
+    assert.deepEqual(chamadas, [H('a')], 'pedidos inválidos não chegam à ponte');
+    assert.equal((await seed(bom, choice)).status, 200);
+    assert.deepEqual(chamadas, [H('a'), 'delete']);
     asc.connected = false;
+    assert.equal((await seed(bom, choice)).status, 401);
     assert.equal((await post(bom, { infoHash: H('a') })).status, 401, 'sessão caiu');
   } finally { await new Promise((r) => server.close(r)); }
 });

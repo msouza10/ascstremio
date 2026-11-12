@@ -195,6 +195,19 @@ class SeedVault {
     return entry;
   }
 
+  setSeedChoice(infoHash, choice) {
+    const entry = this.entries.get(infoHash);
+    if (!entry) return;
+    entry.seedChoice = choice;
+    // Uma nova escolha explícita de continuar substitui a parada anterior.
+    // As liberações posteriores (inclusive retenção) voltam a impedir a retomada.
+    if (choice === 'keep') {
+      delete entry.releasedAs;
+      delete entry.releasedAt;
+    }
+    this.save();
+  }
+
   get(infoHash) {
     return this.entries.get(infoHash) ?? null;
   }

@@ -20,6 +20,7 @@ const { DiskGuard, DEFAULT_RESERVE_BYTES } = require('./disk-policy');
 const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { Retention } = require('./retention-service');
+const { manageSeed } = require('./seed-actions');
 const { logger } = require('./logger');
 const { rankPending, runLimited } = require('./resume-policy');
 const { StreamMetrics } = require('./stream-metrics');
@@ -359,6 +360,15 @@ class Bridge {
     this.trackerPending = pending;
   }
 
+  shouldResume(entry) {
+    if (!entry) return false;
+    // Uma obrigação reaberta pelo tracker prevalece sobre decisões anteriores.
+    if (entry.completedAt && !entry.satisfiedAt) return true;
+    if (entry.backgroundComplete && !entry.completedAt) return true;
+    return Boolean(entry.completedAt && entry.satisfiedAt && !entry.releasedAs
+      && (entry.seedChoice === 'keep' || (this.afterSeed === 'manual' && !['stop', 'delete'].includes(entry.seedChoice))));
+  }
+
   // Retoma pendências: se o processo caiu no meio das 72 h, volta a semear
   // sem intervenção, em vez de deixar o prazo de 12 dias correr. Idempotente:
   // chamada de novo depois de conciliar com o tracker, que pode revelar
@@ -387,9 +397,8 @@ class Bridge {
   // `resumeConcurrency` ao mesmo tempo. Cada abertura passa por getTorrent (admissão de disco
   // inclusive) e é medida; a falha de uma não interrompe as outras.
   async resumeOnce(run = { stats: null }) {
-    const pendencias = this.vault.list().filter((e) => (
-      (e.completedAt && !e.satisfiedAt) || (e.backgroundComplete && !e.completedAt)
-    ) && this.entries.has(e.infoHash)
+    const pendencias = this.vault.list().filter((e) => this.shouldResume(e) && this.entries.has(e.infoHash)
+      && !this.retention.isRetiring(e.infoHash)
       // Já no motor ou abrindo: nada a fazer, e a passada ociosa não apaga a medição da retomada real.
       && !this.loading.has(e.infoHash) && !this.client.torrents.some((t) => t.infoHash === e.infoHash));
     const ranked = rankPending(pendencias, { vault: this.vault, now: this.clock() });
@@ -427,8 +436,10 @@ class Bridge {
 
     try {
       await runLimited(ranked, this.resumeConcurrency, async (item) => {
-        const pendencia = item.entry;
-        const hash = pendencia.infoHash;
+        const hash = item.infoHash;
+        const pendencia = this.vault.get(hash);
+        // Uma ação do painel pode ter parado/excluído enquanto este item aguardava na fila.
+        if (!this.shouldResume(pendencia) || this.retention.isRetiring(hash)) { stats.skipped += 1; return; }
         // Reavalia na vez dela: pode ter sido aberto por um play ou por outra passada.
         if (this.client.torrents.some((t) => t.infoHash === hash) || this.loading.has(hash)) { stats.skipped += 1; return; }
         // Obrigação concluída mas sem o arquivo completo: não anuncia (viraria um
@@ -582,24 +593,33 @@ class Bridge {
   // Cumpriu o limite? Então não há motivo para ocupar disco nem rede. Só age
   // quando o TRACKER confirma (nunca pela estimativa local) e sem ninguém
   // assistindo. Devolve o que foi liberado.
+  manageSeed(infoHash, action) {
+    return manageSeed(this, infoHash, action);
+  }
+
   async releaseSatisfied() {
     const released = [];
-    if (this.afterSeed === 'keep' || !this.client) return released;
+    if (['keep', 'manual'].includes(this.afterSeed) || !this.client) return released;
     for (const torrent of [...this.client.torrents]) {
       const hash = torrent.infoHash;
       const entry = this.vault.get(hash);
-      if (!hnr.trackerConfirmed(entry)) continue;
+      if (!hnr.trackerConfirmed(entry) || entry.seedChoice === 'keep' || entry.seedChoice === 'stop') continue;
       if ((this.streams.get(hash) ?? 0) > 0 || this.retention.isRetiring(hash)) continue;
-      await new Promise((resolve) => {
-        torrent.destroy({ destroyStore: this.afterSeed === 'delete' }, () => resolve());
-      });
-      this.completing.delete(hash);
-      this.startedAt.delete(hash);
-      this.lastTick.delete(hash);
-      this.vault.markReleased(hash, this.afterSeed);
-      released.push({ infoHash: hash, name: entry.name, mode: this.afterSeed });
-      console.log(`[liberar] limite cumprido e confirmado pelo tracker: "${String(entry.name).slice(0, 50)}"`
-        + ` (${this.afterSeed === 'delete' ? 'rede e arquivos liberados' : 'rede liberada, arquivos mantidos'})`);
+      // Todos os caminhos de liberação usam a mesma trava: uma confirmação do
+      // painel não pode disputar com a exclusão automática já iniciada.
+      this.retention.retiring.add(hash);
+      try {
+        await new Promise((resolve, reject) => {
+          torrent.destroy({ destroyStore: this.afterSeed === 'delete' }, (err) => err ? reject(err) : resolve());
+        });
+        this.completing.delete(hash);
+        this.startedAt.delete(hash);
+        this.lastTick.delete(hash);
+        this.vault.markReleased(hash, this.afterSeed);
+        released.push({ infoHash: hash, name: entry.name, mode: this.afterSeed });
+        console.log(`[liberar] limite cumprido e confirmado pelo tracker: "${String(entry.name).slice(0, 50)}"`
+          + ` (${this.afterSeed === 'delete' ? 'rede e arquivos liberados' : 'rede liberada, arquivos mantidos'})`);
+      } finally { this.retention.retiring.delete(hash); }
     }
     return released;
   }
@@ -719,6 +739,7 @@ class Bridge {
         onDisk: this.diskState(infoHash),
         backgroundComplete: Boolean(entry?.backgroundComplete),
         released: entry?.releasedAs ?? null,
+        seedChoice: entry?.seedChoice ?? null,
         progress: torrent ? Number((torrent.progress || 0).toFixed(4)) : (completed ? 1 : 0),
         downloaded: down,
         uploaded: up,
@@ -1217,34 +1238,65 @@ class Bridge {
       log.info(`cleanup pedido${victim ? ` para ${short(victim)}` : ' para todos'}`);
       const targets = victim
         ? this.client.torrents.filter((t) => t.infoHash === victim.toLowerCase())
-        : this.client.torrents;
+        : [...this.client.torrents];
 
-      const blocked = [];
-      // O tracker decide: confirma antes de liberar (falha de rede não libera).
-      await this.trackerCheck?.(targets.map((t) => t.infoHash)).catch(() => {});
-      for (const t of targets) {
-        const state = this.seedState(t);
-        if (!state.met) blocked.push({ infoHash: t.infoHash, ...state });
-      }
-      if (blocked.length > 0) {
-        log.warn(`cleanup recusado: ${blocked.length} torrent(s) com obrigação de seed pendente (regra 13.1)`);
+      if (targets.some((t) => this.retention.isRetiring(t.infoHash))) {
         res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({
-          removed: 0,
-          blocked,
-          hint: 'regra 13.1: 72 h de seed ou ratio 1.0 no torrent',
-        }, null, 2));
+        res.end(JSON.stringify({ error: 'Conteúdo em manutenção; tente novamente depois.' }));
         return;
       }
+      // Reserva todos antes da consulta assíncrona: nenhuma ação do painel pode
+      // prometer preservar um arquivo que esta limpeza já está prestes a remover.
+      for (const t of targets) this.retention.retiring.add(t.infoHash);
+      try {
+        const blocked = [];
+        // O tracker decide: confirma antes de liberar (falha de rede não libera).
+        await this.trackerCheck?.(targets.map((t) => t.infoHash)).catch(() => {});
+        for (const t of targets) {
+          const state = this.seedState(t);
+          if (!state.met) blocked.push({ infoHash: t.infoHash, ...state });
+        }
+        if (blocked.length > 0) {
+          log.warn(`cleanup recusado: ${blocked.length} torrent(s) com obrigação de seed pendente (regra 13.1)`);
+          res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({
+            removed: 0,
+            blocked,
+            hint: 'regra 13.1: 72 h de seed ou ratio 1.0 no torrent',
+          }, null, 2));
+          return;
+        }
 
-      await Promise.all(targets.map((t) => new Promise((resolve) => {
-        t.destroy({ destroyStore: true }, () => resolve());
-      })));
-      for (const t of targets) this.startedAt.delete(t.infoHash);
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      log.info(`cleanup concluído: ${targets.length} torrent(s) removido(s)`);
-      res.end(JSON.stringify({ removed: targets.length }));
-      return;
+        // A limpeza antiga também deve substituir keep/conclusão em segundo plano:
+        // uma falha parcial não pode recriar o download na conciliação seguinte.
+        for (const t of targets) {
+          this.vault.setSeedChoice(t.infoHash, 'stop');
+          this.vault.setBackground(t.infoHash, false);
+        }
+        const results = await Promise.allSettled(targets.map((t) => new Promise((resolve, reject) => {
+          t.destroy({ destroyStore: true }, (err) => err ? reject(err) : resolve());
+        })));
+        results.forEach((result, i) => {
+          if (result.status !== 'fulfilled') return;
+          const hash = targets[i].infoHash;
+          this.startedAt.delete(hash);
+          this.completing.delete(hash);
+          this.lastTick.delete(hash);
+          this.vault.setSeedChoice(hash, 'delete');
+          this.vault.markReleased(hash, 'delete');
+        });
+        if (results.some((r) => r.status === 'rejected')) {
+          const err = new Error('A limpeza não foi concluída para todos os conteúdos. Confira os arquivos restantes.');
+          err.status = 503; err.expose = true;
+          throw err;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        log.info(`cleanup concluído: ${targets.length} torrent(s) removido(s)`);
+        res.end(JSON.stringify({ removed: targets.length }));
+        return;
+      } finally {
+        for (const t of targets) this.retention.retiring.delete(t.infoHash);
+      }
     }
 
     // Retenção por orçamento (issue #27). GET = prévia (só leitura). POST /retention/run?plan=<id>

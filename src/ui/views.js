@@ -140,6 +140,54 @@
     return { root, set(t) { const was = current?.state; current = t; if (was !== t.state || !root.childElementCount) render(); } };
   }
 
+  function seedFlow() {
+    const root = el('div', 'stack');
+    let current = null; let action = null; let busy = false; let result = ''; let signature = '';
+    const labels = { keep: 'Continuar semeando', stop: 'Parar seed e manter arquivos', delete: 'Excluir arquivos e parar seed' };
+    function render() {
+      clear(root);
+      const t = current;
+      if (!t || !/^[0-9a-f]{40}$/.test(t.infoHash)) return;
+      root.append(el('p', 'foot', t.tracker?.satisfied
+        ? 'Seed obrigatório cumprido e confirmado pelo tracker. Você pode manter ou excluir os arquivos.'
+        : 'Parar ou excluir fica disponível depois que o tracker confirmar o seed obrigatório. Para decidir depois, selecione AFTER_SEED=manual nas configurações.'));
+      if (t.tracker?.satisfied && !t.tracker.hitAndRun && t.onDisk !== 'none') {
+        const row = el('div', 'item-badges');
+        for (const key of ['keep', 'stop', 'delete']) {
+          if (key !== 'delete' && !t.active) continue;
+          const button = el('button', 'btn btn-outline', labels[key]);
+          button.type = 'button'; button.disabled = busy;
+          button.addEventListener('click', () => { action = key; result = ''; render(); });
+          row.append(button);
+        }
+        root.append(row);
+        if (action) {
+          root.append(el('p', '', action === 'delete'
+            ? 'Os arquivos deste conteúdo serão apagados. Assistir novamente pode baixar tudo e criar uma nova obrigação de seed.'
+            : action === 'stop' ? 'O seed será encerrado e os arquivos ficarão no disco para assistir depois.'
+              : 'O seed continuará e este conteúdo não será apagado automaticamente.'));
+          const ok = el('button', 'btn btn-primary', `Confirmar: ${labels[action].toLowerCase()}`);
+          const cancel = el('button', 'btn btn-ghost', 'Cancelar');
+          ok.type = cancel.type = 'button'; ok.disabled = cancel.disabled = busy;
+          cancel.addEventListener('click', () => { action = null; render(); });
+          ok.addEventListener('click', async () => {
+            busy = true; render();
+            try { result = (await app().call('POST', 'seed', { infoHash: current.infoHash, action })).message; }
+            catch (err) { result = err.message || 'Não foi possível concluir a ação.'; }
+            busy = false; action = null; render(); app().refresh();
+          });
+          root.append(ok, cancel);
+        }
+      }
+      if (result) { const message = el('p', 'foot', result); message.setAttribute('role', 'status'); root.append(message); }
+    }
+    return { root, set(t) {
+      current = t;
+      const next = JSON.stringify([t.infoHash, t.tracker?.satisfied, t.tracker?.hitAndRun, t.active, t.onDisk, t.seedChoice]);
+      if (next !== signature && !busy) { signature = next; action = null; render(); }
+    } };
+  }
+
   // ------------------------------------------------------------ visão geral
   function overview() {
     const root = el('div', 'page');
@@ -402,7 +450,8 @@
     cAct.append(cardHead('Sua atividade'), actRows);
     const cBtn = card();
     const flow = completeFlow();
-    cBtn.append(cardHead('Ações'), flow.root);
+    const seed = seedFlow();
+    cBtn.append(cardHead('Ações'), flow.root, seed.root);
     const cDet = card();
     const detRows = el('dl', 'rows');
     cDet.append(cardHead('Detalhes'), detRows);
@@ -489,6 +538,7 @@
           ['Info hash', t.infoHash, true],
         ]);
         flow.set(t);
+        seed.set(t);
       },
     };
   }
@@ -689,7 +739,7 @@
         kvr(svcRows, [
           ['Seed exigido', `${c.requiredHours} h por torrent`],
           ['Concluir download em segundo plano', c.backgroundMode === 'auto' ? `automático (parado há ${c.idleMinutes} min)` : 'só quando você pede'],
-          ['Ao cumprir o limite', { delete: 'encerra e apaga os arquivos', stop: 'encerra e mantém os arquivos', keep: 'continua semeando' }[c.afterSeed] ?? c.afterSeed],
+          ['Ao cumprir o limite', { delete: 'encerra e apaga os arquivos', stop: 'encerra e mantém os arquivos', keep: 'continua semeando', manual: 'você decide no painel; mantém semeando até lá' }[c.afterSeed] ?? c.afterSeed],
           ['Suspensão do PC', c.keepAwake ? 'bloqueada agora (há seed pendente)' : 'livre (nada pendente)'],
           ['Ponte escuta em', c.host],
           ['Limite de upload', c.uploadLimit > 0 ? fmtSpeed(c.uploadLimit) : 'sem limite'],

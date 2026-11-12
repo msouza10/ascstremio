@@ -167,8 +167,8 @@ const SCHEMA = Object.freeze([
     description: 'true adiciona uma fonte de demonstração externa.',
   },
   {
-    key: 'AFTER_SEED', type: 'enum', values: ['delete', 'stop', 'keep'], default: 'delete', group: 'seed', access: 'editable', restart: true,
-    description: 'Depois de o tracker confirmar o seed: delete apaga os arquivos, stop encerra e preserva, keep continua semeando.',
+    key: 'AFTER_SEED', type: 'enum', values: ['delete', 'stop', 'keep', 'manual'], default: 'delete', group: 'seed', access: 'editable', restart: true,
+    description: 'Depois de o tracker confirmar o seed: delete apaga os arquivos, stop encerra e preserva, keep continua semeando, manual mantém o seed até você decidir no painel.',
   },
   {
     key: 'BACKGROUND_COMPLETE', type: 'enum', values: ['off', 'auto'], default: 'off', group: 'seed', access: 'editable', restart: true,

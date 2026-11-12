@@ -99,3 +99,7 @@ A biblioteca local lê `.torrent` em `DATA_DIR/torrents`; sua presença não sig
 `DEMO_MODE=true npm start` adiciona uma fonte externa para **Big Buck Bunny (2008)**. Ela depende de um servidor público e não valida login, tracker privado, seed ou reprodução pela ponte. A integração online continua voltada a filmes, mesmo que o parser aceite identificadores de episódios.
 
 Para consultar ou mudar portas, modo local/LAN e políticas sem o painel, use a [configuração pelo terminal](configuracao.md#configuração-pelo-terminal).
+
+## Decidir sobre os arquivos depois do seed
+
+Em Configurações, `AFTER_SEED=manual` mantém os arquivos e o seed até sua decisão. Aplique o reinício indicado antes de depender desse modo. Na página de cada filme, depois da confirmação do tracker, use **Continuar semeando**, **Parar seed e manter arquivos** ou **Excluir arquivos e parar seed**, com confirmação. Parar preserva os arquivos para assistir depois; excluir pode exigir outro download e nova obrigação na próxima reprodução. Não há cancelamento antecipado da obrigação de seed. Consulte [seed](seed.md#o-que-acontece-depois-do-cumprimento).
