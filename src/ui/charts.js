@@ -50,11 +50,15 @@
     root.append(box, tableWrap);
 
     let data = null; let geom = null; let hoverIdx = null;
+    let lastW = 0; // última largura desenhada (o ResizeObserver só redesenha se mudar)
     let W = 720; let H = compact ? 150 : 230;
     const M = { l: 58, r: compact ? 12 : 104, t: 12, b: 26 };
 
     function draw() {
       if (!data) return;
+      // Escondido (modo tabela) a caixa mede 0 e o gráfico sairia na largura padrão, deformado quando
+      // voltasse. Só a tabela é atualizada; o gráfico é redesenhado quando a caixa reaparece.
+      if (box.hidden || !box.clientWidth) { fillTable(); lastW = 0; return; }
       box.querySelectorAll('svg, .chart-empty').forEach((n) => n.remove());
       W = Math.max(300, Math.round(box.clientWidth || 720));
       H = compact ? 150 : (W < 520 ? 190 : 230);
@@ -169,14 +173,14 @@
       else if (ev.key === 'Escape') hide();
     });
     if (window.ResizeObserver) {
-      let lastW = 0;
       new ResizeObserver(() => { const w = Math.round(box.clientWidth); if (data && w && w !== lastW) { lastW = w; draw(); } }).observe(box);
     }
 
     return {
       root,
       update(d) { data = d; draw(); },
-      asTable(on) { tableWrap.hidden = !on; box.hidden = on; hide(); },
+      // Ao voltar para o gráfico, redesenha na hora com a largura real (sem esperar o próximo polling).
+      asTable(on) { tableWrap.hidden = !on; box.hidden = on; hide(); if (!on) draw(); },
       destroy() { hide(); },
     };
   }
