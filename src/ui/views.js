@@ -150,8 +150,8 @@
     const bar = el('div', 'film-bar');
     const panel = el('div', 'stack');
     let current = null; let action = null; let busy = false; let result = ''; let signature = '';
-    const labels = { keep: 'Manter semeando (não apagar sozinho)', stop: 'Parar seed e manter arquivos', delete: 'Excluir arquivos e parar seed' };
-    const short = { keep: 'Manter semeando', stop: 'Parar seed', delete: 'Excluir arquivos' };
+    const labels = { keep: 'Manter semeando (não apagar sozinho)', stop: 'Parar seed e manter arquivos', delete: 'Excluir arquivos e parar seed', resume: 'Voltar a semear (verificar arquivos preservados)' };
+    const short = { keep: 'Manter semeando', stop: 'Parar seed', delete: 'Excluir arquivos', resume: 'Voltar a semear' };
     function render() {
       clear(bar); clear(panel);
       const t = current;
@@ -159,7 +159,7 @@
       if (t.tracker?.satisfied && !t.tracker.hitAndRun && t.onDisk !== 'none') {
         // "Manter semeando" não é o contrário de "Parar": é "não apague meus arquivos sozinho". Depois
         // de escolhido, o botão mostra o estado (✓ mantido) em vez de seguir oferecendo a mesma ação.
-        // Não existe "retomar": parar é definitivo, então não há liga/desliga.
+        // Voltar a semear é uma decisão explícita: tocar o filme não desfaz a parada persistida.
         const kept = t.seedChoice === 'keep';
         if (!t.active) {
           const chip = el('span', 'seed-chip');
@@ -167,10 +167,10 @@
           chip.append(icon('wifi-off'), document.createTextNode('Seed parado'));
           bar.append(chip);
         }
-        for (const key of ['keep', 'stop', 'delete']) {
-          if (key !== 'delete' && !t.active) continue;
+        for (const key of ['keep', 'stop', 'resume', 'delete']) {
+          if (key === 'resume' ? (t.active || t.seedChoice !== 'stop' || t.released !== 'stop' || t.onDisk !== 'full') : (key !== 'delete' && !t.active)) continue;
           const button = el('button', key === 'delete' ? 'btn btn-danger btn-sm btn-icon' : 'btn btn-outline btn-sm btn-icon');
-          const glyph = { keep: kept ? 'circle-check' : 'arrow-up-from-line', stop: 'wifi-off', delete: 'trash-2' }[key];
+          const glyph = { keep: kept ? 'circle-check' : 'arrow-up-from-line', stop: 'wifi-off', delete: 'trash-2', resume: 'arrow-up-from-line' }[key];
           button.append(icon(glyph), document.createTextNode(key === 'keep' && kept ? 'Semeando · mantido' : short[key]));
           button.type = 'button'; button.disabled = busy || (key === 'keep' && kept); button.title = key === 'keep' && kept ? 'Os arquivos não serão apagados sozinhos.' : labels[key];
           if (key === 'keep' && kept) { button.classList.add('is-on'); button.setAttribute('aria-pressed', 'true'); }
@@ -180,10 +180,11 @@
         if (action) {
           panel.append(alertBox(action === 'delete' ? 'leech' : 'primary', labels[action], action === 'delete'
             ? 'Os arquivos deste conteúdo serão apagados. Assistir novamente pode baixar tudo e criar uma nova obrigação de seed.'
-            : action === 'stop' ? 'O seed será encerrado e os arquivos ficarão no disco para assistir depois.'
+            : action === 'resume' ? 'Todos os arquivos serão verificados antes de anunciar ao tracker. Isso pode levar alguns minutos. Se estiverem íntegros, o seed voltará e continuará após reiniciar o serviço.'
+              : action === 'stop' ? 'O seed será encerrado e os arquivos ficarão no disco para assistir depois.'
               : 'O seed continuará e este conteúdo não será apagado automaticamente.'));
           const row = el('div', 'item-badges');
-          const ok = el('button', action === 'delete' ? 'btn btn-danger' : 'btn btn-primary', 'Confirmar');
+          const ok = el('button', action === 'delete' ? 'btn btn-danger' : 'btn btn-primary', busy && action === 'resume' ? 'Verificando arquivos…' : 'Confirmar');
           const cancel = el('button', 'btn btn-ghost', 'Cancelar');
           ok.type = cancel.type = 'button'; ok.disabled = cancel.disabled = busy;
           cancel.addEventListener('click', () => { action = null; render(); });
@@ -214,7 +215,7 @@
     }
     return { bar, panel, set(t) {
       current = t;
-      const next = JSON.stringify([t.infoHash, t.tracker?.satisfied, t.tracker?.hitAndRun, t.active, t.onDisk, t.seedChoice]);
+      const next = JSON.stringify([t.infoHash, t.tracker?.satisfied, t.tracker?.hitAndRun, t.active, t.onDisk, t.seedChoice, t.released]);
       if (next !== signature && !busy) { signature = next; action = null; render(); }
     } };
   }

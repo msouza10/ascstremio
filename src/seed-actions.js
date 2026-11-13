@@ -2,10 +2,11 @@
 // encerrar ou apagar. A trava de manutenção também impede um play durante a operação.
 const hnr = require('./hnr-guard');
 const files = require('./retention');
+const { verifySeedFiles } = require('./seed-verify');
 
 async function manageSeed(bridge, infoHash, action) {
   const fail = (status, error) => Object.assign(new Error(error), { status, expose: true });
-  if (!/^[0-9a-f]{40}$/.test(infoHash) || !['keep', 'stop', 'delete'].includes(action)) {
+  if (!/^[0-9a-f]{40}$/.test(infoHash) || !['keep', 'stop', 'delete', 'resume'].includes(action)) {
     throw fail(400, 'Conteúdo ou ação inválida.');
   }
   const entry = bridge.vault.get(infoHash);
@@ -15,6 +16,7 @@ async function manageSeed(bridge, infoHash, action) {
   if ((bridge.streams.get(infoHash) ?? 0) > 0 || bridge.limiter.hasKeyPrefix(`s:${infoHash}:`)) {
     throw fail(409, 'Aguarde a reprodução e a sessão recente terminarem.');
   }
+  if (action === 'resume') return resumeSeed(bridge, infoHash, entry, fail);
   bridge.retention.retiring.add(infoHash);
   try {
     const since = bridge.vault.now();
@@ -70,6 +72,63 @@ async function manageSeed(bridge, infoHash, action) {
   } finally {
     bridge.retention.retiring.delete(infoHash);
   }
+}
+
+async function resumeSeed(bridge, infoHash, entry, fail) {
+  if (!entry.completedAt || entry.seedChoice !== 'stop' || entry.releasedAs !== 'stop'
+    || !bridge.client || bridge.client.torrents.some(t => t.infoHash === infoHash)) {
+    throw fail(409, 'Só é possível voltar a semear um conteúdo parado com arquivos preservados.');
+  }
+  const idle = () => {
+    if (bridge.loading.has(infoHash) || (bridge.streams.get(infoHash) ?? 0) > 0 || bridge.limiter.hasKeyPrefix(`s:${infoHash}:`)
+      || bridge.limiter.hasKeyPrefix(`a:${hnr.ascIdFromPath(entry.torrentPath)}`)) throw fail(409, 'Conteúdo em uso.');
+    const sessions = bridge.limiter.snapshot();
+    if (sessions.maxSessions > 0 && sessions.active >= sessions.maxSessions) throw fail(409, 'Aguarde uma vaga de reprodução antes de verificar os arquivos.');
+  };
+  const confirm = async () => {
+    const since = bridge.vault.now();
+    let result;
+    try { result = await bridge.trackerCheck?.([infoHash], { force: true }); } catch { /* recusa abaixo */ }
+    if (!result?.checked || result.failed || result.semRegistro) throw fail(503, 'Não foi possível confirmar o seed no tracker. Nada foi retomado.');
+    if (!hnr.trackerConfirmed(entry) || entry.tracker.hitAndRun || entry.tracker.checkedAt < since) throw fail(409, 'O tracker ainda não confirmou o cumprimento do seed.');
+    idle();
+  };
+  // A mesma trava bloqueia play, exclusão e retenção enquanto o pedido aguarda a fila.
+  bridge.retention.retiring.add(infoHash);
+  try {
+    return await bridge.withResumeSlot(async () => {
+      idle();
+      await confirm();
+      const verified = await verifySeedFiles(bridge, infoHash);
+      // A leitura pode demorar muitos minutos: a confirmação anterior não basta.
+      await confirm();
+      verified.unchanged();
+      bridge.admitTorrent(infoHash);
+      const previous = { seedChoice: entry.seedChoice, releasedAs: entry.releasedAs, releasedAt: entry.releasedAt };
+      try {
+        const torrent = await bridge.getTorrent(infoHash, {
+          seedResume: true,
+          torrentData: verified.data,
+          // client.get() é assíncrono: confira de novo no ponto síncrono anterior ao add.
+          beforeOpen: () => {
+            idle(); verified.unchanged();
+            if (!hnr.trackerConfirmed(entry) || entry.tracker.hitAndRun) throw fail(409, 'O estado do tracker mudou. Nada foi retomado.');
+          },
+        });
+        idle();
+        if (!torrent.ready || !torrent.done || !hnr.trackerConfirmed(entry) || entry.tracker.hitAndRun) throw fail(409, 'O estado mudou durante a abertura. O seed continua parado.');
+        bridge.vault.setSeedChoice(infoHash, 'keep');
+        return { action: 'resume', message: 'Seed retomado. Os arquivos não serão apagados automaticamente.' };
+      } catch (err) {
+        Object.assign(entry, previous);
+        const opened = bridge.client.torrents.find(t => t.infoHash === infoHash);
+        if (opened) await new Promise((resolve, reject) => opened.destroy({ destroyStore: false }, e => e ? reject(fail(503, 'Não foi possível encerrar a retomada. Confira o painel.')) : resolve()));
+        bridge.completing.delete(infoHash); bridge.startedAt.delete(infoHash); bridge.lastTick.delete(infoHash);
+        if (err.expose) throw err;
+        throw fail(503, 'Não foi possível retomar o seed. Os arquivos foram preservados.');
+      }
+    });
+  } finally { bridge.retention.retiring.delete(infoHash); }
 }
 
 module.exports = { manageSeed };

@@ -69,7 +69,14 @@ test('servidor: estáticos, painel só com sessão confirmada, ação protegida 
     assert.deepEqual(chamadas, [H('a')], 'pedidos inválidos não chegam à ponte');
     assert.equal((await seed(bom, choice)).status, 200);
     assert.deepEqual(chamadas, [H('a'), 'delete']);
+    const resume = { ...choice, action: 'resume' };
+    assert.equal((await seed({ ...bom, Origin: 'http://evil.example' }, resume)).status, 403);
+    assert.equal((await seed({ 'Content-Type': 'application/json', Origin: BASE }, resume)).status, 403);
+    assert.equal((await seed({ ...bom, 'Content-Type': 'text/plain' }, resume)).status, 403);
+    assert.equal((await seed(bom, resume)).status, 200);
+    assert.deepEqual(chamadas, [H('a'), 'delete', 'resume']);
     asc.connected = false;
+    assert.equal((await seed(bom, resume)).status, 401);
     assert.equal((await seed(bom, choice)).status, 401);
     assert.equal((await post(bom, { infoHash: H('a') })).status, 401, 'sessão caiu');
   } finally { await new Promise((r) => server.close(r)); }

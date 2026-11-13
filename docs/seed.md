@@ -72,7 +72,15 @@ Excluir afeta os arquivos listados pelo torrent inteiro, não apenas o vídeo em
 
 Reabrir um filme cujos dados foram apagados baixa novamente e pode criar nova obrigação. O aplicativo tenta avisar nas fontes. Não apague manualmente cache, cofre ou torrents pendentes para liberar espaço: isso remove meios de cumprir o seed, sem cancelar a cobrança no ASC.
 
-### Retenção por orçamento (opcional)
+### Voltar a semear
+
+Depois de **Parar seed**, a página do filme oferece **Voltar a semear** se os arquivos ainda parecem completos no disco. Confirme para verificar todas as peças do torrent antes de anunciar. A verificação lê o filme inteiro, pode levar minutos e usa a mesma fila limitada da retomada automática, sem bloquear o painel. O motor também mantém sua verificação normal: na retomada explícita, cada peça verificada renova o prazo e apenas cinco minutos sem progresso abortam a abertura.
+
+A aplicação exige confirmação atual do tracker antes e depois da verificação. Arquivos ausentes, incompletos, alterados, compartilhados com outro título ou acessados por links são recusados. Reprodução/sessão recente, operação concorrente e quota global de reproduções cheia também bloqueiam a ação. Os arquivos completos não exigem espaço para um download novo: a reserva de disco segue a política normal de admissão.
+
+No sucesso, a escolha vira **Manter semeando** e vale após reiniciar. Tocar o filme novamente, por si só, não altera a decisão persistida de parar. A opção não recupera arquivos excluídos nem baixa o que faltar; nesses casos, a parada é preservada e o painel informa a recusa.
+
+## Retenção por orçamento (opcional)
 
 `RETENTION_MODE=preview` (padrão `off`) acrescenta uma limpeza **manual e confirmada** por espaço ou número de títulos, que complementa `AFTER_SEED` sem substituí-lo e sem outro caminho de liberação:
 

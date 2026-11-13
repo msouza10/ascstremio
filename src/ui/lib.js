@@ -80,7 +80,7 @@
     awaiting: 'Tempo local cumprido; falta o tracker confirmar na próxima conciliação.',
     completing: 'Baixando o restante com prioridade baixa; o seed de 72 h começa ao concluir.',
     partial: 'Você viu só trechos. O site não lista este filme nas pendências. Para quitar o registro, conclua o download.',
-    done: 'Obrigação cumprida e confirmada pelo tracker. A ponte encerra o seed e libera disco e rede.',
+    done: 'Obrigação cumprida e confirmada pelo tracker. Gerencie o seed e os arquivos na página do filme.',
     unstarted: 'Está na biblioteca, mas nunca foi aberto. Sem snatch e sem obrigação.',
   };
 

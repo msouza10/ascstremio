@@ -325,7 +325,7 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       if (url.pathname === '/api/seed') {
         if (!monitor?.manageSeed) return send(404, { error: 'Ações de seed indisponíveis.' });
         if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
-        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash) || !['keep', 'stop', 'delete'].includes(body.action)) return send(400, { error: 'Conteúdo ou ação inválida.' });
+        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash) || !['keep', 'stop', 'delete', 'resume'].includes(body.action)) return send(400, { error: 'Conteúdo ou ação inválida.' });
         try {
           const result = await monitor.manageSeed(body.infoHash, body.action);
           log.info(`decisão de seed pelo painel: ${body.action}`);

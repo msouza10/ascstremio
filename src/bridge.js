@@ -147,6 +147,8 @@ class Bridge {
     this.metrics = new StreamMetrics({ now: monotonic, log, ...streamMetrics });
     this.clock = clock;
     this.resumeRun = null; // retomada em andamento: chamadas concorrentes se juntam a ela
+    this.resumeSlots = 0;
+    this.resumeWaiters = [];
     this.resumeAgain = false;
     this.resumeStats = null;
     // `async (ascId) => ({ infoHash, fileIdx })`: baixa o .torrent do release SÓ no
@@ -393,9 +395,18 @@ class Bridge {
     return this.resumeRun;
   }
 
-  // Uma passada: ordena por risco de seed (src/resume-policy.js) e abre os torrents com no máximo
-  // `resumeConcurrency` ao mesmo tempo. Cada abertura passa por getTorrent (admissão de disco
-  // inclusive) e é medida; a falha de uma não interrompe as outras.
+  // Retomada automática e manual dividem o mesmo limite de verificação/abertura.
+  async withResumeSlot(work) {
+    if (this.resumeSlots >= this.resumeConcurrency) await new Promise(resolve => this.resumeWaiters.push(resolve));
+    else this.resumeSlots++;
+    try { return await work(); }
+    finally {
+      const next = this.resumeWaiters.shift();
+      if (next) next(); else this.resumeSlots--;
+    }
+  }
+
+  // Uma passada: ordena por risco de seed e mede cada abertura. A falha de uma não para as outras.
   async resumeOnce(run = { stats: null }) {
     const pendencias = this.vault.list().filter((e) => this.shouldResume(e) && this.entries.has(e.infoHash)
       && !this.retention.isRetiring(e.infoHash)
@@ -435,7 +446,7 @@ class Bridge {
     });
 
     try {
-      await runLimited(ranked, this.resumeConcurrency, async (item) => {
+      await runLimited(ranked, this.resumeConcurrency, async (item) => this.withResumeSlot(async () => {
         const hash = item.infoHash;
         const pendencia = this.vault.get(hash);
         // Uma ação do painel pode ter parado/excluído enquanto este item aguardava na fila.
@@ -480,7 +491,7 @@ class Bridge {
             classe: record.classe, bytes: record.bytes ?? null, prazo: record.prazo,
           });
         }
-      });
+      }));
     } finally {
       lag.disable();
       stats.totalMs = prior + Math.round(this.monotonic() - t0);
@@ -1027,17 +1038,23 @@ class Bridge {
     return send(405, { error: 'método não permitido' });
   }
 
-  async getTorrent(infoHash) {
-    // Título em remoção pela retenção: nada o reabre até terminar (evita corrida play x apagar).
-    if (this.retention.isRetiring(infoHash)) {
-      const err = new Error('Título em manutenção (retenção de disco); tente de novo em instantes.');
-      err.status = 503;
-      err.expose = true;
-      throw err;
-    }
+  async getTorrent(infoHash, { seedResume = false, torrentData = null, beforeOpen = () => {} } = {}) {
+    // Reconfira depois de cada espera anterior à abertura: a manutenção pode começar
+    // enquanto um play já aguarda client.get(). Só a própria retomada atravessa a trava.
+    const checkMaintenance = () => {
+      if (this.retention.isRetiring(infoHash) && !seedResume) {
+        const err = new Error('Título em manutenção (retenção de disco); tente de novo em instantes.');
+        err.status = 503;
+        err.expose = true;
+        throw err;
+      }
+    };
+    const timeoutMs = seedResume ? 5 * 60_000 : 30_000;
+    checkMaintenance();
     if (this.loading.has(infoHash)) return this.loading.get(infoHash);
 
     const already = await this.client.get(infoHash);
+    checkMaintenance();
     if (this.loading.has(infoHash)) return this.loading.get(infoHash);
     if (already) {
       // O motor registra o infoHash antes de terminar de ler o .torrent: nesse
@@ -1045,9 +1062,15 @@ class Bridge {
       // player dispara HEAD e GET quase juntos.
       if (already.ready) return already;
       await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('timeout ao abrir o torrent')), 30000);
-        already.once('ready', () => { clearTimeout(timer); resolve(); });
-        already.once('error', () => { clearTimeout(timer); reject(new Error('falha ao abrir o torrent')); });
+        let timer = setTimeout(() => { finish(); reject(new Error('timeout ao abrir o torrent')); }, timeoutMs);
+        const progress = () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => { finish(); reject(new Error('timeout ao abrir o torrent')); }, timeoutMs);
+        };
+        const finish = () => { clearTimeout(timer); already.removeListener('verified', progress); };
+        if (seedResume) already.on('verified', progress);
+        already.once('ready', () => { finish(); resolve(); });
+        already.once('error', () => { finish(); reject(new Error('falha ao abrir o torrent')); });
       });
       return already;
     }
@@ -1063,13 +1086,22 @@ class Bridge {
     this.admitTorrent(infoHash);
 
     const task = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timeout ao abrir o torrent')), 30000);
+      // Filmes grandes podem levar horas. Na retomada explícita, cada peça
+      // verificada renova o prazo; só cinco minutos sem progresso abortam.
+      let pending;
+      let timer = setTimeout(() => { finish(); reject(new Error('timeout ao abrir o torrent')); }, timeoutMs);
+      const progress = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { finish(); reject(new Error('timeout ao abrir o torrent')); }, timeoutMs);
+      };
+      const finish = () => { clearTimeout(timer); pending?.removeListener('verified', progress); };
       try {
         const base = entry.announceBase || this.announceBase;
         const announce = this.passkey && base
           ? [announceWithPasskey(base, this.passkey)]
           : undefined;
-        const pending = this.client.add(entry.torrentPath, {
+        beforeOpen();
+        pending = this.client.add(torrentData ?? entry.torrentPath, {
           path: this.storeDir,
           // Sem deselect o WebTorrent baixaria o torrent inteiro sozinho.
           deselect: true,
@@ -1078,7 +1110,7 @@ class Bridge {
           // A credencial entra aqui, só em memória, e nunca vai para o disco.
           ...(announce ? { announce } : {}),
         }, (torrent) => {
-          clearTimeout(timer);
+          finish();
           if (!this.startedAt.has(torrent.infoHash)) {
             this.startedAt.set(torrent.infoHash, Date.now());
           }
@@ -1104,7 +1136,7 @@ class Bridge {
             freeleech: entry.freeleech ?? null,
           });
           // Conclusão em segundo plano pedida antes de um reinício: retoma.
-          if (this.vault.get(torrent.infoHash)?.backgroundComplete) this.completionTick();
+          if (!seedResume && this.vault.get(torrent.infoHash)?.backgroundComplete) this.completionTick();
           const onDone = () => {
             this.vault.markCompleted(torrent.infoHash);
           };
@@ -1113,14 +1145,15 @@ class Bridge {
 
           resolve(torrent);
         });
+        if (seedResume && !pending.ready) pending.on('verified', progress);
         pending.on('warning', (err) => tlog.warn(`aviso de conectividade em ${short(infoHash)}: ${err?.message ?? err}`));
         pending.once('error', (err) => {
           tlog.error(`falha ao abrir ${short(infoHash)}: ${err?.message ?? err}`);
-          clearTimeout(timer);
+          finish();
           reject(new Error('Falha ao abrir torrent'));
         });
       } catch (err) {
-        clearTimeout(timer);
+        finish();
         reject(err);
       }
     }).finally(() => this.loading.delete(infoHash));
