@@ -455,11 +455,11 @@
 
     // Busca por nome, chave ou explicação. Grupo sem resultado some; avançadas com resultado abrem.
     function applySearch() {
-      const q = search.value.trim().toLowerCase();
+      const q = search.value.trim();
       let any = false;
       for (const s of sections) {
         let hits = 0;
-        for (const row of s.card.querySelectorAll('.opt')) { const ok = !q || row.dataset.q.includes(q); row.hidden = !ok; if (ok) hits += 1; }
+        for (const row of s.card.querySelectorAll('.opt')) { const ok = M.matchesQuery(state.options.find((o) => o.key === row.dataset.key), q); row.hidden = !ok; if (ok) hits += 1; }
         if (s.adv) {
           const advHit = [...s.adv.querySelectorAll('.opt')].some((r) => !r.hidden);
           s.adv.hidden = !advHit;
@@ -598,6 +598,10 @@
       const form = el('form', 'stack');
       form.noValidate = true;
       sections = [];
+      // Problemas que JÁ existem na configuração (state.problems) também apontam o campo e abrem a seção
+      // avançada; `errors.byKey` só tem o que veio de uma prévia ou gravação que falhou.
+      const known = M.problemsByKey(state.problems, state.options).byKey;
+      const problemsOf = (key) => errors.byKey[key] ?? known[key];
       for (const g of M.groupOptions(state.options, state.groups)) {
         const c = card();
         c.classList.add('cfg-group');
@@ -610,14 +614,16 @@
         for (const o of g.options) {
           const f = optionField(o, drafts, (v) => { if (v === null || v === M.textOf(o.value)) { if (v === null) drafts[o.key] = null; else delete drafts[o.key]; } else drafts[o.key] = v; previewHost.replaceChildren(); updateBar(); });
           fields.set(o.key, f);
-          f.root.dataset.q = `${M.labelOf(o)} ${o.key} ${o.description ?? ''}`.toLowerCase();
-          if (errors.byKey[o.key]) f.showError(errors.byKey[o.key]);
+          f.root.dataset.key = o.key;
+          if (problemsOf(o.key)) f.showError(problemsOf(o.key));
           (o.access === 'advanced' ? advList : list).append(f.root);
         }
         c.append(list);
         let adv = null;
         if (advList.children.length) {
           adv = el('details', 'more');
+          // Abre sozinha quando há algo que o operador precisa ver: rascunho, erro ou valor fora do padrão.
+          adv.open = g.options.some((o) => o.access === 'advanced' && (Object.prototype.hasOwnProperty.call(drafts, o.key) || problemsOf(o.key) || o.source !== 'default'));
           adv.append(el('summary', '', `Opções avançadas (${advList.children.length})`), advList);
           c.append(adv);
         }
