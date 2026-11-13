@@ -333,7 +333,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     if (!credentials) throw new PanelError(503, 'unavailable', 'Credenciais indisponíveis.');
     if (!body || typeof body.name !== 'string') throw new PanelError(400, 'invalid', 'Informe o nome do aparelho.');
     if (credentials.list().filter((c) => !c.revokedAt).length >= MAX_CREDENTIALS) {
-      throw new PanelError(422, 'limit', `Há ${MAX_CREDENTIALS} credenciais ativas. Revogue as que não usa (npm run credenciais -- revogar).`);
+      throw new PanelError(422, 'limit', `Há ${MAX_CREDENTIALS} credenciais ativas. Revogue as que não usa (aqui no painel, em Addons, ou pelo terminal).`);
     }
     const info = addonUrlInfo(resolve());
     if (!info.url) throw new PanelError(409, 'restart', info.reason);
@@ -355,6 +355,19 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     };
   }
 
+  // Revoga uma credencial pelo id público. Vale na hora (o verificador deixa de aceitar o token).
+  // Devolve só a visão pública: nunca token nem verificador.
+  function revokeCredential(body) {
+    if (!credentials) throw new PanelError(503, 'unavailable', 'Credenciais indisponíveis.');
+    const id = body && body.id;
+    if (typeof id !== 'string' || !/^c_[0-9a-f]{8}$/.test(id)) throw new PanelError(400, 'invalid', 'Credencial inválida.');
+    const found = credentials.list().find((c) => c.id === id);
+    if (!found) throw new PanelError(404, 'not_found', 'Credencial não encontrada.');
+    if (found.revokedAt) throw new PanelError(409, 'revoked', 'Esta credencial já foi revogada.');
+    credentials.revoke(id);
+    return { credentials: credentials.list() };
+  }
+
   // Conexão do Stremio por credencial ativa (só leitura; vem do que o addon recebeu, ver
   // src/addon-activity.js). Sem o módulo, tudo fica "aguardando": nunca se afirma instalação.
   function connection() {
@@ -368,7 +381,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     };
   }
 
-  return { state, preview, save, wizardState, wizardMark, createCredential, connection, listCredentials: () => (credentials ? credentials.list() : []) };
+  return { state, preview, save, wizardState, wizardMark, createCredential, revokeCredential, connection, listCredentials: () => (credentials ? credentials.list() : []) };
 }
 
 module.exports = { createPanelSettings, PanelError, NETWORK_KEYS, WIZARD_FILE };

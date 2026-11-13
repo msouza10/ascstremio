@@ -341,7 +341,7 @@
       });
       const names = st.credentials.filter((x) => !x.revokedAt);
       const parts = [f];
-      if (names.length && showActiveList) parts.push(el('p', 'foot', `Credenciais ativas: ${names.map((x) => x.name).join(', ')}. Para revogar, use o terminal: npm run credenciais -- revogar.`));
+      if (names.length && showActiveList) parts.push(el('p', 'foot', `Credenciais ativas: ${names.map((x) => x.name).join(', ')}. Para revogar, use a aba Addons da página Conta (ou o terminal).`));
       if (shown) {
         // Com a URL já na tela, o foco é instalar: criar outra credencial fica recolhido.
         const more = el('details', 'more');
@@ -1036,10 +1036,41 @@
   }
 
   // Aba "Addons" da página Conta: gerar um addon novo (credencial + URL + confirmação no Stremio) e
-  // ver os já gerados. Revogar ainda é pelo terminal (o servidor não tem essa ação no painel).
+  // ver os já gerados e revogar. A CLI (npm run credenciais) continua revogando também.
   function addonsPanel() {
     const root = el('div', 'stack');
     let state = null;
+    // Anúncio do resultado e erro ficam fora dos cartões: o painel é redesenhado após revogar, e
+    // regiões recriadas junto com ele não anunciariam nada. Os mesmos elementos voltam a cada draw().
+    const live = liveRegion();
+    const fail = errorBox();
+    let busy = false;
+    // A URL guardada na aba (sessionStorage, mesma chave do installCard) some junto com a credencial.
+    function forget(id) {
+      try {
+        const all = JSON.parse(sessionStorage.getItem('ascstremio.urls') ?? '{}') || {};
+        delete all[id];
+        sessionStorage.setItem('ascstremio.urls', JSON.stringify(all));
+      } catch { /* sem armazenamento: nada a esquecer */ }
+    }
+    async function revoke(x, buttons) {
+      busy = true; fail.clear(); setText(live, 'Revogando…');
+      for (const b of buttons) b.disabled = true;
+      try {
+        await app().call('POST', 'credentials/revoke', { id: x.id });
+        forget(x.id);
+        state = await loadState();
+        draw();
+        setText(live, `Addon «${x.name}» revogado. O Stremio que usava esta URL deixa de funcionar.`);
+        root.querySelector('[data-cred-head]')?.focus();
+      } catch (ex) {
+        setText(live, '');
+        // A credencial pode ter sumido por outro caminho (CLI): relê o estado antes de mostrar o erro.
+        if (ex.status === 404 || ex.status === 409) { try { state = await loadState(); draw(); } catch { /* mantém a tela */ } }
+        fail.show('Não foi possível revogar', [ex.message]);
+        fail.root.focus();
+      } finally { busy = false; for (const b of buttons) b.disabled = false; }
+    }
     const SITUACAO = {
       aguardando: 'Sem atividade desde que o serviço iniciou',
       manifesto_lido: 'Manifesto lido',
@@ -1049,7 +1080,9 @@
 
     function listCard() {
       const c = card();
-      c.append(cardHead('Addons gerados'));
+      const head = cardHead('Addons gerados');
+      head.tabIndex = -1; head.dataset.credHead = '1';
+      c.append(head);
       const active = state.credentials.filter((x) => !x.revokedAt);
       if (!active.length) { c.append(el('p', 'muted', 'Nenhum addon gerado ainda.')); return c; }
       const ul = el('ul', 'cred-list');
@@ -1060,10 +1093,29 @@
         meta.append(el('strong', '', x.name), el('small', '', `Criado em ${fmtDate(new Date(x.createdAt).toISOString())}`));
         const chip = el('span', 'cred-status', '…');
         status.set(x.id, chip);
-        li.append(meta, chip);
+        const actions = el('div', 'item-badges');
+        const rm = el('button', 'btn btn-danger btn-sm btn-icon'); rm.type = 'button';
+        rm.setAttribute('aria-label', `Revogar o addon ${x.name}`);
+        rm.append(icon('trash-2'), el('span', 'btn-label', 'Revogar'));
+        // Confirmação na própria linha (sem confirm()): revogar derruba o Stremio que usa a URL.
+        rm.addEventListener('click', () => {
+          if (busy) return;
+          clear(li);
+          const ask = el('p', 'cred-confirm', `Revogar «${x.name}»? O Stremio que usa esta URL deixa de funcionar.`);
+          const yes = el('button', 'btn btn-danger btn-sm', 'Confirmar revogação'); yes.type = 'button';
+          const no = el('button', 'btn btn-outline btn-sm', 'Cancelar'); no.type = 'button';
+          const both = [yes, no];
+          yes.addEventListener('click', () => revoke(x, both));
+          no.addEventListener('click', () => { clear(li); li.append(meta, chip, actions); rm.focus(); });
+          const row = el('div', 'item-badges'); row.append(yes, no);
+          li.append(ask, row);
+          no.focus();
+        });
+        actions.append(rm);
+        li.append(meta, chip, actions);
         ul.append(li);
       }
-      c.append(ul, el('p', 'foot', 'A URL de um addon só aparece quando ele é criado. Para revogar um addon, use o terminal: npm run credenciais -- revogar.'));
+      c.append(ul, el('p', 'foot', 'A URL de um addon só aparece quando ele é criado. Se perder a URL, revogue o addon aqui (ou pelo terminal, com npm run credenciais -- revogar) e gere outro.'));
       // A situação vem da atividade vista pelo serviço (zera quando ele reinicia).
       app().call('GET', 'addon-connection').then((r) => {
         for (const cr of r.credentials) {
@@ -1084,7 +1136,7 @@
       // Quando a conexão de um addon muda (ex.: o Stremio confirmou), a lista relê a situação.
       let seen = '';
       const onConnection = (s) => { if (s !== seen) { seen = s; if (s !== 'aguardando') refreshList(); } };
-      root.append(installCard(() => state, M.copyName(state.mode, state.hostname), onConnection, null, false, refreshList).root, list);
+      root.append(fail.root, installCard(() => state, M.copyName(state.mode, state.hostname), onConnection, null, false, refreshList).root, list, live);
     }
 
     root.append(loadingCard('Carregando…'));

@@ -283,6 +283,8 @@ td a:hover { color: var(--primary); }
 .cred-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cred-meta small { font-size: 12px; color: var(--muted-foreground); }
 .cred-status { font-size: 12px; color: var(--muted-foreground); text-align: right; }
+.cred-list li { flex-wrap: wrap; }
+.cred-confirm { margin: 0; font-size: 13px; flex: 1 1 240px; }
 .cred-status[data-s="instalado"], .cred-status[data-s="em_uso"] { color: var(--seed); }
 .cred-status[data-s="manifesto_lido"] { color: var(--complete); }
 @media (max-width: 560px) { .cred-list li { flex-direction: column; align-items: flex-start; } .cred-status { text-align: left; } }
