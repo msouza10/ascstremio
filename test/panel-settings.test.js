@@ -513,3 +513,8 @@ test('restoreWizard: JSON quebrado, nulo ou de tipo errado volta ao início', ()
   }
   assert.deepEqual(M.restoreWizard(JSON.stringify({ step: 'seed', drafts: [1] }), options, steps), { step: 'seed', drafts: {} });
 });
+
+test('rótulos: toda opção do esquema tem título em português (a chave crua não basta)', () => {
+  const semTitulo = settings.SCHEMA.filter((e) => M.labelOf({ key: e.key }) === e.key).map((e) => e.key);
+  assert.deepEqual(semTitulo, [], `opções sem título em FRIENDLY (src/ui/settings-model.js): ${semTitulo.join(', ')}`);
+});
