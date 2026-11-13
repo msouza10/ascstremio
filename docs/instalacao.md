@@ -2,6 +2,17 @@
 
 O ASCStremio precisa de uma conta individual válida no ASC, acesso à internet, espaço para os vídeos e uma máquina que permaneça ligada para semear. O Stremio é instalado separadamente. O addon não cria uma conta no tracker.
 
+## Antes de começar
+
+| Plataforma | Precisa de |
+|---|---|
+| Linux | glibc em x64, arm64 ou armv7 (Alpine/musl não serve com o Node oficial); `curl` ou `wget`, `tar`, `gzip` e `sha256sum` (ou `shasum`) para o instalador remoto; `systemd --user` para o serviço (sem ele, o instalador mostra como rodar à mão) |
+| Docker / Podman | Docker ou Podman com Compose v2 |
+| Windows | Windows 64 bits; o instalador já traz o Node |
+| Execução manual | Node.js 22+ e npm |
+
+Em todos os casos: a conta e a passkey do ASC, e espaço livre para os vídeos.
+
 ## Escolha a instalação
 
 | Plataforma | Caminho | Dados persistentes |
@@ -22,13 +33,14 @@ scripts/install.sh --check
 scripts/install.sh
 ```
 
-`--check` confere sem instalar. O instalador executa as verificações e cria `ascstremio.service` quando há `systemd --user`; sem ele, mostra como executar manualmente. O script tenta habilitar o serviço no boot com linger. Consulte a saída para saber se isso funcionou na sua máquina.
+`--check` confere o ambiente e roda os testes, sem criar serviço. O instalador executa as verificações e cria `ascstremio.service` quando há `systemd --user`; sem ele, mostra como executar manualmente. Para o serviço subir no boot sem você estar logado, o instalador tenta ligar o *linger* (`loginctl enable-linger`); se o sistema pedir autorização e ela não for dada, o serviço só roda com a sessão aberta. Confira a saída para saber o que aconteceu.
 
 Em Linux glibc x64, arm64 ou armv7, se faltar Node 22+, o script baixa o Node oficial e confere seu SHA-256. `--system-node` impede esse download. O binário oficial não serve para musl/Alpine; use um Node compatível ou a imagem do projeto.
 
 | Opção | Uso |
 |---|---|
 | `--no-service` | Instala dependências e verifica sem criar serviço |
+| `--no-linger` | Não liga o linger: o serviço só roda com você logado |
 | `--system-node` | Exige Node compatível já instalado |
 | `--replace-manual` | Encerra com SIGINT uma execução manual identificada deste projeto que esteja ocupando as portas |
 | `--uninstall` | Remove o serviço, preservando os dados |
@@ -62,6 +74,17 @@ A variável precisa ser passada ao **bash**, depois do pipe: o script-fonte não
 
 O código é instalado em `~/.local/share/ascstremio/app`; os dados ficam em `~/.local/share/ascstremio/data` (salvo configuração de `XDG_DATA_HOME` ou `ASCSTREMIO_HOME`). Executar novamente atualiza o código e preserva os dados. O script baixa `ascstremio-latest.tar.gz` e seu `.sha256` e recusa um hash diferente. O hash servido pelo mesmo servidor não protege contra comprometimento dessa origem.
 
+**Verifique o download.** O instalador já confere o `.sha256` do pacote. Para conferir também o `SHA256SUMS` da release, baixe-o junto do pacote e rode, na mesma pasta, `sha256sum -c --ignore-missing SHA256SUMS`. A procedência (atestado de build) se verifica com `gh attestation verify ascstremio-X.Y.Z.tar.gz --repo msouza10/ascstremio`, que exige o GitHub CLI 2.49 ou mais novo.
+
+**Comandos do aplicativo na instalação remota.** `npm run credenciais`, `configurar`, `rede` e os demais procuram os dados em `<pasta do código>/private`, mas a instalação remota guarda os dados em outra pasta. Rode-os na pasta do código e informe o `DATA_DIR`:
+
+```bash
+cd ~/.local/share/ascstremio/app
+DATA_DIR="$HOME/.local/share/ascstremio/data" npm run credenciais -- criar "Stremio"
+```
+
+Sem o `DATA_DIR`, o comando não acha os dados e recusa. O mesmo vale para `scripts/install.sh --uninstall`. As variáveis fixas do serviço ficam em `~/.local/share/ascstremio/data/service.env`.
+
 **Repositório privado:** esses comandos curl não autenticam no GitHub. Enquanto o repositório e seus assets exigirem acesso, uma resposta 404/401 não significa que o caminho esteja errado. Com GitHub CLI já autenticado e autorizado, baixe os arquivos e instale localmente:
 
 ```bash
@@ -78,7 +101,7 @@ ASCSTREMIO_BASE_URL="file://$PWD" bash install.sh
 
 ### Usar a imagem pronta do GHCR
 
-A imagem do projeto é **`ghcr.io/msouza10/ascstremio:latest`**. Não precisa de Node no host nem de clonar/compilar o código. A esteira publica variantes Linux `amd64` e `arm64`, com tags de versão completa, versão menor e `latest`. Para fixar uma distribuição, use uma tag publicada, por exemplo `:0.1.1`, em lugar de `:latest`.
+A imagem do projeto é **`ghcr.io/msouza10/ascstremio:latest`**. Não precisa de Node no host nem de clonar/compilar o código. A esteira publica variantes Linux `amd64` e `arm64`, com tags de versão completa, versão menor e `latest`. Para fixar uma distribuição, use uma tag publicada (`:X.Y.Z`, com a versão desejada) em lugar de `:latest`.
 
 Se o pacote exigir autenticação, faça login primeiro:
 
@@ -166,7 +189,7 @@ As portas HTTP 7000/7010/7020 ficam em `127.0.0.1` do host. A porta TCP 7030 de 
 
 ## Windows
 
-Execute `AscStremio-Setup-<versão>.exe` de uma distribuição confiável. Ele contém Node e dependências e instala por usuário, sem administrador, em `%LOCALAPPDATA%\Programs\AscStremio`.
+Baixe `AscStremio-Setup-<versão>.exe` na [página de releases](https://github.com/msouza10/ascstremio/releases) (só 64 bits) e confira o hash com o `.sha256` ao lado dele (no PowerShell: `Get-FileHash .\AscStremio-Setup-<versão>.exe -Algorithm SHA256`). Ele contém Node e dependências e instala por usuário, sem administrador, em `%LOCALAPPDATA%\Programs\AscStremio`.
 
 O Menu Iniciar recebe atalhos para abrir o painel, parar o processo, abrir a pasta de dados, a configuração no terminal (`configurar.cmd`) e **Obter URL do addon** (`credenciais.cmd`). Na última página do instalador há uma caixa marcada com o mesmo nome: ela sobe o serviço, emite a primeira credencial só se ainda não houver nenhuma ativa e mostra a URL do Stremio **uma única vez**, numa janela de console local (sem log, arquivo ou área de transferência; copie-a antes de fechar). Com o instalador silencioso (`/S`) nada é emitido nem mostrado. Atualizar ou reinstalar não troca nem revoga credenciais; rodar o atalho de novo só informa que já existe uma (para outro aparelho: `credenciais.cmd criar "Nome"`). Um atalho na pasta Inicializar sobe o programa ao entrar no Windows. A máquina precisa continuar ligada e a sessão de usuário precisa permitir sua execução. A desinstalação mantém os dados.
 
@@ -197,15 +220,48 @@ read -r -s -p 'Passkey do ASC: ' asc_passkey; printf '\n'
 unset asc_passkey
 ```
 
-O exemplo é para Bash e para o `DATA_DIR` padrão do código. Em uma instalação remota ou Windows, use a pasta de dados correspondente. Nunca envie a passkey pelo chat ou por uma issue. No Windows, proteja o arquivo pelas permissões da conta de usuário.
+O exemplo é para Bash e para a instalação pelo código (pasta `private/`). Na instalação remota, a pasta é `~/.local/share/ascstremio/data`: troque `private` por `"$HOME/.local/share/ascstremio/data"` nos comandos. No Windows, crie o arquivo `passkey.txt` em `%LOCALAPPDATA%\AscStremio\data` com um editor de texto simples, só com a passkey, sem espaços nem linhas extras. No Docker, use o comando da seção de imagem pronta. Nunca envie a passkey pelo chat ou por uma issue. No Windows, proteja o arquivo pelas permissões da conta de usuário.
 
-`PASSKEY` no ambiente tem precedência sobre o arquivo. A limitação atual de `PASSKEY_FILE` está descrita em [configuração](configuracao.md#credenciais-e-caminhos).
+`PASSKEY` no ambiente tem precedência sobre o arquivo.
 
 ## Primeiro acesso
 
-1. Abra **http://127.0.0.1:7020/** e faça login no ASC. A senha é usada para entrar; a sessão é salva em disco.
+1. Abra **http://127.0.0.1:7020/** e faça login no ASC. A senha é usada para entrar; a sessão é salva em disco. Depois do primeiro login o painel abre o assistente de primeira configuração uma vez; dá para pulá-lo e ajustar tudo depois em **Configurações**.
 2. Mantenha **somente freeleech** ativado até entender as regras de ratio e seed.
-3. Emita a credencial de reprodução (o instalador Linux já emite a primeira): `npm run credenciais -- garantir`; no contêiner, `scripts/docker.sh credenciais garantir`; no Windows, o atalho **Obter URL do addon** (ou `credenciais.cmd` na pasta de instalação). Instale no Stremio a URL `http://127.0.0.1:7000/<credencial>/manifest.json` mostrada na saída; ela aparece só uma vez.
+3. Emita a credencial de reprodução (o instalador Linux já emite a primeira): `npm run credenciais -- garantir`; no contêiner, `scripts/docker.sh credenciais garantir`; no Windows, o atalho **Obter URL do addon** (ou `credenciais.cmd` na pasta de instalação). Na instalação remota Linux, informe o `DATA_DIR` (veja acima). Instale no Stremio a URL `http://127.0.0.1:7000/<credencial>/manifest.json` mostrada na saída: no app do Stremio, abra **Addons**, cole a URL no campo de busca de addons e instale. Ela aparece só uma vez; se perder, use **Substituir** em Conta › Addons no painel (ou `credenciais rotacionar <id>`) e instale a URL nova.
 4. Confira os dados da conta no painel. Se ainda não foram lidos, não interprete a ausência de avisos como regularidade.
 
-Siga para [uso](uso.md) ou [diagnóstico](manutencao.md#diagnóstico).
+## Parar, iniciar e ver o estado
+
+| Instalação | Parar | Iniciar | Estado e logs |
+|---|---|---|---|
+| Serviço Linux | `systemctl --user stop ascstremio` | `systemctl --user start ascstremio` | `systemctl --user status ascstremio` e `journalctl --user -u ascstremio -f` |
+| Docker pelo script | `scripts/docker.sh stop` | `scripts/docker.sh run` | `scripts/docker.sh logs` |
+| Compose | `docker compose stop` | `docker compose start` | `docker compose ps` e `docker compose logs -f` |
+| Windows | atalho **Parar servico** (pasta "Amigos Share Stremio" do Menu Iniciar) | atalho **Abrir painel**, que sobe o programa se ele estiver parado | `%LOCALAPPDATA%\AscStremio\data\service.log` |
+| Manual | `Ctrl+C` | `npm start` | terminal |
+
+Parar interrompe o seed, mas os prazos do tracker continuam correndo. Para trocar a versão, veja [atualizar](manutencao.md#atualizar-e-reiniciar).
+
+## Desinstalar
+
+Desinstalar não apaga os dados nem cancela nenhuma obrigação de seed no ASC. Antes de apagar qualquer coisa, veja se há seed pendente no painel e faça [backup](manutencao.md#backup-e-restauração) se precisar.
+
+- **Linux:** `scripts/install.sh --uninstall` remove só o serviço. Na instalação remota, rode `DATA_DIR="$HOME/.local/share/ascstremio/data" ~/.local/share/ascstremio/app/scripts/install.sh --uninstall`. O código e os dados ficam em `~/.local/share/ascstremio`; apague essa pasta só se não precisar mais deles.
+- **Docker / Podman:** `docker compose down` (ou `scripts/docker.sh stop`) para o contêiner e preserva o volume. Não use `-v`. O volume só sai com `docker volume rm ascstremio-data`, quando você tiver certeza.
+- **Windows:** remova "Amigos Share · Stremio" em Configurações › Aplicativos. Os dados em `%LOCALAPPDATA%\AscStremio\data` ficam; apague a pasta à mão se quiser.
+- Revogue as credenciais de reprodução que não for mais usar (Conta › Addons no painel, ou `credenciais revogar <id>`) e remova o addon no Stremio.
+
+## Problemas na instalação
+
+| Sintoma | O que fazer |
+|---|---|
+| `faltou o comando tar`, `curl` ou `sha256sum` | Instale o pacote correspondente do sistema e rode de novo |
+| `SHA-256 não confere` ou `falha ao baixar o .sha256` | Nada foi instalado. Rode de novo; com repositório privado, use o download pelo `gh` descrito acima |
+| A instalação falhou depois de trocar o código | A versão anterior fica em `~/.local/share/ascstremio/app.anterior`; renomeie-a de volta para `app` se quiser voltar |
+| `EADDRINUSE` ou porta ocupada | Outra instância usa as portas 7000, 7010 ou 7020. Pare-a, ou use `--replace-manual` se for uma execução manual deste projeto |
+| Node ausente ou antigo (Alpine/musl) | O Node oficial baixado pelo instalador não roda em musl: instale um Node 22+ compatível e use `--system-node`, ou use a imagem Docker |
+| Sem `systemd --user` (WSL, contêiner) | O instalador instala e testa, mas não cria serviço; rode `npm start` na pasta do código com o `DATA_DIR` desejado |
+| O serviço não sobe depois de reiniciar o computador | Veja o linger na saída do instalador; sem ele, o serviço só roda com você logado |
+
+Para falhas depois de instalado, veja o [diagnóstico](manutencao.md#diagnóstico). Siga para [uso](uso.md).

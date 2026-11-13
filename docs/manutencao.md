@@ -14,6 +14,8 @@ Antes de atualizar ou mover uma instalação, identifique o `DATA_DIR` e verifiq
 | `scripts/docker.sh` | Pare com `scripts/docker.sh stop`, execute `scripts/docker.sh build` e depois `scripts/docker.sh run`; preserve o volume |
 | Windows | Pare pelo atalho e execute o instalador da versão desejada; os dados ficam fora da pasta do programa |
 
+**Faça o [backup](#backup-e-restauração) dos dados antes de atualizar.** Quem vem de uma versão anterior à 0.2.0 precisa emitir uma credencial (`credenciais garantir`) e reinstalar o addon no Stremio com a URL nova: a chave única antiga (`bridge-key`) deixou de valer. Os dados e o seed não são afetados. Depois de atualizar, confirme a versão e o estado do serviço no painel e nos logs.
+
 `scripts/docker.sh run` reutiliza a imagem `latest` existente e recria o contêiner. Use `build` explicitamente para incorporar código novo. Não use `docker compose down -v` para uma atualização: `-v` remove os volumes.
 
 No serviço Linux, alterar `service.env` exige reiniciar. O serviço tenta iniciar mesmo sem rede e o monitor volta a consultar o ASC depois. Verifique logs e status; processo ativo não significa sessão válida ou tracker acessível.
@@ -37,7 +39,7 @@ Ao iniciar, o programa cria o arquivo `.ascstremio.lock` em `DATA_DIR` (e em `AS
 
 O cache pode ser grande, mas restaurar apenas o cofre não restaura os dados necessários para semear. No Docker, copie o conteúdo do volume correto; os nomes de Compose e `docker.sh` podem ser diferentes. Restaurar contadores antigos nunca substitui a leitura do tracker.
 
-Desinstalar o serviço Linux ou o programa Windows preserva os dados. A exclusão definitiva deve considerar seed pendente e revogação das credenciais, além de backups existentes.
+Desinstalar o serviço Linux ou o programa Windows preserva os dados (passo a passo em [instalação](instalacao.md#desinstalar)). A exclusão definitiva deve considerar seed pendente e revogação das credenciais, além de backups existentes.
 
 ## Retenção por orçamento
 
@@ -52,11 +54,11 @@ No contêiner, rode `node src/retencao-cli.js` dentro dele (`docker exec`). As m
 
 Na execução, o aplicativo: (1) relê o tracker à força para cada candidato; se a sessão ou o tracker falhar, **cancela tudo** e nada é removido; (2) recalcula; (3) reconfere cada título imediatamente antes de remover e, se algo mudou (play, sessão, obrigação reaberta, tracker sem registro), o título sai da lista; (4) enquanto remove um título, tentativas de abri-lo recebem `503`; (5) encerra o torrent e apaga apenas os arquivos que o `.torrent` lista, um a um, dentro de `BRIDGE_STORE`, sem seguir symlink e sem tocar em link físico; arquivo em uso permanece e é reportado. O log registra cada remoção (título abreviado, hash curto, bytes), sem caminhos absolutos nem segredos. Pastas de título que ficam vazias são aparadas; o `.torrent` e o cofre permanecem.
 
-Limites conhecidos: bytes da prévia são estimativas (blocos alocados); se o orçamento não é alcançável só com títulos elegíveis, a prévia informa a falta e **não oferece execução**; a retenção não remove órfãos, parciais de streaming nem títulos com obrigação aberta, de modo que um disco cheio por eles não é resolvido por ela. Não há painel de execução nesta versão.
+Limites conhecidos: bytes da prévia são estimativas (blocos alocados); se o orçamento não é alcançável só com títulos elegíveis, a prévia informa a falta e **não oferece execução**; a retenção não remove órfãos, parciais de streaming nem títulos com obrigação aberta, de modo que um disco cheio por eles não é resolvido por ela.
 
 ## Medir stalls e seeks da reprodução
 
-A ponte **só observa** a reprodução (issue #33); ela não altera leitura antecipada, buffer nem timeouts. Antes de propor qualquer ajuste, colete números do seu uso real. O snapshot da ponte traz o bloco `streaming` (JSON de `GET /api/monitor` do painel, com a sessão do ASC conectada; ainda não há tela própria) e cada resposta de vídeo encerrada gera uma linha `reprodução: resposta encerrada` no log (nível `info` quando houve stall, seek ou 504; `debug` nos demais).
+A ponte **só observa** a reprodução; ela não altera leitura antecipada, buffer nem timeouts. O snapshot da ponte traz o bloco `streaming` (JSON de `GET /api/monitor` do painel, com a sessão do ASC conectada; ainda não há tela própria) e cada resposta de vídeo encerrada gera uma linha `reprodução: resposta encerrada` no log (nível `info` quando houve stall, seek ou 504; `debug` nos demais).
 
 | Campo | Significado |
 |---|---|
@@ -68,36 +70,7 @@ A ponte **só observa** a reprodução (issue #33); ela não altera leitura ante
 | `outcomes` | `ok`, `fechado` (player fechou ou saltou), `504`, `erro` |
 | `sessions` | até 8 sessões recentes (um número sequencial por arquivo, descartado após 30 min ocioso), com seeks, stalls e 504 de cada |
 
-Só há números: nenhum infoHash, caminho, nome de arquivo, IP, credencial ou passkey vai ao snapshot nem ao log. Os contadores valem desde a partida do processo, não são persistidos e reiniciam junto com ele.
-
-### Benchmark offline
-
-`npm run bench:reproducao -- [opções]` (`--help` lista tudo) monta em loopback e em temporários um semeador WebTorrent com um arquivo **sintético**, a `Bridge` real e um player simulado que lê com Range sequencial e saltos. Não usa rede externa, conta nem torrent real, e **não roda no CI**. Parâmetros principais: `--size-mib`, `--seed-rate-kib` (lista separada por vírgula = uma rodada por valor, para comparar), `--pattern sequential|seeks`, `--seeks`, `--read-mib`, `--connect-delay-ms` (peers que demoram a aparecer), `--first-byte-timeout-ms`, `--stall-ms` e `--seed-value` (mesmos bytes e saltos). Saída em JSON ou `--format table`. Cada rodada informa primeiro byte (visto pelo player e pela ponte), stalls, 504, vazão média, bytes baixados além dos lidos, bytes que ainda chegam 0,5 a 2,5 s depois de o player fechar, `HEAD` sem download e pico de RSS.
-
-O que ele **mede**: o caminho da ponte e do motor WebTorrent (seleção de peças, Range, fechamento, deselect) com um único peer em loopback de taxa controlada. O que ele **não representa**: latência e perda de rede reais, vários peers, peers lentos ou intermitentes de verdade, disco do usuário (page cache e SSD/HDD), CPU de um NAS, nem o comportamento de TV, Stremio ou players reais com `Retry-After`. O RSS é do processo inteiro (semeador, ponte e player) e a vazão em loopback com semeador sem limite não diz nada sobre sua internet. Use os números para **comparar configurações entre si** na mesma máquina, repetindo a rodada.
-
-Exemplo de uma execução local (indicativa, não referência; Node 22, Linux, 64 MiB, peça de 256 KiB, 3 saltos, 4 MiB lidos por Range):
-
-| seed KiB/s | 1º byte P50/P95 ms | stalls | 504 | extra MiB |
-|---|---|---|---|---|
-| livre | 100/144 | 0 | 0 | 36,5 |
-| 4096 | 100/1006 | 0 | 0 | 11,5 |
-| 1024 | 100/1257 | 0 | 0 | 2,7 |
-| 256 | 1000/1864 | 30 | 0 | 0,6 |
-
-### Critério para decidir sobre antecipação de leitura ou timeouts
-
-Não mude nada por impressão. Só abra uma proposta de ajuste (janela extra, outro timeout, `503` com `Retry-After`) se, **em dados reais do seu uso** (snapshot/logs de várias sessões) e confirmados por repetição no benchmark com taxa semelhante:
-
-1. há stalls recorrentes (por exemplo, `stalls.count` por hora de reprodução e `stalls.p95Ms` altos) **com o semeador capaz de sustentar o bitrate**, isto é, o stall não é só falta de banda do swarm; e
-2. o stall acontece logo após `avanco`/`recuo` (seek) ou em início de reprodução, o que sugere falta de peças prontas, e não ao longo de uma reprodução contínua; e
-3. a alternativa reduz o stall de forma mensurável nas mesmas rodadas **sem** aumentar `extra MiB`, o RSS nem os bytes que chegam depois de o player fechar, e sem baixar o filme inteiro (a janela precisa ter orçamento por sessão e global, descarte ao fechar e opção de desligar).
-
-Se `timeouts504` for alto, confira antes se há peers (`Torrent sem peers`) e leia a observação abaixo. Sem esses sinais, o resultado correto é manter o comportamento atual.
-
-Leitura do código atual (dependência `webtorrent` 3.0.21), que o benchmark ajuda a conferir e que é o motivo de não haver ajuste neste momento: `File.createReadStream` seleciona **todas** as peças do Range pedido com prioridade 1 e as marca como críticas (até 2 peças ou 1 MiB) quando o trecho em leitura ainda não está pronto; ao fechar o iterador a seleção é removida. Isto é, um Range aberto (`bytes=N-`) já baixa em sequência a partir de N. Ao medir, o ganho de uma janela fixa de 64 a 256 MiB acima disso não está demonstrado.
-
-Observação sobre o timeout de 504: o `Readable` que envolve o iterador do arquivo só processa `return()` depois do `next()` pendente. Com o primeiro trecho nunca chegando (peers realmente ausentes), `await iterator.return()` na ponte pode não terminar e a resposta 504 ficar sem ser enviada, embora o timeout seja contado em `timeouts504`. No benchmark, `--connect-delay-ms 3600000 --first-byte-timeout-ms 1000` mostra `504 (ponte)` igual a 1 e nenhum status recebido pelo player (`0`, desistência do cliente simulado). Isso **não foi corrigido** nesta entrega, por mudar o comportamento de timeout; fica como recomendação de issue própria (enviar o 504 sem esperar o fechamento do iterador) e, só depois, a comparação 504 versus `503` + `Retry-After` pedida pela #33, que precisa de teste com o cliente real.
+Só há números: nenhum infoHash, caminho, nome de arquivo, IP, credencial ou passkey vai ao snapshot nem ao log. Os contadores valem desde a partida do processo, não são persistidos e reiniciam junto com ele. O benchmark offline e o critério para propor ajustes estão em [desenvolvimento](desenvolvimento.md#medir-a-reprodução-benchmark-offline).
 
 ## Logs
 
@@ -131,7 +104,7 @@ A redação automática não remove necessariamente dados pessoais, títulos ou 
 | Play retorna 422 | Release sem vídeo principal elegível ou imagem de disco |
 | Play retorna 503 | Ausência de seeders na fonte online, antes de criar download |
 | Play retorna 504 | Primeiro trecho não chegou no prazo; pode haver peers indisponíveis ou falta de conectividade. Veja `streaming.timeouts504` e [Medir stalls e seeks](#medir-stalls-e-seeks-da-reprodução) |
-| Vídeo trava no meio | `streaming.stalls` e as linhas `reprodução: resposta encerrada` dizem se foram esperas do torrent (swarm/peers) e se seguiram um seek; esperas do player não contam. Não ajuste nada sem os critérios de [Medir stalls e seeks](#medir-stalls-e-seeks-da-reprodução) |
+| Vídeo trava no meio | `streaming.stalls` e as linhas `reprodução: resposta encerrada` dizem se foram esperas do torrent (swarm/peers) e se seguiram um seek; esperas do player não contam. Veja [Medir stalls e seeks](#medir-stalls-e-seeks-da-reprodução) |
 | Vídeo sem áudio/imagem no player | Compatibilidade do contêiner/codec do cliente; o servidor não transcodifica |
 | Play retorna 507/503 | Sem folga além da reserva de disco (507) ou espaço não medido (503); veja [Disco](configuracao.md#disco) e ajuste `DISK_RESERVE_GIB`/`DISK_RESERVE_PERCENT` ou libere espaço |
 | Retomada lenta na partida | O painel mostra o custo por torrent (`resume`) e o log traz linhas `retomada: …`. A verificação de arquivos grandes lê o torrent inteiro do disco. A ordem é por prazo de seed (mais urgente primeiro). Se o disco for rápido e houver vários torrents grandes, teste `RESUME_CONCURRENCY` 2 e compare o tempo total e o atraso do laço de eventos antes de manter |

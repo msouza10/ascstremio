@@ -7,16 +7,16 @@ As variáveis são lidas na inicialização. Reinicie a instância depois de alt
 Cada opção vem de uma de três origens, da mais forte para a mais fraca:
 
 1. **Ambiente** (shell, `service.env`, Compose): sempre vence e nunca é sobrescrito por outra origem.
-2. **Arquivo `DATA_DIR/settings.json`** (modo `0600`, gravado de forma atômica, com `version` e `revision`): usado pelas interfaces de configuração (terminal, descrito abaixo, e painel). Não precisa existir e não é criado na partida; quem usa só variáveis de ambiente continua exatamente como antes.
+2. **Arquivo `DATA_DIR/settings.json`** (modo `0600`, gravado de forma atômica, com `version` e `revision`): usado pelas interfaces de configuração (terminal, descrito abaixo, e painel). Não precisa existir e não é criado na partida; quem usa só variáveis de ambiente não precisa dele.
 3. **Padrão** do esquema (tabelas abaixo).
 
 Regras que valem para qualquer origem:
 
 - Variável vazia conta como ausente.
 - Valor inválido, arquivo corrompido ou de versão mais nova, e combinação insegura **recusam a partida** com a lista de problemas; nada cai silenciosamente em padrão (`AFTER_SEED=delete` apaga arquivos).
-- Segredos (`PASSKEY`, `ANNOUNCE_BASE`) e `DATA_DIR`, `PASSKEY_FILE`, `BRIDGE_ALLOW_LAN` e `ASCSTREMIO_CONTAINER` existem **só no ambiente**; o arquivo não os aceita e nenhuma leitura sanitizada os devolve. Senhas do ASC não são persistidas.
+- Segredos (`PASSKEY`, `ANNOUNCE_BASE`) e `DATA_DIR`, `BRIDGE_ALLOW_LAN` e `ASCSTREMIO_CONTAINER` existem **só no ambiente**; o arquivo não os aceita e nenhuma leitura sanitizada os devolve. Senhas do ASC não são persistidas.
 - Alterar uma opção que o ambiente define é recusado (a origem exibida é `env`); edite o `service.env`/Compose.
-- Alterações exigem a revisão lida (`expectedRevision`); se outro processo gravou antes, a alteração é recusada e nada muda. Uma alteração inválida não toca o disco.
+- Alterações exigem a revisão lida; se outro processo gravou antes, a alteração é recusada e nada muda. Uma alteração inválida não toca o disco.
 - Quase todas as opções só valem após reiniciar; `LOG_LEVEL`, `ASC_ONLY_FREELEECH` e as opções de alertas valem na hora. `ASC_TORRENT_DIR` e `BRIDGE_STORE` não movem arquivos já baixados.
 
 ### Modos local e LAN
@@ -31,7 +31,7 @@ Regras que valem para qualquer origem:
 
 ## Configuração pelo painel
 
-O painel (`http://127.0.0.1:<CONFIG_PORT>/configuracoes`, depois de entrar no ASC) lista todas as opções do esquema por assunto, com o valor em uso, a origem (ambiente, arquivo ou padrão) e se vale na hora ou só após reiniciar. Como o painel roda no mesmo processo que detém a trava da instância, ele grava em `settings.json` por esse processo, com `expectedRevision` (conflito de revisão preserva o arquivo e o que foi digitado); a CLI continua recusando escrever com o aplicativo ativo. Antes de gravar há uma prévia (mesma validação da gravação, sem escrever). `LOG_LEVEL`, `ASC_ONLY_FREELEECH` e as de alertas valem na hora; as demais aguardam reinício e o painel mostra "reinício pendente" enquanto o valor em uso difere do salvo. Opções do ambiente, segredos e as pastas de dados (`ASC_TORRENT_DIR`, `BRIDGE_STORE`) não são editáveis ali. Mudanças de modo, portas ou endereço trazem instruções de recuperação pelo terminal. A conclusão do assistente fica em `DATA_DIR/wizard.json` (independente de `settings.json` e da sessão do ASC).
+O painel (`http://127.0.0.1:<CONFIG_PORT>/configuracoes`, depois de entrar no ASC) lista todas as opções do esquema por assunto, com o valor em uso, a origem (ambiente, arquivo ou padrão) e se vale na hora ou só após reiniciar. Ele grava em `settings.json` pelo próprio aplicativo, e um conflito de revisão preserva o arquivo e o que foi digitado; a CLI recusa escrever com o aplicativo ativo. Antes de gravar há uma prévia (mesma validação da gravação, sem escrever). `LOG_LEVEL`, `ASC_ONLY_FREELEECH` e as de alertas valem na hora; as demais aguardam reinício e o painel mostra "reinício pendente" enquanto o valor em uso difere do salvo. Opções do ambiente, segredos e as pastas de dados (`ASC_TORRENT_DIR`, `BRIDGE_STORE`) não são editáveis ali. Mudanças de modo, portas ou endereço trazem instruções de recuperação pelo terminal. A conclusão do assistente fica em `DATA_DIR/wizard.json` (independente de `settings.json` e da sessão do ASC).
 
 ## Configuração pelo terminal
 
@@ -76,10 +76,9 @@ Códigos de saída: `0` ok; `1` recusado ou inválido; `2` uso incorreto ou sem 
 | `ASC_TORRENT_DIR` | `DATA_DIR/torrents` | Biblioteca local de `.torrent` |
 | `BRIDGE_STORE` | `DATA_DIR/cache` | Arquivos de vídeo e dados recebidos |
 | `PASSKEY` | ausente | Credencial do tracker em memória; precede a leitura do arquivo |
-| `PASSKEY_FILE` | ver limitação abaixo | Opção do leitor de passkey; não altera o arquivo na inicialização atual |
-| `ANNOUNCE_BASE` | Base de announce do ASC definida em `src/passkey.js` | Base usada para injetar a passkey em memória |
+| `ANNOUNCE_BASE` | Base de announce do ASC | Base usada para injetar a passkey em memória; não precisa ser definida em uma instalação normal |
 
-**Limitação de `PASSKEY_FILE`:** `src/index.js` chama o leitor passando explicitamente `DATA_DIR/passkey.txt`, e esse argumento prevalece sobre `PASSKEY_FILE`. Para o programa principal, use esse arquivo ou `PASSKEY`. Não há necessidade de definir `ANNOUNCE_BASE` em uma instalação normal.
+A passkey vem de `PASSKEY` ou de `DATA_DIR/passkey.txt`. `PASSKEY_FILE` é ignorada pelo programa principal.
 
 Caminhos relativos fornecidos por variável são interpretados a partir do diretório de trabalho do processo. Prefira caminhos absolutos em serviços e instalações separadas do código.
 
@@ -277,8 +276,7 @@ Campos do JSON: `schemaVersion`, `eventId` (aleatório, não deriva de nada), `t
 |---|---|---|
 | `ASC_ONLY_FREELEECH` | `true` | `true` lista e baixa só releases freeleech (o download deles não conta no ratio, regra 2.7); `false` mostra todos e os que não são freeleech gastam ratio. Vale na hora, sem novo login |
 
-Precedência normal: ambiente, depois `settings.json`, depois o padrão. Valor diferente de `true`/`false` é recusado (na partida, a partida falha; no painel e na CLI, a alteração é rejeitada). Versões anteriores guardavam a escolha no `asc-session.json`: se ele tinha `onlyFreeleech: false` e não há configuração própria, o valor é migrado uma vez para `settings.json` na primeira partida; se já existe configuração (ambiente ou arquivo), ela prevalece e o valor antigo é descartado.
-
+Precedência normal: ambiente, depois `settings.json`, depois o padrão. Valor diferente de `true`/`false` é recusado (na partida, a partida falha; no painel e na CLI, a alteração é rejeitada).
 ## Logs
 
 | Variável | Padrão | Comportamento |

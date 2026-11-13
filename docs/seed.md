@@ -6,7 +6,7 @@ Este guia descreve o modelo implementado, baseado no resumo de regras usado pelo
 
 ## Upload durante a reprodução
 
-Por padrão o upload não muda quando você assiste. Se definir `BRIDGE_STREAM_UPLOAD_LIMIT`, o upload é reduzido enquanto há reprodução ativa e volta ao normal depois. O tempo de seed (72 h) não depende de bytes enviados, mas o ratio 1.0 depende: por isso o teto reduzido nunca é zero (mínimo 16 KiB/s) e, com seed pendente, não fica abaixo de 64 KiB/s. O cofre e a conciliação com o tracker não são alterados. Detalhes em [configuração](configuracao.md#upload-durante-a-reprodução).
+Por padrão o upload não muda quando você assiste. Com `BRIDGE_STREAM_UPLOAD_LIMIT`, o upload é reduzido durante a reprodução, mas nunca a zero, porque o ratio 1.0 depende dele. Detalhes em [configuração](configuracao.md#upload-durante-a-reprodução).
 
 ## Ciclo de um torrent
 
@@ -21,22 +21,11 @@ O cofre `DATA_DIR/seed-vault.json` sobrevive a reinícios e é salvo periodicame
 
 ### Ordem da retomada
 
-Na partida e depois de cada conciliação com o tracker, os seeds pendentes são abertos por **risco de hit-and-run** (regra 13.3), do mais urgente ao menos:
+Na partida e depois de cada conciliação, os seeds pendentes são abertos por **risco de hit-and-run** (regra 13.3): primeiro a obrigação confirmada pelo tracker com o prazo mais próximo, depois a obrigação só local, depois a conclusão em segundo plano. O que já foi cumprido não é reaberto. O que o tracker informa prevalece sobre o cofre, e dado ausente conta como iminente. Todos os pendentes são abertos; a ordem só decide quem sai primeiro.
 
-1. obrigação **confirmada pelo tracker** (ainda não cumprida), pelo prazo mais próximo;
-2. obrigação só **local** (o cofre diz que concluiu, o tracker ainda não confirmou);
-3. conclusão em segundo plano pedida, sem obrigação correndo;
-4. concluído e sem obrigação (cumprido) vem por último. Hoje esses não são reabertos na partida, como antes.
+Cada torrent passa pela admissão de disco, e uma obrigação sem o arquivo completo não é aberta (aparece como "Sem arquivo para semear"; nenhum download novo é criado para completá-la). A falha de um não impede os demais.
 
-Dentro de cada grupo: prazo mais próximo (prazo vencido vem antes de qualquer futuro), depois mais horas ainda devidas, depois conclusão mais antiga e, por fim, o `infoHash`, para a ordem ser sempre a mesma. O que o tracker informa (prazo, horas restantes, cumprimento) prevalece sobre o cofre. **Dado ausente conta como iminente**: um prazo desconhecido nunca empurra uma obrigação para o fim da fila. Todos os pendentes são abertos; a ordem só decide quem sai primeiro, então ninguém fica sem retomada por causa de outro.
-
-A retomada não pula nenhuma regra: cada torrent passa pela admissão de disco, e obrigação concluída sem o arquivo completo continua sem ser aberta (aparece como "Sem arquivo para semear"; nenhum download novo é criado para completá-la). A falha ou recusa de um não impede os demais. Se a conciliação pedir uma nova retomada enquanto outra ainda roda, ela se junta à em andamento e, ao final, faz uma passada extra com a ordem refeita; nenhum torrent é adicionado duas vezes ao motor.
-
-### Medição do custo da retomada
-
-Abrir um torrent no motor inclui verificar os arquivos em disco; para dezenas de GB isso demora. O snapshot do painel (`resume`) mostra, para a última retomada: pendências na fila, abertos, adiados por disco, falhas, sem arquivo, tempo total, tempo até o primeiro aberto, o mais lento, bytes (tamanho dos torrents abertos, um limite superior do que foi lido), memória residente inicial e de pico, o maior atraso do laço de eventos (indica se a interface travou) e, por torrent, grupo, horas até o prazo, bytes e duração. As passadas extras de uma mesma retomada somam na mesma medição, e uma passada em que tudo já está aberto (como a conciliação horária) não apaga a medição anterior. O mesmo resumo vai ao log (`retomada: …`). Só aparecem hash curto e números: nenhum caminho, nome ou segredo. Não há contador de leitura de disco por processo; para I/O use as ferramentas do sistema durante a retomada.
-
-A verificação continua completa: não há `skipVerify` nem confiança em bitfield salvo, porque anunciar partes inválidas após uma queda é pior que esperar. Um "fast-resume" só deve ser considerado em desenho separado, com invalidação por tamanho, mtime e conteúdo.
+Abrir um torrent inclui verificar os arquivos em disco, o que demora para dezenas de GB. O painel mostra o custo da última retomada (`resume`) e o log traz linhas `retomada: …`, só com hash curto e números. A verificação é sempre completa: anunciar partes inválidas após uma queda é pior que esperar.
 
 ## Metas e prazos
 
@@ -68,7 +57,7 @@ Por padrão, a conclusão automática está desligada. `BACKGROUND_COMPLETE=auto
 
 Para decidir por conteúdo, escolha `AFTER_SEED=manual` em **Configurações** e reinicie o aplicativo quando indicado. Ao confirmar o cumprimento, o painel mostra **Continuar semeando**, **Parar seed e manter arquivos** e **Excluir arquivos e parar seed** na página do filme. A confirmação do botão deixa explícito se os arquivos serão apagados. A aplicação consulta o tracker novamente antes de agir; falhas, obrigação pendente, reprodução ou sessão recente bloqueiam a ação. A decisão é persistida: o modo manual retoma o seed após reiniciar, exceto se você já decidiu parar ou excluir. Você também pode excluir depois os arquivos de um seed que já parou. Se a exclusão falhar parcialmente (por exemplo, arquivo em uso), a parada fica salva e os dados já excluídos não são baixados de novo automaticamente; você pode tentar remover o restante depois. Escolher continuar protege esse conteúdo da liberação automática de `AFTER_SEED`; a retenção por orçamento continua sendo uma operação separada, manual e confirmada.
 
-Excluir afeta os arquivos listados pelo torrent inteiro, não apenas o vídeo em reprodução. Isso será relevante para futuros pacotes de temporadas: este controle não oferece exclusão por episódio. Arquivos compartilhados com outro torrent ou caminhos inseguros são recusados; cofre, credenciais e `.torrent` são preservados.
+Excluir afeta os arquivos listados pelo torrent inteiro, não apenas o vídeo em reprodução; não há exclusão por episódio. Arquivos compartilhados com outro torrent ou caminhos inseguros são recusados; cofre, credenciais e `.torrent` são preservados.
 
 Reabrir um filme cujos dados foram apagados baixa novamente e pode criar nova obrigação. O aplicativo tenta avisar nas fontes. Não apague manualmente cache, cofre ou torrents pendentes para liberar espaço: isso remove meios de cumprir o seed, sem cancelar a cobrança no ASC.
 
@@ -82,14 +71,7 @@ No sucesso, a escolha vira **Manter semeando** e vale após reiniciar. Tocar o f
 
 ## Retenção por orçamento (opcional)
 
-`RETENTION_MODE=preview` (padrão `off`) acrescenta uma limpeza **manual e confirmada** por espaço ou número de títulos, que complementa `AFTER_SEED` sem substituí-lo e sem outro caminho de liberação:
-
-- Prioridade: o tracker manda. Só entra na lista o título que o tracker confirmou cumprido (a mesma condição de `AFTER_SEED`), sem hit-and-run e que o tracker não lista mais como pendente. `AFTER_SEED=delete` já apaga ao cumprir (a retenção só vê sobras); com `stop` ou `keep` os arquivos ficam e a retenção é o que os remove depois, por idade de uso, quando você a executa. Com `keep`, ela encerra o seed já cumprido do título removido.
-- Ordem: mais antigo por último uso (reprodução registrada; sem ela, a confirmação do tracker) primeiro.
-- Nunca remove: título incompleto ou com obrigação aberta, em reprodução ou com sessão recente, abrindo/concluindo, confirmado há menos de 24 h ou usado há menos de `RETENTION_MIN_AGE_DAYS`, com arquivo compartilhado com outro título, com symlink ou link físico, fora de `BRIDGE_STORE`. Não toca em `.torrent`, cofre, credenciais nem em arquivos fora da biblioteca.
-- Reassistir um título removido baixa tudo de novo e abre nova obrigação de 72 h (e, fora do freeleech, pesa no ratio).
-
-Não existe atalho para pular a conferência de seed: `/cleanup` sempre consulta o tracker e recusa (409) o que ainda está devido. Se o tracker não puder ser consultado, nada é liberado.
+`RETENTION_MODE=preview` (padrão `off`) acrescenta uma limpeza **manual e confirmada** por espaço ou número de títulos, que complementa `AFTER_SEED` sem substituí-lo. Só entra na lista o título que o tracker confirmou cumprido, e nunca um título incompleto, com obrigação aberta ou em uso. Reassistir um título removido baixa tudo de novo e abre nova obrigação de 72 h. Se o tracker não puder ser consultado, nada é liberado. As chaves estão em [configuração](configuracao.md#retenção-por-orçamento-opcional) e o uso em [manutenção](manutencao.md#retenção-por-orçamento).
 
 ## Suspensão e desligamento
 

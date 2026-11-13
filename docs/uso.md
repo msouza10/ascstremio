@@ -1,6 +1,6 @@
 # Uso no Stremio e no painel
 
-Com a instalação concluída, faça login no painel **http://127.0.0.1:7020/** e instale no Stremio a URL `http://127.0.0.1:7000/<credencial>/manifest.json`, emitida por `npm run credenciais -- garantir` (no Windows: atalho **Obter URL do addon** do Menu Iniciar, também oferecido no fim do instalador) (veja [credenciais](seguranca.md#credenciais-de-instalação-do-addon)). Se mudar a porta, use os endereços correspondentes da sua [configuração](configuracao.md).
+Com a instalação concluída, faça login no painel **http://127.0.0.1:7020/** e instale no Stremio a URL `http://127.0.0.1:7000/<credencial>/manifest.json`, emitida por `npm run credenciais -- garantir` (na instalação remota Linux, informe o `DATA_DIR` como em [instalação](instalacao.md#instalar-pelo-github-com-curl); no Windows: atalho **Obter URL do addon** do Menu Iniciar, também oferecido no fim do instalador) (veja [credenciais](seguranca.md#credenciais-de-instalação-do-addon)). Se mudar a porta, use os endereços correspondentes da sua [configuração](configuracao.md).
 
 ## Login e busca
 
@@ -8,7 +8,7 @@ O login salva só os cookies da sessão e a data do login, sem persistir a senha
 
 Em Descobrir → Filmes, **ASC — filmes** permite buscar no tracker. Abrir filmes de catálogos com ID IMDb também consulta fontes ASC. A busca considera até 96 releases por consulta e oferece até doze fontes em buscas IMDb. Não há paginação online nem seleção de episódios de packs.
 
-O filtro **somente freeleech** é a opção `ASC_ONLY_FREELEECH` (regra 2.7), ligada por padrão, e não faz mais parte do login. Para mudar, abra **Configurações** (menu do painel, grupo "Conta e catálogo"; também no assistente e em `npm run configurar`): vale na hora, sem novo login nem reinício, e o catálogo e as fontes passam a refletir a troca. Quem tinha escolhido "todos os releases" no login de uma versão anterior tem essa escolha migrada uma única vez para o `settings.json` na primeira partida (nunca sobrescreve uma configuração já existente). O filtro é conferido também no momento do play, inclusive para URLs antigas. Um release sem confirmação de freeleech não é baixado com o filtro ligado.
+O filtro **somente freeleech** é a opção `ASC_ONLY_FREELEECH` (regra 2.7), ligada por padrão, e não faz mais parte do login. Para mudar, abra **Configurações** (menu do painel, grupo "Conta e catálogo"; também no assistente e em `npm run configurar`): vale na hora, sem novo login nem reinício, e o catálogo e as fontes passam a refletir a troca. O filtro é conferido também no momento do play, inclusive para URLs antigas. Um release sem confirmação de freeleech não é baixado com o filtro ligado.
 
 ## Como ler as fontes
 

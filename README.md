@@ -23,6 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/msouza10/ascstremio/main/scripts/in
   ASCSTREMIO_BASE_URL=https://github.com/msouza10/ascstremio/releases/latest/download bash
 ```
 
+Se o repositório estiver privado, esse `curl` falha com 404 ou 401: use o download autenticado pelo `gh` descrito no [guia de instalação](docs/instalacao.md#instalar-pelo-github-com-curl). O guia também lista os pré-requisitos, como atualizar e como desinstalar.
+
 Para Docker/Podman, use a imagem pronta **`ghcr.io/msouza10/ascstremio:latest`**, conforme o [guia de instalação](docs/instalacao.md#usar-a-imagem-pronta-do-ghcr). O guia também cobre Windows e acesso autenticado quando o repositório ou pacote são privados.
 
 Para executar a partir do código, com Node.js 22+ e npm disponíveis:
@@ -64,6 +66,6 @@ O [índice dos guias](docs/README.md) organiza a leitura por tarefa. O [changelo
 
 Os serviços HTTP ficam no loopback do host por padrão. O modo LAN é opcional e tem limitações; a administração da ponte exige um token próprio (`admin-key`), separado das credenciais de reprodução, que são individuais e revogáveis. A porta de peers BitTorrent tem exposição diferente dos serviços HTTP. Portas, modos e variáveis estão na [tabela de rede](docs/seguranca.md#portas-e-interfaces); TV e celular só precisam do streaming, nunca do painel. A `?k=` e a URL do addon são credenciais reutilizáveis: não as compartilhe em capturas, chats ou diagnósticos. Consulte [segurança e rede](docs/seguranca.md) antes de alterar a instalação.
 
-A auditoria completa do histórico e a validação das regras do ASC para distribuição pública estão pendentes ([#11](https://github.com/msouza10/ascstremio/issues/11), [#14](https://github.com/msouza10/ascstremio/issues/14)). O código é distribuído sob a [licença MIT](LICENSE). O uso de conta individual não equivale a autorização do tracker nem concede direitos sobre conteúdo de terceiros.
+A auditoria completa do histórico Git e a validação das regras do ASC para distribuição pública ainda não foram feitas; a barreira de segredos cobre a árvore e os pacotes. O código é distribuído sob a [licença MIT](LICENSE). O uso de conta individual não equivale a autorização do tracker nem concede direitos sobre conteúdo de terceiros.
 
 Para contribuir, leia o [guia de contribuição](.github/CONTRIBUTING.md) e o [código de conduta](.github/CODE_OF_CONDUCT.md). Vulnerabilidades devem seguir a [política de segurança](.github/SECURITY.md).

@@ -34,7 +34,7 @@ Cada instalação do addon no Stremio (por exemplo, o computador e a TV) usa uma
 
 **Como funciona.** O Stremio não envia cabeçalhos de autenticação e só propaga a URL base do manifesto para catálogo, meta e stream; por isso o token vai no prefixo do caminho: `http://host:7000/<token>/manifest.json`. As URLs de vídeo que o addon devolve carregam o mesmo token em `?k=`. O token (`ascc_` + 256 bits aleatórios) aparece uma única vez, na emissão; em disco (`credentials.json`, 0600) fica só o SHA-256. Sem credencial ativa, o manifesto e todos os recursos dão 403.
 
-**Emitir, listar, girar e revogar** (com o aplicativo em execução; usam o token administrativo de `admin-key`):
+**Emitir, listar, girar e revogar** (com o aplicativo em execução; usam o token administrativo de `admin-key`; na instalação remota Linux, rode na pasta `~/.local/share/ascstremio/app` com `DATA_DIR="$HOME/.local/share/ascstremio/data"`, veja [instalação](instalacao.md#instalar-pelo-github-com-curl)):
 
 ```bash
 npm run credenciais -- garantir              # emite "Stremio local" só se não houver nenhuma ativa
@@ -57,8 +57,6 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 **Limite do "por dispositivo".** O Stremio sincroniza addons entre os aparelhos da mesma conta: instalar a URL numa conta propaga o token a todos eles. A credencial identifica uma instalação do addon, não um hardware. Para separar aparelhos, use contas/perfis distintos no Stremio ou emita um token por instalação manual e revogue o que vazar.
 
 **Vazamento.** Logs redigem `ascc_…` e `?k=`; o painel e as respostas públicas nunca trazem o token. O `?k=` é uma credencial reutilizável, não um identificador de sessão: quem tiver a URL de reprodução, de uma captura de tela ou de um diagnóstico assiste com a sua instalação até a revogação. Não compartilhe essas URLs. O programa não pressupõe que o player aceite cabeçalhos de autenticação (o Stremio não os envia), por isso a chave viaja na URL. **Perdeu ou vazou a URL:** o token não é recuperável; rode `npm run credenciais -- rotacionar <id>` (emite outra e revoga a antiga) ou `revogar` e `criar`, e reinstale a URL nova no Stremio; o painel também emite credenciais.
-
-**Migração.** A chave única antiga (`bridge-key`) e o manifesto sem prefixo deixam de funcionar. Emita uma credencial, remova o addon antigo no Stremio e instale a URL nova. Os dados e o seed não são afetados.
 
 **Limite de reproduções.** A quota opcional de reproduções simultâneas (`PLAYBACK_MAX_SESSIONS`, `PLAYBACK_MAX_PER_CREDENTIAL`) é contada por credencial, nunca por IP, e é verificada depois da credencial e antes de qualquer download. O diagnóstico (`GET /playback`) é administrativo e traz só contagens; um aparelho não consulta o histórico de outro. Detalhes em [configuração](configuracao.md#reproduções-simultâneas).
 
@@ -100,9 +98,9 @@ Modelo de ameaça: o operador escolhe o destino; o risco é o aplicativo ser ind
 
 - Addon e ponte validam `Host`, aceitando IP literal, localhost e nomes explicitamente configurados. Isso combate DNS rebinding; não autentica o cliente.
 - Todas as rotas do addon e `/a/…`, `/s/…` exigem uma credencial de instalação ativa (prefixo `/<token>/` no addon, `?k=<token>` no vídeo), verificada a cada pedido.
-- As rotas administrativas da ponte exigem `X-Admin-Token`, recusam `Origin` e, fora do contêiner, só aceitam loopback. `POST /cleanup` não tem mais `force=1`.
+- As rotas administrativas da ponte exigem `X-Admin-Token`, recusam `Origin` e, fora do contêiner, só aceitam loopback.
 - O painel exige `Host` exato `127.0.0.1:<CONFIG_PORT>`; ações POST também exigem origem exata, JSON e token CSRF. O token não é uma autenticação de usuário do sistema.
-- As rotas de configuração do painel (`/api/settings`, `/api/settings/preview`, `/api/wizard/*`, `/api/credentials`) exigem sessão do ASC confirmada além das proteções acima, não existem na ponte e escrevem pelo único escritor do processo (`settings.update` com `expectedRevision`). Segredos (passkey, `ANNOUNCE_BASE`, token administrativo) nunca saem: só "definido". O único segredo devolvido é o token de uma credencial recém-emitida, na resposta da emissão, uma vez, e ele é redigido nos logs. Por padrão o painel continua só em loopback; a administração pela LAN é um opt-in separado (seção própria).
+- As rotas de configuração do painel (`/api/settings`, `/api/settings/preview`, `/api/wizard/*`, `/api/credentials`) exigem sessão do ASC confirmada além das proteções acima, não existem na ponte e escrevem pelo único escritor do processo, que recusa a alteração se o arquivo mudou desde a leitura. Segredos (passkey, `ANNOUNCE_BASE`, token administrativo) nunca saem: só "definido". O único segredo devolvido é o token de uma credencial recém-emitida, na resposta da emissão, uma vez, e ele é redigido nos logs. Por padrão o painel continua só em loopback; a administração pela LAN é um opt-in separado (seção própria).
 - DHT, LSD, PEX, UPnP e NAT-PMP estão desativados no motor da ponte.
 - A imagem roda sem root; as invocações fornecidas usam sistema de arquivos somente leitura, `/tmp` temporário, capabilities removidas e `no-new-privileges`.
 
@@ -122,7 +120,7 @@ Modelo de ameaça: o operador escolhe o destino; o risco é o aplicativo ser ind
 | Arquivos recebidos | `cache/` | Conteúdo baixado e partes de vídeos |
 | Logs | `logs/` | Eventos e identificadores podem revelar hábitos de uso |
 
-Os `.torrent` obtidos pela integração são salvos como recebidos do ASC e podem conter a passkey no announce. Configurar `PASSKEY` ou `PASSKEY_FILE` permite montar o announce do motor em memória, mas não remove a credencial dos arquivos salvos. Trate todos os `.torrent` como pessoais, inclusive os importados por outros meios; não publique a pasta de torrents nem backups dos dados. Os `.torrent` baixados pela integração são gravados com permissão `0600` em sistemas Unix (leitura e escrita somente pelo usuário); no Windows, a proteção depende também das permissões da conta e da pasta.
+Os `.torrent` obtidos pela integração são salvos como recebidos do ASC e podem conter a passkey no announce. Configurar `PASSKEY` ou `passkey.txt` permite montar o announce do motor em memória, mas não remove a credencial dos arquivos salvos. Trate todos os `.torrent` como pessoais, inclusive os importados por outros meios; não publique a pasta de torrents nem backups dos dados. Os `.torrent` baixados pela integração são gravados com permissão `0600` em sistemas Unix (leitura e escrita somente pelo usuário); no Windows, a proteção depende também das permissões da conta e da pasta.
 
 Não compartilhe URLs de instalação ou de reprodução, capturas com `/<token>/` ou `?k=`, cookies ou backups. Para invalidar uma credencial comprometida, use `revogar` ou `rotacionar` (próxima seção). O token administrativo é outra coisa e funciona assim: para trocá-lo, pare a instância, remova `admin-key` e reinicie; ferramentas que o usavam precisam ler o novo valor. Isso não revoga a passkey nem a sessão do ASC. Se estas vazarem, use os mecanismos do próprio tracker para revogá-las.
 
@@ -136,10 +134,10 @@ O logger redige segredos conhecidos e padrões sensíveis antes de gravar, mas r
 
 A licença do código ([MIT](../LICENSE)) não dá acesso ao ASC nem direitos sobre conteúdo de terceiros.
 
-`scripts/check-no-secrets.sh` verifica arquivos proibidos e padrões de credenciais na árvore/pacote. Ele não comprova ausência de segredos em todo o histórico; essa auditoria está na [issue #11](https://github.com/msouza10/ascstremio/issues/11). A documentação pública usa uma lista explícita de arquivos e mantém notas privadas fora dos pacotes.
+`scripts/check-no-secrets.sh` verifica arquivos proibidos e padrões de credenciais na árvore/pacote. Ele não comprova ausência de segredos em todo o histórico; essa auditoria ainda não foi feita. A documentação pública usa uma lista explícita de arquivos e mantém notas privadas fora dos pacotes.
 
 ## Relatar um problema
 
 Para defeitos comuns, abra uma [issue](https://github.com/msouza10/ascstremio/issues) com versão, plataforma, forma de instalação, comportamento esperado e trecho de log revisado. Não anexe a pasta de dados nem `.torrent` reais.
 
-Para vulnerabilidades, siga a [política de segurança](../.github/SECURITY.md), que define o relato privado pelo GitHub, o escopo e o que esperar de resposta (melhor esforço, sem prazo garantido). Não envie credenciais nem dados reais na reprodução. As limitações conhecidas são acompanhadas nas issues, sem promessa de correção já entregue.
+Para vulnerabilidades, siga a [política de segurança](../.github/SECURITY.md), que define o relato privado pelo GitHub, o escopo e o que esperar de resposta (melhor esforço, sem prazo garantido). Não envie credenciais nem dados reais na reprodução.

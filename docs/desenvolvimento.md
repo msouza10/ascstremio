@@ -24,9 +24,17 @@ actionlint .github/workflows/*.yml
 
 `npm test` chama a mesma verificação de sintaxe da UI e testes `node:test`. Os testes não devem usar rede real, conta ASC, `private/` ou caminhos específicos da máquina. Para um arquivo: `node --test test/seed-policy.test.js`.
 
-`npm run bench:reproducao` é um benchmark **sob demanda** (swarm local com arquivo sintético, sem rede externa nem dados reais) e não faz parte de `npm run check` nem do CI; só suas partes puras são testadas (`test/bench-playback.test.js`). A instrumentação que ele lê (`src/stream-metrics.js`) é testada com relógio e streams simulados em `test/stream-metrics.test.js`. Como interpretar: [Medir stalls e seeks](manutencao.md#medir-stalls-e-seeks-da-reprodução).
+`npm run bench:reproducao` é um benchmark **sob demanda** (swarm local com arquivo sintético, sem rede externa nem dados reais) e não faz parte de `npm run check` nem do CI; só suas partes puras são testadas (`test/bench-playback.test.js`). A instrumentação que ele lê (`src/stream-metrics.js`) é testada com relógio e streams simulados em `test/stream-metrics.test.js`. Como interpretar: [Medir a reprodução](#medir-a-reprodução-benchmark-offline).
 
 Mudanças em scripts precisam passar shellcheck; alterações de workflows precisam passar actionlint. `node scripts/audit-check.js` consulta a auditoria de dependências com exceções justificadas no próprio script; essa etapa exige acesso ao registro. Não adicione dependências sem necessidade.
+
+## Medir a reprodução (benchmark offline)
+
+Os campos do snapshot `streaming` estão em [manutenção](manutencao.md#medir-stalls-e-seeks-da-reprodução). `npm run bench:reproducao -- [opções]` (`--help` lista tudo) monta em loopback e em temporários um semeador WebTorrent com um arquivo **sintético**, a `Bridge` real e um player simulado que lê com Range sequencial e saltos. Não usa rede externa, conta nem torrent real. Parâmetros principais: `--size-mib`, `--seed-rate-kib` (lista separada por vírgula = uma rodada por valor), `--pattern sequential|seeks`, `--seeks`, `--read-mib`, `--connect-delay-ms`, `--first-byte-timeout-ms`, `--stall-ms` e `--seed-value` (mesmos bytes e saltos). A saída é JSON ou `--format table`, com primeiro byte, stalls, 504, vazão, bytes baixados além dos lidos, `HEAD` sem download e pico de RSS.
+
+Ele mede o caminho da ponte e do motor WebTorrent com um único peer em loopback de taxa controlada. Não representa latência e perda de rede reais, vários peers, disco do usuário, CPU de um NAS nem o comportamento de TV, Stremio ou players reais. Use os números para **comparar configurações entre si** na mesma máquina, repetindo a rodada.
+
+Não mude leitura antecipada nem timeouts por impressão. Só proponha um ajuste (janela extra, outro timeout, `503` com `Retry-After`) se, em dados reais de várias sessões e confirmados por repetição no benchmark: (1) há stalls recorrentes **com o semeador capaz de sustentar o bitrate**; (2) o stall acontece logo após um seek ou no início da reprodução; e (3) a alternativa reduz o stall de forma mensurável **sem** aumentar os bytes extras, o RSS nem os bytes que chegam depois de o player fechar, e sem baixar o filme inteiro.
 
 ## Documentação pública e notas privadas
 
