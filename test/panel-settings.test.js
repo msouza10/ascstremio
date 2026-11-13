@@ -594,3 +594,25 @@ test('revogar credencial pelo painel: exige sessão do ASC e, ao revogar a últi
     assert.equal((await s.get('settings')).wizard.installPending, true, 'sem credencial ativa o aviso volta');
   } finally { await s.close(); }
 });
+
+
+test('revogar credencial pelo painel: recusa Host, Origin ausente, CSRF errado e corpo não JSON', async () => {
+  const s = await setup();
+  try {
+    const c = s.credentials.create({ name: 'Teste' });
+    const body = { id: c.credential.id };
+    const semOrigin = { ...s.good }; delete semOrigin.Origin;
+    for (const headers of [semOrigin, { ...s.good, 'X-CSRF-Token': 'incorreto' }, { ...s.good, 'Content-Type': 'text/plain' }]) {
+      assert.equal((await s.post('credentials/revoke', body, headers)).status, 403);
+    }
+    const status = await new Promise((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port: s.port, path: '/api/credentials/revoke', method: 'POST', headers: { ...s.good, Host: 'evil.example' } }, (res) => {
+        res.resume(); resolve(res.statusCode);
+      });
+      req.on('error', reject);
+      req.end(JSON.stringify(body));
+    });
+    assert.equal(status, 403);
+    assert.ok(s.credentials.verify(c.token), 'as tentativas recusadas preservam a credencial');
+  } finally { await s.close(); }
+});
