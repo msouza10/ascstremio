@@ -1,7 +1,7 @@
 # docker compose up -d --build     (ou: scripts/docker.sh run)
 # Painel: http://127.0.0.1:7020/   Addon: http://127.0.0.1:7000/<credencial>/manifest.json (docker compose exec ascstremio node src/credenciais-cli.js garantir)
 # As portas HTTP ficam no 127.0.0.1 da máquina; 7030/TCP aceita peers pela rede.
-# Mantenha painel e administração locais. Limites de LAN: docs/seguranca.md.
+# Mantenha painel e administração locais; trocar o IP das linhas 7000/7010 expõe a ponte à rede (TV/celular: docs/seguranca.md#portas-e-interfaces).
 services:
   ascstremio:
     build: .

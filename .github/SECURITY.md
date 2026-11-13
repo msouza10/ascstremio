@@ -10,16 +10,31 @@ Só a **última versão publicada** recebe correções de segurança (veja os
 
 ## Como reportar uma vulnerabilidade
 
-**Não abra issue pública.** Use o relato privado do GitHub:
+**Não publique detalhes exploráveis, segredos nem reproduções com dados reais em issue pública.**
 
-1. Abra [Security → Report a vulnerability](https://github.com/msouza10/ascstremio/security/advisories/new).
-2. Descreva o problema, a versão, o sistema (Linux, Windows ou Docker) e como reproduzir.
-3. **Não inclua** sua passkey, cookies, `.torrent` ou o conteúdo de `private/`. Se o exemplo precisar de
-   um segredo, troque por um valor falso.
+Use o relato privado do GitHub: [abrir um relato de vulnerabilidade](https://github.com/msouza10/ascstremio/security/advisories/new)
+(aba *Security* → *Report a vulnerability*). Só o mantenedor vê o relato. Informe a versão, a área
+afetada (por exemplo, "ponte" ou "painel") e os passos para reproduzir, com valores falsos no lugar de
+qualquer credencial.
 
-Você recebe uma primeira resposta em até **7 dias**. Mantemos você informado, corrigimos com
-prioridade e publicamos a correção com crédito a quem reportou (se quiser), depois de a versão
-corrigida estar disponível.
+O projeto é mantido por uma pessoa, em tempo livre: a resposta é por melhor esforço e **não há prazo
+garantido**. Se o relato for aceito, a correção segue o fluxo normal de releases e o aviso é publicado
+quando já houver versão corrigida.
+
+### O que nunca enviar (em issue, relato, captura ou log)
+
+- Passkey do tracker, cookies/sessão do ASC (`asc-session.json`), senha do ASC ou do painel.
+- A chave `?k=` e a URL do addon com `/<token>/` (`ascc_…`): são credenciais reutilizáveis; troque por
+  um valor falso. Também o `admin-key` e qualquer conteúdo de `private/` ou `DATA_DIR`.
+- Logs sem redação, backups dos dados e arquivos `.torrent` (podem conter a passkey no announce).
+
+Se algo disso vazou, a recuperação depende do que foi exposto; uma ação não invalida as outras:
+
+- **Credencial do addon** (`/<token>/`, `?k=`): `npm run credenciais -- rotacionar <id>` ou `revogar`.
+- **Token administrativo** (`admin-key`): pare a instância, remova `admin-key` e reinicie.
+- **Senha do painel ou do ASC:** troque a senha afetada.
+- **Passkey ou sessão do ASC:** não se revogam pelo programa; gere uma nova passkey no site do
+  Amigos Share e encerre a sessão pelo tracker.
 
 ## O que consideramos vulnerabilidade
 
@@ -35,6 +50,10 @@ corrigida estar disponível.
 
 ## Fora do escopo
 
+- Hospedagem remota ou compartilhada: o programa é de uma pessoa por instalação e não tem suporte a
+  exposição na internet.
+- A porta de peers (TCP 7030 no contêiner) estar publicada: é o recebimento de conexões BitTorrent, não a
+  API HTTP; só é problema se permitir acesso a addon, ponte ou painel.
 - Uso deliberadamente inseguro: expor as portas à internet, `BRIDGE_ALLOW_LAN=1` em rede não
   confiável, publicar as portas do contêiner em `0.0.0.0`, compartilhar a conta.
 - Problemas do site do Amigos Share, do Stremio ou do tracker (reporte a eles).

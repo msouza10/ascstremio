@@ -4,14 +4,18 @@ A instalação é pessoal e local. Não publique addon, ponte ou painel na inter
 
 ## Portas e interfaces
 
-| Serviço | Padrão nativo | Na imagem do projeto | Publicação padrão no host |
-|---|---|---|---|
-| Addon HTTP `7000` | `127.0.0.1` | `0.0.0.0` interno | `127.0.0.1:7000` |
-| Ponte HTTP `7010` | `127.0.0.1` | `0.0.0.0` interno | `127.0.0.1:7010` |
-| Painel HTTP `7020` | `127.0.0.1` | `0.0.0.0` interno | `127.0.0.1:7020` |
-| Peers BitTorrent | Porta escolhida pelo sistema, recebimento em interfaces de rede | Porta `7030` | TCP `7030` em todas as interfaces, conforme firewall |
+Esta é a tabela única de rede do projeto; os outros guias apontam para cá.
 
-As portas podem mudar por configuração. A publicação TCP de peers é distinta dos endpoints HTTP e não fornece acesso direto ao painel. Remover a publicação de peers reduz a conectividade de entrada; não transforma o cliente em somente download. UPnP e NAT-PMP estão desligados: o aplicativo não abre portas no roteador automaticamente. O diagnóstico `npm run rede -- peers` só prova o que o processo observa (escuta local e conexões de entrada recebidas); não testa alcance pela internet, não contata serviços externos e não vê firewall, roteador, CGNAT nem a publicação do contêiner. Abra, se quiser, somente a porta de peers; nunca addon, ponte ou painel.
+| Serviço | Modo nativo `local` (padrão) | Modo nativo `lan` | Contêiner (imagem e Compose do projeto) | Variáveis que mudam o comportamento |
+|---|---|---|---|---|
+| Addon HTTP `7000` | `127.0.0.1` | todas as interfaces | `0.0.0.0` interno; publicado em `127.0.0.1:7000` | `PORT`, `ASCSTREMIO_MODE` (ou `BRIDGE_ALLOW_LAN=1`), `ADDON_PUBLIC_URL`, `LAN_ADVERTISE_HOST`, `LAN_INTERFACE`, `ALLOWED_HOSTS` |
+| Ponte HTTP `7010` (streaming e rotas administrativas) | `127.0.0.1` | todas as interfaces | `0.0.0.0` interno; publicada em `127.0.0.1:7010` | `BRIDGE_PORT`, `ASCSTREMIO_MODE` (ou `BRIDGE_ALLOW_LAN=1`), `BRIDGE_PUBLIC_URL`, `LAN_ADVERTISE_HOST`, `LAN_INTERFACE`, `ALLOWED_HOSTS` |
+| Painel HTTP `7020` | `127.0.0.1` | `127.0.0.1`. Só com a [administração pela LAN](#administração-do-painel-pela-lan) (`CONFIG_ALLOW_LAN`) e em HTTP (`CONFIG_ADMIN_HTTP_CLEAR`), também em um IPv4 da LAN (`CONFIG_BIND_ADDRESS` ou o endereço anunciado). Com `CONFIG_PUBLIC_URL=https://…` (proxy no mesmo computador) continua só em `127.0.0.1` | `0.0.0.0` interno; publicado em `127.0.0.1:7020` (administração pela LAN não existe no contêiner) | `CONFIG_PORT`, `CONFIG_ALLOW_LAN`, `CONFIG_BIND_ADDRESS`, `CONFIG_PUBLIC_URL`, `CONFIG_ADMIN_HTTP_CLEAR` |
+| Peers BitTorrent (TCP) | `TORRENT_PORT`; `0` (padrão) deixa o sistema escolher a cada partida | idem | `7030`; o Compose publica `7030:7030` em todas as interfaces do host, conforme o firewall | `TORRENT_PORT` |
+
+Em modo LAN as URLs anunciadas ao Stremio vêm de `LAN_ADVERTISE_HOST`/`LAN_INTERFACE` (ou das URLs públicas explícitas); a escuta, o endereço anunciado e os `Host` aceitos são independentes. No contêiner a escuta interna em `0.0.0.0` é obrigatória para a publicação de portas funcionar; quem limita a exposição é a publicação em `127.0.0.1` do Compose.
+
+As portas podem mudar por configuração. A publicação `7030:7030` abre uma porta TCP de peers em todas as interfaces do host; ela não é a API HTTP, não dá acesso ao addon, à ponte nem ao painel, e sua existência não é, por si, uma vulnerabilidade: é o recebimento de conexões BitTorrent de entrada, limitado pelo firewall e pelo roteador. Remover a publicação de peers reduz a conectividade de entrada; não transforma o cliente em somente download. UPnP e NAT-PMP estão desligados: o aplicativo não abre portas no roteador automaticamente. O diagnóstico `npm run rede -- peers` só prova o que o processo observa (escuta local e conexões de entrada recebidas); não testa alcance pela internet, não contata serviços externos e não vê firewall, roteador, CGNAT nem a publicação do contêiner. Abra, se quiser, somente a porta de peers; nunca addon, ponte ou painel.
 
 ## Rede local e contêineres
 
@@ -21,7 +25,8 @@ O addon e as URLs de vídeo exigem uma credencial de instalação revogável (ve
 
 **Administração no contêiner:** endereço privado (RFC1918) não prova identidade, porque o gateway do Docker e qualquer outro contêiner da rede têm um. As rotas administrativas da ponte exigem, em qualquer modo, o token `X-Admin-Token` (`DATA_DIR/admin-key`), independente da chave de reprodução. Fora do contêiner exigem também origem em loopback. Quem alcança a ponte pela rede, mas não tem o token, recebe 403.
 
-Ainda assim, mantenha as publicações HTTP no loopback do host e não conecte a instância a redes com contêineres não confiáveis: o token protege a administração, não o restante da ponte. Não exponha o painel para resolver o acesso de TV/celular.
+Ainda assim, mantenha as publicações HTTP no loopback do host e não conecte a instância a redes com contêineres não confiáveis: o token protege a administração, não o restante da ponte. 
+**TV e celular só precisam do streaming.** Para assistir em outro aparelho basta alcançar o addon (`7000`) e a ponte (`7010`) com uma credencial própria; o painel (`7020`) e a administração não são necessários e devem continuar locais. Não publique o painel nem ative a administração pela LAN para "resolver" a TV. Em instalação nativa use `ASCSTREMIO_MODE=lan` com `LAN_ADVERTISE_HOST` e uma credencial por aparelho. No contêiner o Compose publica só no loopback do host: trocar `127.0.0.1` por outro IP nas linhas 7000/7010 expõe a ponte, que não tem usuário nem TLS, a toda a rede desse IP, e exige informar `ADDON_PUBLIC_URL` e `BRIDGE_PUBLIC_URL`. Esse caminho não é isolado pelo programa (o token administrativo protege só as rotas administrativas) e só vale em rede doméstica confiável; nunca altere a linha do painel.
 
 ## Credenciais de instalação do addon
 
@@ -51,7 +56,7 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 
 **Limite do "por dispositivo".** O Stremio sincroniza addons entre os aparelhos da mesma conta: instalar a URL numa conta propaga o token a todos eles. A credencial identifica uma instalação do addon, não um hardware. Para separar aparelhos, use contas/perfis distintos no Stremio ou emita um token por instalação manual e revogue o que vazar.
 
-**Vazamento.** Logs redigem `ascc_…` e `?k=`; o painel e as respostas públicas nunca trazem o token. Evite colar a URL em chats, issues ou capturas de tela.
+**Vazamento.** Logs redigem `ascc_…` e `?k=`; o painel e as respostas públicas nunca trazem o token. O `?k=` é uma credencial reutilizável, não um identificador de sessão: quem tiver a URL de reprodução, de uma captura de tela ou de um diagnóstico assiste com a sua instalação até a revogação. Não compartilhe essas URLs. O programa não pressupõe que o player aceite cabeçalhos de autenticação (o Stremio não os envia), por isso a chave viaja na URL. **Perdeu ou vazou a URL:** o token não é recuperável; rode `npm run credenciais -- rotacionar <id>` (emite outra e revoga a antiga) ou `revogar` e `criar`, e reinstale a URL nova no Stremio; o painel também emite credenciais.
 
 **Migração.** A chave única antiga (`bridge-key`) e o manifesto sem prefixo deixam de funcionar. Emita uma credencial, remova o addon antigo no Stremio e instale a URL nova. Os dados e o seed não são afetados.
 
@@ -121,6 +126,10 @@ Os `.torrent` obtidos pela integração são salvos como recebidos do ASC e pode
 
 Não compartilhe URLs de instalação ou de reprodução, capturas com `/<token>/` ou `?k=`, cookies ou backups. Para invalidar uma credencial comprometida, use `revogar` ou `rotacionar` (próxima seção). O token administrativo é outra coisa e funciona assim: para trocá-lo, pare a instância, remova `admin-key` e reinicie; ferramentas que o usavam precisam ler o novo valor. Isso não revoga a passkey nem a sessão do ASC. Se estas vazarem, use os mecanismos do próprio tracker para revogá-las.
 
+## Publicar o código não é expor a aplicação
+
+Publicar o repositório, os releases e a imagem (GitHub, GHCR) distribui o **programa**. Isso não autoriza nem recomenda hospedar uma instância na internet: cada instalação usa a conta e a passkey de uma pessoa, em uma máquina dela, e não deve virar serviço compartilhado nem receber tráfego externo (regra 2.2 do ASC). Não há suporte a VPS, túnel público, encaminhamento de portas nem proxy aberto. O proxy HTTPS citado na administração pela LAN é um recurso para a rede doméstica, no mesmo computador, e não uma forma de hospedagem remota.
+
 ## Logs e publicação do código
 
 O logger redige segredos conhecidos e padrões sensíveis antes de gravar, mas revise qualquer exportação antes de enviá-la. Títulos, info hashes, caminhos e horários continuam podendo ser pessoais.
@@ -133,4 +142,4 @@ A licença do código ([MIT](../LICENSE)) não dá acesso ao ASC nem direitos so
 
 Para defeitos comuns, abra uma [issue](https://github.com/msouza10/ascstremio/issues) com versão, plataforma, forma de instalação, comportamento esperado e trecho de log revisado. Não anexe a pasta de dados nem `.torrent` reais.
 
-Para vulnerabilidades, siga a [política de segurança](../.github/SECURITY.md), que define o relato privado pelo GitHub, escopo e prazo de primeira resposta. Não envie credenciais nem dados reais na reprodução. As limitações conhecidas são acompanhadas nas issues, sem promessa de correção já entregue.
+Para vulnerabilidades, siga a [política de segurança](../.github/SECURITY.md), que define o relato privado pelo GitHub, o escopo e o que esperar de resposta (melhor esforço, sem prazo garantido). Não envie credenciais nem dados reais na reprodução. As limitações conhecidas são acompanhadas nas issues, sem promessa de correção já entregue.
