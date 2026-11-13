@@ -47,6 +47,8 @@ A CLI nunca grava `credentials.json`: só o processo que detém a [trava da inst
 
 **Validade e revogação.** A credencial não expira sozinha: vale até ser revogada. A verificação ocorre em cada GET, HEAD e Range, então uma URL guardada em cache pelo player deixa de funcionar na hora da revogação. Respostas de vídeo já abertas dessa credencial são encerradas; o player pode tentar de novo e receberá 403. A revogação de uma credencial não afeta as outras, nem o seed em andamento.
 
+**Substituição e último uso no painel.** Em Conta › Addons, “Substituir” emite uma credencial com o mesmo nome e permissão e revoga a antiga. Confirme a troca e instale a nova URL no Stremio: vídeos abertos com a antiga são interrompidos. A troca é gravada de uma vez; se a gravação falhar, a credencial antiga é preservada. O último uso mostra pedidos GET autenticados ao addon ou ao vídeo desde o início do serviço. Fica apenas em memória, sem tokens, IPs ou nomes de filmes; reiniciar o serviço apaga esses horários. HEAD e tentativas recusadas pela autenticação não contam. Sem registro não significa que a credencial nunca foi usada.
+
 **Limite do "por dispositivo".** O Stremio sincroniza addons entre os aparelhos da mesma conta: instalar a URL numa conta propaga o token a todos eles. A credencial identifica uma instalação do addon, não um hardware. Para separar aparelhos, use contas/perfis distintos no Stremio ou emita um token por instalação manual e revogue o que vazar.
 
 **Vazamento.** Logs redigem `ascc_…` e `?k=`; o painel e as respostas públicas nunca trazem o token. Evite colar a URL em chats, issues ou capturas de tela.

@@ -24,7 +24,7 @@ const NAME_MAX = 40;
 
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 const publicView = (c) => ({
-  id: c.id, name: c.name, status: c.status, createdAt: c.createdAt, revokedAt: c.revokedAt,
+  id: c.id, name: c.name, status: c.status, createdAt: c.createdAt, revokedAt: c.revokedAt, lastUsedAt: c.lastUsedAt ?? null,
 });
 
 // O token da requisição em curso fica aqui para o addon montar as URLs de vídeo com a
@@ -62,7 +62,7 @@ class CredentialStore extends EventEmitter {
     try {
       for (const c of JSON.parse(raw).credentials ?? []) {
         if (c && /^c_[0-9a-f]{8}$/.test(c.id) && /^[0-9a-f]{64}$/.test(c.verifier)) {
-          this.items.set(c.id, { ...c, name: String(c.name ?? '').slice(0, NAME_MAX), status: c.status === true });
+          this.items.set(c.id, { ...c, name: String(c.name ?? '').slice(0, NAME_MAX), status: c.status === true, lastUsedAt: null });
         }
       }
     } catch {
@@ -74,8 +74,14 @@ class CredentialStore extends EventEmitter {
   save() {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ version: 1, credentials: [...this.items.values()] }, null, 2), { mode: 0o600 });
+    fs.writeFileSync(tmp, JSON.stringify({ version: 1, credentials: [...this.items.values()].map(({ lastUsedAt, ...c }) => c) }, null, 2), { mode: 0o600 });
     fs.renameSync(tmp, this.file);
+  }
+
+  // Uso fica só em memória: nenhuma gravação por Range e nenhum token no histórico.
+  recordUse(id) {
+    const c = this.items.get(id);
+    if (c && !c.revokedAt) c.lastUsedAt = this.now();
   }
 
   // `status`: a credencial pode ver o catálogo "ASC — status" (ratio, avisos). Negado por padrão.
@@ -119,9 +125,21 @@ class CredentialStore extends EventEmitter {
   rotate(id) {
     const old = this.items.get(id);
     if (!old || old.revokedAt) return null;
-    const next = this.create({ name: old.name, status: old.status });
-    this.revoke(id);
-    return next;
+    const token = TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
+    let nextId;
+    do { nextId = `c_${crypto.randomBytes(4).toString('hex')}`; } while (this.items.has(nextId));
+    const next = { id: nextId, name: old.name, status: old.status, verifier: hashToken(token), createdAt: this.now(), revokedAt: null };
+    const revoked = { ...old, revokedAt: this.now() };
+    this.items.set(id, revoked);
+    this.items.set(nextId, next);
+    try { this.save(); } catch (err) {
+      this.items.set(id, old);
+      this.items.delete(nextId);
+      throw err;
+    }
+    this.emit('revoked', id);
+    log.info('credencial substituída', { id, nova: nextId });
+    return { credential: publicView(next), token };
   }
 
   list() { return [...this.items.values()].map(publicView); }

@@ -341,6 +341,10 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     try { made = credentials.create({ name: body.name, status: false }); } catch (err) {
       throw new PanelError(422, 'invalid', err.message);
     }
+    return credentialResult(made, info);
+  }
+
+  function credentialResult(made, info) {
     addSecret(made.token); // o token também fica redigido nos logs
     const manifest = `${info.url}/${made.token}/manifest.json`;
     // Stremio Web abre o diálogo de instalação com ?addon=<manifesto codificado>. Fora do
@@ -351,7 +355,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
       credential: made.credential,
       token: made.token,
       manifestUrl: manifest,
-      once: 'O servidor guarda só o verificador do token: depois que o painel perder esta URL (aba fechada), só é possível revogar e emitir outra.',
+      once: 'O servidor guarda só o verificador do token: depois que o painel perder esta URL (aba fechada), use Substituir para emitir outra.',
     };
   }
 
@@ -359,13 +363,28 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
   // Devolve só a visão pública: nunca token nem verificador.
   function revokeCredential(body) {
     if (!credentials) throw new PanelError(503, 'unavailable', 'Credenciais indisponíveis.');
+    const found = activeCredential(body);
+    credentials.revoke(found.id);
+    return { credentials: credentials.list() };
+  }
+
+  function activeCredential(body) {
+    if (!credentials) throw new PanelError(503, 'unavailable', 'Credenciais indisponíveis.');
     const id = body && body.id;
     if (typeof id !== 'string' || !/^c_[0-9a-f]{8}$/.test(id)) throw new PanelError(400, 'invalid', 'Credencial inválida.');
     const found = credentials.list().find((c) => c.id === id);
     if (!found) throw new PanelError(404, 'not_found', 'Credencial não encontrada.');
     if (found.revokedAt) throw new PanelError(409, 'revoked', 'Esta credencial já foi revogada.');
-    credentials.revoke(id);
-    return { credentials: credentials.list() };
+    return found;
+  }
+
+  function rotateCredential(body) {
+    const found = activeCredential(body);
+    const info = addonUrlInfo(resolve());
+    // Sem URL utilizável, preserve a antiga: a pessoa não conseguiria reinstalar.
+    if (!info.url) throw new PanelError(409, 'restart', info.reason);
+    const made = credentials.rotate(found.id);
+    return { ...credentialResult(made, info), credentials: credentials.list() };
   }
 
   // Conexão do Stremio por credencial ativa (só leitura; vem do que o addon recebeu, ver
@@ -381,7 +400,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     };
   }
 
-  return { state, preview, save, wizardState, wizardMark, createCredential, revokeCredential, connection, listCredentials: () => (credentials ? credentials.list() : []) };
+  return { state, preview, save, wizardState, wizardMark, createCredential, revokeCredential, rotateCredential, connection, listCredentials: () => (credentials ? credentials.list() : []) };
 }
 
 module.exports = { createPanelSettings, PanelError, NETWORK_KEYS, WIZARD_FILE };

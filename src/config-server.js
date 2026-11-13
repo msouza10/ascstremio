@@ -22,7 +22,7 @@ const PAGES = [/^\/$/, /^\/filmes$/, /^\/filmes\/[A-Za-z0-9_-]{1,64}$/, /^\/traf
 // Leituras repetidas pelo próprio painel: não geram linha de log (seria ruído e laço).
 const QUIET = new Set(['/api/monitor', '/api/status', '/api/logs', '/api/logs/files', '/api/addon-connection', '/config.js']);
 const MAX_DOWNLOAD = 100_000;
-const PANEL_POSTS = ['/api/settings', '/api/settings/preview', '/api/wizard/complete', '/api/wizard/dismiss', '/api/credentials', '/api/credentials/revoke'];
+const PANEL_POSTS = ['/api/settings', '/api/settings/preview', '/api/wizard/complete', '/api/wizard/dismiss', '/api/credentials', '/api/credentials/revoke', '/api/credentials/rotate'];
 const ALERT_POSTS = ['/api/alerts/webhook', '/api/alerts/webhook/clear', '/api/alerts/test'];
 
 // Cookie de sessão de administração. Em HTTPS (proxy) o prefixo __Host- exige Secure, Path=/ e
@@ -106,6 +106,11 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         const out = panel.revokeCredential(body);
         log.info(`credencial revogada pelo painel: ${body.id}`);
         return [200, out];
+      }
+      if (route === '/api/credentials/rotate') {
+        const made = panel.rotateCredential(body);
+        log.info(`credencial substituída pelo painel: ${body.id} → ${made.credential.id}`);
+        return [201, made];
       }
       // /api/credentials: o token sai só aqui, uma vez (nunca é registrado em log).
       const made = panel.createCredential(body);

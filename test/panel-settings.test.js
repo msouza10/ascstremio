@@ -621,3 +621,82 @@ test('rótulos: toda opção do esquema tem título em português (a chave crua 
   const semTitulo = settings.SCHEMA.filter((e) => M.labelOf({ key: e.key }) === e.key).map((e) => e.key);
   assert.deepEqual(semTitulo, [], `opções sem título em FRIENDLY (src/ui/settings-model.js): ${semTitulo.join(', ')}`);
 });
+
+test('substituir pelo painel: mantém nome e permissão, invalida a antiga, devolve URL nova e lista sem segredos', async () => {
+  const s = await setup();
+  try {
+    const a = s.credentials.create({ name: 'Sala', status: true });
+    const b = s.credentials.create({ name: 'Quarto' });
+    s.credentials.recordUse(a.credential.id);
+    const res = await s.post('credentials/rotate', { id: a.credential.id });
+    assert.equal(res.status, 201);
+    const out = await res.json();
+    assert.equal(out.credential.name, 'Sala');
+    assert.equal(out.credential.status, true);
+    assert.equal(out.credential.lastUsedAt, null);
+    assert.notEqual(out.credential.id, a.credential.id);
+    assert.ok(out.manifestUrl.endsWith(`/${out.token}/manifest.json`));
+    assert.equal(s.credentials.verify(a.token), null);
+    assert.ok(s.credentials.verify(out.token));
+    assert.ok(s.credentials.verify(b.token));
+    assert.ok(out.credentials.find(c => c.id === a.credential.id).revokedAt);
+    const list = JSON.stringify(await s.get('credentials'));
+    for (const token of [a.token, b.token, out.token]) assert.ok(!list.includes(token));
+    assert.ok(!list.includes('verifier'));
+    assert.ok((await s.get('credentials')).credentials.find(c => c.id === a.credential.id).lastUsedAt);
+    assert.equal((await s.post('credentials/rotate', { id: a.credential.id })).status, 409);
+    assert.equal((await s.post('credentials/rotate', { id: 'c_00000000' })).status, 404);
+    assert.equal((await s.post('credentials/rotate', {})).status, 400);
+  } finally { await s.close(); }
+});
+
+test('substituir pelo painel: sessão, CSRF, Origin, Host e JSON são obrigatórios', async () => {
+  const s = await setup();
+  try {
+    const a = s.credentials.create({ name: 'Sala' });
+    const body = { id: a.credential.id };
+    s.asc.connected = false;
+    assert.equal((await s.post('credentials/rotate', body)).status, 401);
+    s.asc.connected = true;
+    const semOrigin = { ...s.good }; delete semOrigin.Origin;
+    const semCsrf = { ...s.good }; delete semCsrf['X-CSRF-Token'];
+    for (const headers of [semOrigin, semCsrf, { ...s.good, Origin: 'http://evil.example' }, { ...s.good, 'X-CSRF-Token': 'errado' }, { ...s.good, 'Content-Type': 'text/plain' }]) {
+      assert.equal((await s.post('credentials/rotate', body, headers)).status, 403);
+    }
+    const status = await new Promise((resolve, reject) => {
+      const req = http.request({ host: '127.0.0.1', port: s.port, path: '/api/credentials/rotate', method: 'POST', headers: { ...s.good, Host: 'evil.example' } }, res => { res.resume(); resolve(res.statusCode); });
+      req.on('error', reject); req.end(JSON.stringify(body));
+    });
+    assert.equal(status, 403);
+    assert.ok(s.credentials.verify(a.token));
+    assert.equal(s.credentials.list().length, 1);
+  } finally { await s.close(); }
+});
+
+test('substituir pelo painel: sem URL utilizável preserva a credencial antiga', async () => {
+  const s = await setup();
+  try {
+    const a = s.credentials.create({ name: 'Sala' });
+    const st = await s.get('settings');
+    await s.post('settings', { expectedRevision: st.revision, changes: { PORT: '7101' } });
+    assert.equal((await s.post('credentials/rotate', { id: a.credential.id })).status, 409);
+    assert.ok(s.credentials.verify(a.token));
+    assert.equal(s.credentials.list().length, 1);
+  } finally { await s.close(); }
+});
+
+test('substituir pelo painel: funciona no limite sem aumentar o total de credenciais ativas', async () => {
+  const s = await setup();
+  try {
+    let first;
+    for (let i = 0; i < 20; i++) {
+      const made = s.credentials.create({ name: `Aparelho ${i}` });
+      first ??= made;
+    }
+    assert.equal((await s.post('credentials', { name: 'Acima do limite' })).status, 422);
+    const before = s.credentials.list().filter(c => !c.revokedAt).length;
+    const res = await s.post('credentials/rotate', { id: first.credential.id });
+    assert.equal(res.status, 201);
+    assert.equal(s.credentials.list().filter(c => !c.revokedAt).length, before);
+  } finally { await s.close(); }
+});
