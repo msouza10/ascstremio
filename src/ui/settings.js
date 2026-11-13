@@ -618,6 +618,8 @@
         let adv = null;
         if (advList.children.length) {
           adv = el('details', 'more');
+          // Abre sozinha quando há algo que o operador precisa ver: rascunho, erro ou valor fora do padrão.
+          adv.open = g.options.some((o) => o.access === 'advanced' && (Object.prototype.hasOwnProperty.call(drafts, o.key) || errors.byKey[o.key] || o.source !== 'default'));
           adv.append(el('summary', '', `Opções avançadas (${advList.children.length})`), advList);
           c.append(adv);
         }
