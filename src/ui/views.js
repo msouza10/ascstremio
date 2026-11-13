@@ -772,11 +772,12 @@
         tabs.append(b);
       }
     }
-    // A aba Addons só é montada (e só consulta o servidor) na primeira vez que é aberta.
+    // Monte uma vez; releia a atividade ao abrir e durante a atualização da aba visível.
     let addonsBuilt = false;
     function showPanel() {
       for (const [k, p] of Object.entries(panels)) p.hidden = k !== aba;
       if (aba === 'addons' && !addonsBuilt && window.Views.addonsPanel) { addonsBuilt = true; panels.addons.append(window.Views.addonsPanel()); }
+      else if (aba === 'addons') panels.addons.firstElementChild?.refreshCredentials?.();
     }
     function setParams(q) { const a = new URLSearchParams(q || '').get('aba'); aba = LABELS.some(([k]) => k === a) ? a : 'sessao'; renderTabs(); showPanel(); }
     root.append(head, tabs, ...Object.values(panels));
@@ -787,6 +788,7 @@
       root,
       params: setParams,
       update(d) {
+        if (aba === 'addons') panels.addons.firstElementChild?.refreshCredentials?.();
         const s = app().store.status || {};
         clear(sessHero);
         const ok = Boolean(s.connected);

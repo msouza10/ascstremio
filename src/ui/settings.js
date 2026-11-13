@@ -1041,6 +1041,9 @@
     const root = el('div', 'stack');
     let state = null;
     let replacement = null;
+    let refreshActivity = () => {};
+    root.refreshCredentials = () => refreshActivity();
+    const useText = (x) => x.lastUsedAt == null ? 'Último uso: sem registro desde o início do serviço' : `Último uso: ${fmtDate(new Date(x.lastUsedAt).toISOString())}`;
     // Anúncio do resultado e erro ficam fora dos cartões: o painel é redesenhado após revogar, e
     // regiões recriadas junto com ele não anunciariam nada. Os mesmos elementos voltam a cada draw().
     const live = liveRegion();
@@ -1090,6 +1093,7 @@
     };
 
     function listCard() {
+      refreshActivity = () => {};
       const c = card();
       const head = cardHead('Addons gerados');
       head.tabIndex = -1; head.dataset.credHead = '1';
@@ -1098,10 +1102,13 @@
       if (!active.length) { c.append(el('p', 'muted', 'Nenhum addon gerado ainda.')); return c; }
       const ul = el('ul', 'cred-list');
       const status = new Map();
+      const uses = new Map();
       for (const x of active) {
         const li = el('li');
         const meta = el('div', 'cred-meta');
-        meta.append(el('strong', '', x.name), el('small', '', `Criado em ${fmtDate(new Date(x.createdAt).toISOString())}`), el('small', '', x.lastUsedAt == null ? 'Último uso: sem registro desde o início do serviço' : `Último uso: ${fmtDate(new Date(x.lastUsedAt).toISOString())}`));
+        const used = el('small', '', useText(x));
+        uses.set(x.id, used);
+        meta.append(el('strong', '', x.name), el('small', '', `Criado em ${fmtDate(new Date(x.createdAt).toISOString())}`), used);
         const chip = el('span', 'cred-status', '…');
         status.set(x.id, chip);
         const actions = el('div', 'item-badges');
@@ -1129,16 +1136,30 @@
         ul.append(li);
       }
       c.append(ul, el('p', 'foot', 'A URL de um addon só aparece quando ele é criado. Se perder a URL, use Substituir e instale a nova no Stremio. O último uso registra pedidos autenticados ao addon ou ao vídeo e é apagado ao reiniciar o serviço.'));
-      // A situação vem da atividade vista pelo serviço (zera quando ele reinicia).
-      app().call('GET', 'addon-connection').then((r) => {
-        for (const cr of r.credentials) {
-          const chip = status.get(cr.id);
-          if (!chip) continue;
-          const base = SITUACAO[cr.state] ?? SITUACAO.aguardando;
-          setText(chip, cr.lastSeenAt ? `${base} · visto ${ago(cr.lastSeenAt)}` : base);
-          chip.dataset.s = cr.state;
-        }
-      }, () => { for (const chip of status.values()) setText(chip, ''); });
+      // Atualize só os textos: uma leitura periódica não pode apagar uma confirmação ou o foco.
+      let reading = false;
+      refreshActivity = async () => {
+        if (reading) return;
+        reading = true;
+        try {
+          const [r, latest] = await Promise.all([app().call('GET', 'addon-connection'), app().call('GET', 'credentials')]);
+          for (const x of latest.credentials) {
+            const node = uses.get(x.id);
+            if (node) setText(node, useText(x));
+            const cached = state.credentials.find(c => c.id === x.id);
+            if (cached) cached.lastUsedAt = x.lastUsedAt;
+          }
+          for (const cr of r.credentials) {
+            const chip = status.get(cr.id);
+            if (!chip) continue;
+            const base = SITUACAO[cr.state] ?? SITUACAO.aguardando;
+            setText(chip, cr.lastSeenAt ? `${base} · visto ${ago(cr.lastSeenAt)}` : base);
+            chip.dataset.s = cr.state;
+          }
+        } catch { /* falha de leitura mantém o último estado conhecido */ }
+        finally { reading = false; }
+      };
+      refreshActivity();
       return c;
     }
 
