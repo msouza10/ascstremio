@@ -147,6 +147,8 @@ class Bridge {
     this.metrics = new StreamMetrics({ now: monotonic, log, ...streamMetrics });
     this.clock = clock;
     this.resumeRun = null; // retomada em andamento: chamadas concorrentes se juntam a ela
+    this.resumeSlots = 0;
+    this.resumeWaiters = [];
     this.resumeAgain = false;
     this.resumeStats = null;
     // `async (ascId) => ({ infoHash, fileIdx })`: baixa o .torrent do release SÓ no
@@ -393,9 +395,18 @@ class Bridge {
     return this.resumeRun;
   }
 
-  // Uma passada: ordena por risco de seed (src/resume-policy.js) e abre os torrents com no máximo
-  // `resumeConcurrency` ao mesmo tempo. Cada abertura passa por getTorrent (admissão de disco
-  // inclusive) e é medida; a falha de uma não interrompe as outras.
+  // Retomada automática e manual dividem o mesmo limite de verificação/abertura.
+  async withResumeSlot(work) {
+    if (this.resumeSlots >= this.resumeConcurrency) await new Promise(resolve => this.resumeWaiters.push(resolve));
+    else this.resumeSlots++;
+    try { return await work(); }
+    finally {
+      const next = this.resumeWaiters.shift();
+      if (next) next(); else this.resumeSlots--;
+    }
+  }
+
+  // Uma passada: ordena por risco de seed e mede cada abertura. A falha de uma não para as outras.
   async resumeOnce(run = { stats: null }) {
     const pendencias = this.vault.list().filter((e) => this.shouldResume(e) && this.entries.has(e.infoHash)
       && !this.retention.isRetiring(e.infoHash)
@@ -435,7 +446,7 @@ class Bridge {
     });
 
     try {
-      await runLimited(ranked, this.resumeConcurrency, async (item) => {
+      await runLimited(ranked, this.resumeConcurrency, async (item) => this.withResumeSlot(async () => {
         const hash = item.infoHash;
         const pendencia = this.vault.get(hash);
         // Uma ação do painel pode ter parado/excluído enquanto este item aguardava na fila.
@@ -480,7 +491,7 @@ class Bridge {
             classe: record.classe, bytes: record.bytes ?? null, prazo: record.prazo,
           });
         }
-      });
+      }));
     } finally {
       lag.disable();
       stats.totalMs = prior + Math.round(this.monotonic() - t0);
@@ -1027,9 +1038,9 @@ class Bridge {
     return send(405, { error: 'método não permitido' });
   }
 
-  async getTorrent(infoHash) {
+  async getTorrent(infoHash, { seedResume = false, torrentData = null } = {}) {
     // Título em remoção pela retenção: nada o reabre até terminar (evita corrida play x apagar).
-    if (this.retention.isRetiring(infoHash)) {
+    if (this.retention.isRetiring(infoHash) && !seedResume) {
       const err = new Error('Título em manutenção (retenção de disco); tente de novo em instantes.');
       err.status = 503;
       err.expose = true;
@@ -1069,7 +1080,7 @@ class Bridge {
         const announce = this.passkey && base
           ? [announceWithPasskey(base, this.passkey)]
           : undefined;
-        const pending = this.client.add(entry.torrentPath, {
+        const pending = this.client.add(torrentData ?? entry.torrentPath, {
           path: this.storeDir,
           // Sem deselect o WebTorrent baixaria o torrent inteiro sozinho.
           deselect: true,
@@ -1104,7 +1115,7 @@ class Bridge {
             freeleech: entry.freeleech ?? null,
           });
           // Conclusão em segundo plano pedida antes de um reinício: retoma.
-          if (this.vault.get(torrent.infoHash)?.backgroundComplete) this.completionTick();
+          if (!seedResume && this.vault.get(torrent.infoHash)?.backgroundComplete) this.completionTick();
           const onDone = () => {
             this.vault.markCompleted(torrent.infoHash);
           };
