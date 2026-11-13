@@ -272,6 +272,23 @@ td a:hover { color: var(--primary); }
 .rows { display: flex; flex-direction: column; }
 .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); font-size: 12px; }
 .row:first-child { border-top: 0; padding-top: 0; }
+/* Tabela de filmes em disco: valor com barra de proporção embaixo. */
+.cell-meter { min-width: 110px; }
+.cell-meter > span { display: block; font-variant-numeric: tabular-nums; }
+.cell-bar { height: 4px; width: 100%; max-width: 120px; margin: 5px 0 0 auto; border-radius: 99px; background: var(--muted); overflow: hidden; }
+.cell-bar::after { content: ""; display: block; height: 100%; width: var(--w, 0%); border-radius: inherit; background: var(--primary); }
+.cell-bar.is-full::after { background: var(--seed); }
+/* Celular: cada filme vira um bloco (nome, situação e os dois valores com rótulo), sem cortar coluna. */
+@media (max-width: 640px) {
+  .files-table, .files-table tbody { display: block; }
+  .files-table thead { display: none; }
+  .files-table tbody tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; padding: 12px 0; border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }
+  .files-table tbody tr:first-child { border-top: 0; }
+  .files-table td { display: block; padding: 0; min-width: 0; text-align: left; }
+  .files-table td:nth-child(1), .files-table td:nth-child(2) { grid-column: 1 / -1; }
+  .files-table td.cell-meter::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted-foreground); }
+  .files-table .cell-bar { margin-left: 0; max-width: none; }
+}
 /* Espaço em disco: 6 números em blocos de 3 colunas (o rótulo ficava a mais de 1000 px do valor). */
 .rows-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 4px; }
 .rows-tiles .row { flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 14px; border: 1px solid color-mix(in oklab, var(--border) 70%, transparent); border-radius: 10px; }

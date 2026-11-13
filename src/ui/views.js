@@ -206,7 +206,7 @@
         // Hit-and-run: parar ou excluir agora seria reincidência, então não há ação segura. Em vez de
         // sumir sem explicar, a barra diz o que fazer.
         const chip = el('span', 'seed-chip is-warn');
-        chip.title = 'O tracker registrou hit-and-run: parar o seed ou excluir os arquivos agora seria reincidência.';
+        chip.title = 'O tracker registrou hit-and-run neste filme (não é uma configuração): parar o seed ou excluir os arquivos agora seria reincidência. Continue semeando até o tracker confirmar o cumprimento.';
         chip.append(icon('flag'), document.createTextNode('Parar e excluir bloqueados · continue semeando'));
         bar.append(chip);
       }
@@ -634,14 +634,21 @@
     diskBody.append(bar.root, diskRows);
     const tw = el('div', 'table-wrap');
     const table = document.createElement('table');
+    table.className = 'files-table';
     const th = document.createElement('thead'); const thr = document.createElement('tr');
     for (const [h, r] of [['Filme', false], ['Situação', false], ['Em disco', true], ['% do arquivo', true]]) { const c = el('th', r ? 'r' : '', h); c.scope = 'col'; thr.append(c); }
     th.append(thr);
     const tb = document.createElement('tbody');
     table.append(th, tb); tw.append(table);
-    cDisk.append(cardHead('Espaço em disco'), diskBody, tw);
+    cDisk.append(cardHead('Espaço em disco'), diskBody);
+    // A lista de filmes ganha cartão e título próprios (antes pendurava no cartão de espaço).
+    const cFiles = card();
+    const filesHead = cardHead('Filmes em disco');
+    const filesCount = el('span', 'muted');
+    filesHead.append(filesCount);
+    cFiles.append(filesHead, tw);
 
-    root.append(head, grid, cChart, cDisk);
+    root.append(head, grid, cChart, cDisk, cFiles);
     return {
       root,
       update(d) {
@@ -662,11 +669,23 @@
         }
         clear(tb);
         const withDisk = d.titles.filter((t) => t.diskBytes > 0).sort((a, b) => b.diskBytes - a.diskBytes);
+        setText(filesCount, withDisk.length ? `${withDisk.length} filme(s)` : '');
+        // Barras: "Em disco" é relativa ao maior filme; "% do arquivo" mostra o quanto do filme já está aqui.
+        const cell = (text, pct, full, label) => {
+          const td = el('td', 'r cell-meter');
+          td.dataset.label = label; // no celular a linha vira bloco e o rótulo vem daqui
+          const bar = el('div', full ? 'cell-bar is-full' : 'cell-bar');
+          bar.style.setProperty('--w', `${Math.max(2, Math.min(100, pct))}%`);
+          td.append(el('span', '', text), bar);
+          return td;
+        };
+        const maior = withDisk[0]?.diskBytes || 1;
         for (const t of withDisk) {
           const tr = document.createElement('tr');
           const c1 = document.createElement('td'); c1.append(link(`/filmes/${t.infoHash}`, t.name, ''));
           const c2 = document.createElement('td'); c2.append(stateBadge(t));
-          tr.append(c1, c2, el('td', 'r', fmtBytes(t.diskBytes)), el('td', 'r', t.size ? `${U.num0.format((t.diskBytes / t.size) * 100)}%` : '—'));
+          const frac = t.size ? (t.diskBytes / t.size) * 100 : 0;
+          tr.append(c1, c2, cell(fmtBytes(t.diskBytes), (t.diskBytes / maior) * 100, false, 'Em disco'), t.size ? cell(`${U.num0.format(frac)}%`, frac, frac >= 99.5, '% do arquivo') : el('td', 'r', '—'));
           tb.append(tr);
         }
         if (!withDisk.length) { const tr = document.createElement('tr'); const c = el('td', 'muted', 'Nenhum filme com dados em disco.'); c.colSpan = 4; tr.append(c); tb.append(tr); }
