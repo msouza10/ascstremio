@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.1](https://github.com/msouza10/ascstremio/compare/v0.3.0...v0.3.1) (2026-11-13)
+
+
+### Correções
+
+* versão do manifesto do addon e dicas de passkey e instalação ([#82](https://github.com/msouza10/ascstremio/issues/82)) ([275f592](https://github.com/msouza10/ascstremio/commit/275f59228fc66b461e1ce61f61fc3036a863d833))
+
+
+### Documentação
+
+* revisão final dos guias e da instalação ([#81](https://github.com/msouza10/ascstremio/issues/81)) ([40bda8d](https://github.com/msouza10/ascstremio/commit/40bda8dd284e8df7ff88d69ba9743c6d6d1c8049))
+
 ## [0.3.0](https://github.com/msouza10/ascstremio/compare/v0.2.0...v0.3.0) (2026-11-13)
 
 
