@@ -212,7 +212,7 @@
     ALERT_WEBHOOK_TOKEN: { title: 'Token do webhook de alertas', hint: 'Segredo, opcional: enviado no cabeçalho Authorization.' },
     ALERT_WEBHOOK_FORMAT: {
       title: 'Formato da mensagem do webhook',
-      values: { json: 'JSON com o evento estruturado', text: 'Texto simples só com a mensagem (ex.: tópico do ntfy)' },
+      values: { json: 'JSON com o evento estruturado (padrão)', text: 'Texto simples só com a mensagem (ex.: tópico do ntfy)' },
     },
     ALERT_WEBHOOK_ALLOWED_HOSTS: { title: 'Hosts aprovados para o webhook', hint: 'Hosts exatos, sem curinga. Obrigatório ao habilitar os alertas.' },
     ALERT_WEBHOOK_ALLOW_PRIVATE: {
