@@ -272,6 +272,9 @@ td a:hover { color: var(--primary); }
 .rows { display: flex; flex-direction: column; }
 .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); font-size: 12px; }
 .row:first-child { border-top: 0; padding-top: 0; }
+/* Detalhes recolhidos dentro de cartões sem padding (tabela de logs em disco). */
+.more-pad { margin: 0 16px 16px; }
+.empty-cell { padding: 20px 16px; text-align: center; color: var(--muted-foreground); font-size: 13px; }
 /* Tabela de filmes em disco: valor com barra de proporção embaixo. */
 .cell-meter { min-width: 110px; }
 .cell-meter > span { display: block; font-variant-numeric: tabular-nums; }
