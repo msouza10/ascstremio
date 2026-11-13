@@ -766,6 +766,9 @@
     let mode = 'local';
     let drafts = {};
     let step = 'modo';
+    // Etapas já abertas nesta sessão (por nome: a revisão pode aparecer e sumir). Voltar à etapa 1 não
+    // pode tirar das etapas seguintes, já visitadas, o botão de ir direto até elas.
+    const visited = new Set();
     let lastPreview = null;
     let connection = 'aguardando';
     let finish = null;
@@ -802,18 +805,21 @@
     function drawStepper() {
       clear(stepper);
       const steps = order();
+      visited.add(step);
       steps.forEach((s, i) => {
         const li = el('li');
         const label = `${i + 1}. ${LABELS[s]}`;
         const done = i < steps.indexOf(step);
-        li.dataset.s = done ? 'done' : (s === step ? 'current' : 'todo');
+        const reachable = s !== step && (done || visited.has(s));
+        li.dataset.s = done ? 'done' : (s === step ? 'current' : (reachable ? 'visited' : 'todo'));
         if (s === step) li.setAttribute('aria-current', 'step');
-        if (done) {
-          // Já visitada: botão para voltar direto (corrigir o passo 1 da revisão sem passar por todos).
-          // O ✓ é visual (::before); o leitor de tela ouve "concluída".
+        if (reachable) {
+          // Já visitada: botão para ir direto (corrigir o passo 1 da revisão sem passar por todos), inclusive
+          // para uma etapa à frente depois de voltar. O ✓ é visual (::before) e só marca as anteriores à
+          // atual; o leitor de tela ouve "concluída" ou "já visitada".
           const b = el('button', 'step-link', label);
           b.type = 'button';
-          b.append(el('span', 'sr-only', ' (concluída)'));
+          b.append(el('span', 'sr-only', done ? ' (concluída)' : ' (já visitada)'));
           b.addEventListener('click', () => go(s));
           li.append(b);
         } else li.append(label);
