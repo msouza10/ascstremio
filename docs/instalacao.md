@@ -199,7 +199,7 @@ unset asc_passkey
 
 O exemplo é para Bash e para o `DATA_DIR` padrão do código. Em uma instalação remota ou Windows, use a pasta de dados correspondente. Nunca envie a passkey pelo chat ou por uma issue. No Windows, proteja o arquivo pelas permissões da conta de usuário.
 
-`PASSKEY` no ambiente tem precedência sobre o arquivo. A limitação atual de `PASSKEY_FILE` está descrita em [configuração](configuracao.md#credenciais-e-caminhos).
+`PASSKEY` no ambiente tem precedência sobre o arquivo.
 
 ## Primeiro acesso
 
