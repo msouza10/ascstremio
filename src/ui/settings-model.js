@@ -94,6 +94,26 @@
     return review ? steps : steps.filter((s) => s !== 'revisar');
   }
 
+  // Valida o que o assistente guardou no sessionStorage antes de reaproveitar. O dado vem do
+  // navegador (pode estar velho, corrompido ou ter sido editado), então nada é confiado: passo
+  // inexistente volta ao início, e só entra rascunho de chave editável que ainda existe, com
+  // valor texto ou null (voltar ao padrão). Nunca lança; sem dado válido devolve o estado inicial.
+  function restoreWizard(raw, options, steps) {
+    const vazio = { step: steps[0] ?? 'modo', drafts: {} };
+    let data;
+    try { data = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return vazio; }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return vazio;
+    const step = steps.includes(data.step) ? data.step : vazio.step;
+    const saved = data.drafts && typeof data.drafts === 'object' && !Array.isArray(data.drafts) ? data.drafts : {};
+    const drafts = {};
+    for (const o of options ?? []) {
+      if (!o.editable || !Object.prototype.hasOwnProperty.call(saved, o.key)) continue;
+      const v = saved[o.key];
+      if (v === null || typeof v === 'string') drafts[o.key] = v;
+    }
+    return { step, drafts };
+  }
+
   // Nome padrão do aparelho: no mesmo computador, o hostname dele (limite de 40 da credencial).
   function copyName(mode, hostname) {
     if (mode === 'lan') return 'Stremio da sala';
@@ -130,7 +150,7 @@
   const hintOf = (option) => FRIENDLY[option.key]?.hint ?? null;
   const valueLabel = (option, value) => FRIENDLY[option.key]?.values?.[value] ?? value;
 
-  module_exports({ textOf, kindOf, display, buildChanges, groupOptions, originText, problemsByKey, changeLine, shouldOfferWizard, wizardSteps, copyName, addonUrls, labelOf, hintOf, valueLabel, AFTER_SEED_EFFECT });
+  module_exports({ textOf, kindOf, display, buildChanges, groupOptions, originText, problemsByKey, changeLine, shouldOfferWizard, wizardSteps, restoreWizard, copyName, addonUrls, labelOf, hintOf, valueLabel, AFTER_SEED_EFFECT });
 
   function module_exports(api) {
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

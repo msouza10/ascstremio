@@ -428,3 +428,27 @@ test('addonUrls: refaz a URL com a base atual e o token guardado (igual à que o
     assert.equal(lan.webUrl, `https://web.stremio.com/#/addons?addon=${encodeURIComponent(lan.manifestUrl)}`);
   } finally { await s.close(); }
 });
+
+test('restoreWizard: devolve passo e rascunhos válidos guardados na sessão', () => {
+  const options = [{ key: 'AFTER_SEED', editable: true }, { key: 'PORT', editable: false }, { key: 'DISK_RESERVE_GIB', editable: true }];
+  const steps = M.wizardSteps('local', true);
+  const raw = JSON.stringify({ step: 'seed', drafts: { AFTER_SEED: 'keep', DISK_RESERVE_GIB: null } });
+  assert.deepEqual(M.restoreWizard(raw, options, steps), { step: 'seed', drafts: { AFTER_SEED: 'keep', DISK_RESERVE_GIB: null } });
+});
+
+test('restoreWizard: descarta passo inexistente, chave desconhecida, não editável e valor não-string', () => {
+  const options = [{ key: 'AFTER_SEED', editable: true }, { key: 'PORT', editable: false }, { key: 'DISK_RESERVE_GIB', editable: true }];
+  const raw = JSON.stringify({ step: 'endereco', drafts: { AFTER_SEED: 'stop', PORT: '9999', INEXISTENTE: 'x', DISK_RESERVE_GIB: 5 } });
+  // 'endereco' só existe na LAN: no modo local volta ao primeiro passo.
+  assert.deepEqual(M.restoreWizard(raw, options, M.wizardSteps('local', true)), { step: 'modo', drafts: { AFTER_SEED: 'stop' } });
+  assert.equal(M.restoreWizard(raw, options, M.wizardSteps('lan', true)).step, 'endereco');
+});
+
+test('restoreWizard: JSON quebrado, nulo ou de tipo errado volta ao início', () => {
+  const options = [{ key: 'AFTER_SEED', editable: true }];
+  const steps = M.wizardSteps('local', true);
+  for (const raw of ['{quebrado', null, undefined, '', 'null', '[]', '42']) {
+    assert.deepEqual(M.restoreWizard(raw, options, steps), { step: 'modo', drafts: {} });
+  }
+  assert.deepEqual(M.restoreWizard(JSON.stringify({ step: 'seed', drafts: [1] }), options, steps), { step: 'seed', drafts: {} });
+});
