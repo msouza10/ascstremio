@@ -2,6 +2,8 @@ const { addonBuilder } = require('stremio-addon-sdk');
 const amigosShare = require('./providers/amigos-share');
 const log = require('./logger').logger.child('addon');
 const statusKit = require('./stremio-status');
+// O Stremio mostra esta versão ao usuário; derivá-la do pacote evita divergir da release.
+const { version: ADDON_VERSION } = require('../package.json');
 
 const CATALOG_ID = 'asc';
 
@@ -73,7 +75,7 @@ function createAddon({ provider = amigosShare, demo = false, library = [], local
 
   const builder = new addonBuilder({
     id: 'local.amigosshare.stremio',
-    version: '0.4.0',
+    version: ADDON_VERSION,
     name: 'ASC — biblioteca local',
     description: 'Reproduz os .torrent do ASC direto no Stremio, por streaming sob demanda.',
     resources: ['catalog', 'meta', 'stream'],
