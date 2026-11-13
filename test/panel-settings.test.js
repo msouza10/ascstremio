@@ -616,3 +616,8 @@ test('revogar credencial pelo painel: recusa Host, Origin ausente, CSRF errado e
     assert.ok(s.credentials.verify(c.token), 'as tentativas recusadas preservam a credencial');
   } finally { await s.close(); }
 });
+
+test('rótulos: toda opção do esquema tem título em português (a chave crua não basta)', () => {
+  const semTitulo = settings.SCHEMA.filter((e) => M.labelOf({ key: e.key }) === e.key).map((e) => e.key);
+  assert.deepEqual(semTitulo, [], `opções sem título em FRIENDLY (src/ui/settings-model.js): ${semTitulo.join(', ')}`);
+});
