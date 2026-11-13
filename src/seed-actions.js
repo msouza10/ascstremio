@@ -107,6 +107,7 @@ async function resumeSeed(bridge, infoHash, entry, fail) {
       const previous = { seedChoice: entry.seedChoice, releasedAs: entry.releasedAs, releasedAt: entry.releasedAt };
       try {
         const torrent = await bridge.getTorrent(infoHash, { seedResume: true, torrentData: verified.data });
+        idle();
         if (!torrent.ready || !torrent.done || !hnr.trackerConfirmed(entry) || entry.tracker.hitAndRun) throw fail(409, 'O estado mudou durante a abertura. O seed continua parado.');
         bridge.vault.setSeedChoice(infoHash, 'keep');
         return { action: 'resume', message: 'Seed retomado. Os arquivos não serão apagados automaticamente.' };

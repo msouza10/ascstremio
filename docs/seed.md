@@ -74,7 +74,7 @@ Reabrir um filme cujos dados foram apagados baixa novamente e pode criar nova ob
 
 ### Voltar a semear
 
-Depois de **Parar seed**, a página do filme oferece **Voltar a semear** se os arquivos ainda parecem completos no disco. Confirme para verificar todas as peças do torrent antes de anunciar. A verificação lê o filme inteiro, pode levar minutos e usa a mesma fila limitada da retomada automática, sem bloquear o painel.
+Depois de **Parar seed**, a página do filme oferece **Voltar a semear** se os arquivos ainda parecem completos no disco. Confirme para verificar todas as peças do torrent antes de anunciar. A verificação lê o filme inteiro, pode levar minutos e usa a mesma fila limitada da retomada automática, sem bloquear o painel. O motor também mantém sua verificação normal: na retomada explícita, cada peça verificada renova o prazo e apenas cinco minutos sem progresso abortam a abertura.
 
 A aplicação exige confirmação atual do tracker antes e depois da verificação. Arquivos ausentes, incompletos, alterados, compartilhados com outro título ou acessados por links são recusados. Reprodução/sessão recente, operação concorrente e quota global de reproduções cheia também bloqueiam a ação. Os arquivos completos não exigem espaço para um download novo: a reserva de disco segue a política normal de admissão.
 

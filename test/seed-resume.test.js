@@ -191,3 +191,91 @@ test('falha do motor não muda a escolha persistida e libera a trava', async () 
   assert.equal(s.vault.get(s.hash).releasedAs, 'stop');
   assert.equal(s.b.retention.isRetiring(s.hash), false);
 });
+
+test('reprodução iniciada durante a abertura impede gravar keep e encerra a retomada', async () => {
+  const s = await setup();
+  let release, entered;
+  const gate = new Promise(r => { release = r; });
+  const started = new Promise(r => { entered = r; });
+  s.b.client.get = async () => { entered(); await gate; return null; };
+  const run = s.b.manageSeed(s.hash, 'resume');
+  await started;
+  s.b.streams.set(s.hash, 1);
+  release();
+  await assert.rejects(run, e => e.status === 409);
+  assert.equal(s.vault.get(s.hash).seedChoice, 'stop');
+  assert.equal(s.b.client.torrents.length, 0);
+});
+
+test('play que já aguardava o motor respeita uma manutenção iniciada durante a espera', async () => {
+  const s = await setup();
+  let release, entered;
+  const gate = new Promise(r => { release = r; });
+  const started = new Promise(r => { entered = r; });
+  s.b.client.get = async () => { entered(); await gate; return null; };
+  const play = s.b.getTorrent(s.hash);
+  await started;
+  s.b.retention.retiring.add(s.hash);
+  release();
+  await assert.rejects(play, e => e.status === 503);
+  assert.equal(s.opened(), 0);
+});
+
+test('verificação do motor pode ultrapassar 30 segundos sem reiniciar a retomada', async (t) => {
+  const s = await setup();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let entered, ready;
+  const started = new Promise(r => { entered = r; });
+  const add = s.b.client.add;
+  s.b.client.add = (source, options, callback) => {
+    const torrent = add(source, options, () => {});
+    ready = () => callback(torrent);
+    entered(); return torrent;
+  };
+  const run = s.b.manageSeed(s.hash, 'resume');
+  await started;
+  t.mock.timers.tick(31_000);
+  ready();
+  assert.equal((await run).action, 'resume');
+});
+
+test('progresso da verificação renova o prazo de inatividade do motor', async (t) => {
+  const s = await setup();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let entered, ready, pending;
+  const started = new Promise(r => { entered = r; });
+  const add = s.b.client.add;
+  s.b.client.add = (source, options, callback) => {
+    pending = add(source, options, () => {});
+    pending.ready = false;
+    ready = () => { pending.ready = true; callback(pending); };
+    entered(); return pending;
+  };
+  const run = s.b.manageSeed(s.hash, 'resume');
+  await started;
+  t.mock.timers.tick(4 * 60_000);
+  pending.emit('verified', 0);
+  t.mock.timers.tick(4 * 60_000);
+  ready();
+  assert.equal((await run).action, 'resume');
+});
+
+test('motor sem progresso por cinco minutos aborta sem perder arquivos ou a escolha de parar', async (t) => {
+  const s = await setup();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let entered;
+  const started = new Promise(r => { entered = r; });
+  const add = s.b.client.add;
+  s.b.client.add = (source, options) => {
+    const torrent = add(source, options, () => {});
+    torrent.ready = false;
+    entered(); return torrent;
+  };
+  const run = s.b.manageSeed(s.hash, 'resume');
+  await started;
+  t.mock.timers.tick(5 * 60_000);
+  await assert.rejects(run, e => e.status === 503);
+  assert.equal(s.b.client.torrents.length, 0);
+  assert.equal(s.vault.get(s.hash).seedChoice, 'stop');
+  assert.ok(fs.existsSync(path.join(s.dir, 'Filme', 'video.mkv')));
+});
