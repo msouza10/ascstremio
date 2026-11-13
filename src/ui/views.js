@@ -202,6 +202,13 @@
         b.type = 'button'; b.disabled = true;
         b.append(icon('clock'), document.createTextNode('Gerenciar seed'));
         bar.append(b, el('span', 'film-hint', 'Disponível depois que o tracker confirmar o seed'));
+      } else if (t.tracker?.hitAndRun && t.onDisk !== 'none') {
+        // Hit-and-run: parar ou excluir agora seria reincidência, então não há ação segura. Em vez de
+        // sumir sem explicar, a barra diz o que fazer.
+        const chip = el('span', 'seed-chip is-warn');
+        chip.title = 'O tracker registrou hit-and-run: parar o seed ou excluir os arquivos agora seria reincidência.';
+        chip.append(icon('flag'), document.createTextNode('Parar e excluir bloqueados · continue semeando'));
+        bar.append(chip);
       }
       if (result) { const message = el('p', 'foot', result); message.setAttribute('role', 'status'); panel.append(message); }
     }
