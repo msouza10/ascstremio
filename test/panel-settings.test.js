@@ -414,3 +414,17 @@ test('reinício de rede pendente: a URL do addon não é gerada e o texto aponta
     assert.equal(bloqueada.status, 409, 'não emite credencial enquanto a rede espera reinício');
   } finally { await s.close(); }
 });
+
+test('addonUrls: refaz a URL com a base atual e o token guardado (igual à que o servidor emite)', async () => {
+  const s = await setup();
+  try {
+    const st = await s.get('settings');
+    const made = await (await s.post('credentials', { name: 'Sala' })).json();
+    // Mesma conta que o servidor faz: a URL guardada na aba pode ser refeita sem divergir.
+    assert.deepEqual(M.addonUrls(st.addon.url, made.token), { manifestUrl: made.manifestUrl, webUrl: made.webUrl });
+    // Se a base mudou (modo LAN, porta, endereço), a URL nova usa a base nova e o mesmo token.
+    const lan = M.addonUrls('http://192.168.1.20:7000/', made.token);
+    assert.equal(lan.manifestUrl, `http://192.168.1.20:7000/${made.token}/manifest.json`);
+    assert.equal(lan.webUrl, `https://web.stremio.com/#/addons?addon=${encodeURIComponent(lan.manifestUrl)}`);
+  } finally { await s.close(); }
+});

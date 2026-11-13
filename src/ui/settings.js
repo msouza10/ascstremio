@@ -263,6 +263,7 @@
       dot.dataset.s = 'paused';
       box.setAttribute('aria-busy', 'false');
       box.dataset.state = 'ausente';
+      onChange('ausente'); // o assistente deixa de mostrar "conectado": a credencial já não funciona
       setText(heading, 'Credencial não encontrada');
       setText(line, 'Esta credencial não existe mais neste servidor (foi revogada ou os dados foram refeitos). Crie outra para instalar.');
       again.hidden = true;
@@ -358,9 +359,15 @@
       try { sessionStorage.setItem(KEEP, JSON.stringify({ ...kept(), [made.credential.id]: made })); } catch { /* sem armazenamento: a URL só aparece nesta tela */ }
     }
     function restore() {
+      // Sem base utilizável (reinício de rede pendente) não há URL a oferecer; com base, a URL é
+      // refeita com o endereço ATUAL e o token guardado (a guardada pode ser de outro endereço).
+      const base = getState().addon?.url;
+      if (!base) return;
       const all = kept();
-      const active = getState().credentials.filter((x) => !x.revokedAt && all[x.id]);
-      if (active.length) showUrl(all[active[active.length - 1].id]);
+      const active = getState().credentials.filter((x) => !x.revokedAt && all[x.id]?.token);
+      if (!active.length) return;
+      const made = all[active[active.length - 1].id];
+      showUrl({ ...made, ...M.addonUrls(base, made.token) });
     }
     let shown = false;
     function showUrl(made) {
@@ -665,7 +672,14 @@
       const links = Object.entries(errors.byKey).map(([k, lines]) => {
         const opt = state.options.find((o) => o.key === k);
         const reason = String(lines[0]).replace(new RegExp(`^(settings\\.json: )?${k}: `), '');
-        return { text: `${opt ? M.labelOf(opt) : k}: ${reason}`, onClick: () => { const f = fields.get(k); if (f) { f.input.scrollIntoView({ block: 'center' }); f.input.focus(); } } };
+        return { text: `${opt ? M.labelOf(opt) : k}: ${reason}`, onClick: () => {
+          const f = fields.get(k);
+          if (!f) return;
+          // Campo escondido pela busca (ou em grupo escondido): limpa o filtro e abre a seção avançada antes de focar.
+          if (f.root.hidden || f.root.closest('.cfg-group')?.hidden) { search.value = ''; clearBtn.hidden = true; applySearch(); }
+          const adv = f.root.closest('details'); if (adv) adv.open = true;
+          f.input.scrollIntoView({ block: 'center' }); f.input.focus();
+        } };
       });
       const resumo = links.length || errors.general.length ? [...links, ...errors.general] : problems;
       errBox.show(title, ex.data?.code === 'conflict' ? [ex.message] : resumo);

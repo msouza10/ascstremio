@@ -119,11 +119,18 @@
     ASCSTREMIO_MODE: { title: 'Modo de uso' },
     LAN_ADVERTISE_HOST: { title: 'Endereço deste computador na rede' },
   };
+  // URLs do addon a partir da base ATUAL e do token guardado na aba. A base muda com o modo LAN, o
+  // endereço anunciado e a porta; guardar a URL pronta deixaria um endereço velho na tela.
+  function addonUrls(base, token) {
+    const manifestUrl = `${String(base).replace(/\/+$/, '')}/${token}/manifest.json`;
+    return { manifestUrl, webUrl: `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}` };
+  }
+
   const labelOf = (option) => FRIENDLY[option.key]?.title ?? option.key;
   const hintOf = (option) => FRIENDLY[option.key]?.hint ?? null;
   const valueLabel = (option, value) => FRIENDLY[option.key]?.values?.[value] ?? value;
 
-  module_exports({ textOf, kindOf, display, buildChanges, groupOptions, originText, problemsByKey, changeLine, shouldOfferWizard, wizardSteps, copyName, labelOf, hintOf, valueLabel, AFTER_SEED_EFFECT });
+  module_exports({ textOf, kindOf, display, buildChanges, groupOptions, originText, problemsByKey, changeLine, shouldOfferWizard, wizardSteps, copyName, addonUrls, labelOf, hintOf, valueLabel, AFTER_SEED_EFFECT });
 
   function module_exports(api) {
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
