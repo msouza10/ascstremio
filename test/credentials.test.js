@@ -303,3 +303,63 @@ test('CLI: emite com a URL de instalação, lista sem token e fala com a ponte c
   assert.equal(await cli.run(['criar'], { env, doFetch, out }), 2);
   await assert.rejects(cli.run(['listar'], { env: { DATA_DIR: tmpdir('vazio-') }, doFetch, out }), /admin-key/);
 });
+
+test('último uso: só em memória, por credencial, sem alterar o arquivo nem sobreviver ao reinício', () => {
+  let now = 1000;
+  const file = path.join(tmpdir('uso-'), 'credentials.json');
+  const store = new CredentialStore({ file, now: () => now });
+  const a = store.create({ name: 'Sala' });
+  const b = store.create({ name: 'Quarto' });
+  const before = fs.readFileSync(file, 'utf8');
+  assert.equal(store.verify(a.token).lastUsedAt, null);
+  store.recordUse(a.credential.id);
+  assert.equal(store.verify(a.token).lastUsedAt, 1000);
+  now = 2000;
+  store.recordUse(a.credential.id);
+  assert.equal(store.list().find(c => c.id === a.credential.id).lastUsedAt, 2000);
+  assert.equal(store.verify(b.token).lastUsedAt, null);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+  store.revoke(a.credential.id);
+  now = 3000;
+  store.recordUse(a.credential.id);
+  assert.equal(store.list().find(c => c.id === a.credential.id).lastUsedAt, 2000);
+  assert.ok(!fs.readFileSync(file, 'utf8').includes('lastUsedAt'));
+  assert.equal(new CredentialStore({ file }).list()[0].lastUsedAt, null);
+});
+
+test('rotacionar: falha ao gravar preserva a antiga e não encerra sessões', () => {
+  const store = newStore();
+  const a = store.create({ name: 'Sala', status: true });
+  const before = fs.readFileSync(store.file, 'utf8');
+  let revoked = false;
+  store.on('revoked', () => { revoked = true; });
+  store.save = () => { throw new Error('disco indisponível'); };
+  assert.throws(() => store.rotate(a.credential.id), /disco indisponível/);
+  assert.equal(store.list().length, 1);
+  assert.ok(store.verify(a.token));
+  assert.equal(revoked, false);
+  assert.equal(fs.readFileSync(store.file, 'utf8'), before);
+});
+
+test('último uso do addon: GET autenticado conta; HEAD, OPTIONS, rota e token inválidos não', () => {
+  const store = newStore();
+  const a = store.create({ name: 'Sala' });
+  const handle = createAddonHandler({ store, addon: { manifest: { catalogs: [] } }, router: () => {} });
+  const invoke = (method, url) => handle({ method, url }, { writeHead() {}, end() {} });
+  for (const method of ['HEAD', 'OPTIONS']) invoke(method, `/${a.token}/manifest.json`);
+  invoke('GET', `/${a.token}/desconhecida`);
+  invoke('GET', '/invalido/manifest.json');
+  assert.equal(store.verify(a.token).lastUsedAt, null);
+  invoke('GET', `/${a.token}/manifest.json`);
+  assert.ok(store.verify(a.token).lastUsedAt);
+});
+
+test('último uso do vídeo: HEAD não conta; GET autenticado conta', async () => {
+  const store = newStore();
+  const a = store.create({ name: 'Sala' });
+  const b = newBridge(store);
+  await call(b, `/a/12?k=${a.token}`, { method: 'HEAD' });
+  assert.equal(store.verify(a.token).lastUsedAt, null);
+  await call(b, `/a/12?k=${a.token}`);
+  assert.ok(store.verify(a.token).lastUsedAt);
+});

@@ -1413,6 +1413,7 @@ class Bridge {
       }
       lease = this.admitPlayback(res, credential, key);
       if (!lease) return;
+      this.credentials.recordUse(credential.id);
     }
 
     // /a/<id>: fonte listada pelo Stremio sem .torrent local. Só o GET (o play)

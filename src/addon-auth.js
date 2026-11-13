@@ -44,7 +44,10 @@ function createAddonHandler({ addon, router, store, status = null, activity = nu
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) || !ROUTES.test(rest)) { deny(res, 404, 'rota desconhecida'); return; }
     req.url = rest + (m[3] ?? '');
     // Só GET de credencial válida conta: HEAD/OPTIONS (sondas, preflight) não provam uso.
-    if (req.method === 'GET') activity?.record(credential.id, rest);
+    if (req.method === 'GET') {
+      store.recordUse(credential.id);
+      activity?.record(credential.id, rest);
+    }
 
     runWith(credential, m[1], () => {
       if (rest === '/manifest.json' && req.method !== 'OPTIONS') {
