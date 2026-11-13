@@ -94,24 +94,27 @@
   }
 
   // ------------------------------------------------------- concluir download
-  // Fluxo com confirmação dentro da página (sem confirm()).
+  // Fluxo com confirmação dentro da página (sem confirm()). `bar` (botões) vai para o cabeçalho,
+  // ao lado de "Abrir no ASC"; `panel` (confirmação e resultado) aparece logo abaixo dele.
   function completeFlow() {
-    const root = el('div', 'stack');
+    const bar = el('div', 'film-bar');
+    const panel = el('div', 'stack');
     let confirming = false; let result = ''; let busy = false; let current = null;
     function render() {
-      clear(root);
+      clear(bar); clear(panel);
       const t = current;
       if (!t) return;
       const can = t.state === 'partial' || t.state === 'unstarted';
       if (can && !confirming) {
-        const b = el('button', 'btn btn-outline');
+        const b = el('button', 'btn btn-primary btn-sm btn-icon');
         b.type = 'button';
-        b.append(icon('download'), document.createTextNode('Concluir download em segundo plano'));
+        b.title = 'Baixa o restante com prioridade baixa e abre a obrigação de 72 h de seed.';
+        b.append(icon('download'), document.createTextNode('Concluir download'));
         b.addEventListener('click', () => { confirming = true; result = ''; render(); });
-        root.append(b, el('p', 'foot', 'Baixa o restante com prioridade baixa e abre a obrigação de 72 h de seed.'));
+        bar.append(b);
       } else if (can && confirming) {
         const free = t.freeleech === true;
-        root.append(alertBox(free ? 'complete' : 'leech', free ? 'Abre 72 h de seed' : 'Não é freeleech',
+        panel.append(alertBox(free ? 'complete' : 'leech', free ? 'Abre 72 h de seed' : 'Não é freeleech',
           free ? 'Só faça se for manter a ponte ligada: o seed é cobrado pelo tracker.'
             : 'O download inteiro conta no seu ratio, e concluir também abre 72 h de seed.'));
         const row = el('div', 'item-badges');
@@ -129,44 +132,58 @@
           busy = false; confirming = false; render(); app().refresh();
         });
         row.append(ok, cancel);
-        root.append(row);
-      } else if (!result) {
-        root.append(el('p', 'foot', t.state === 'completing'
-          ? 'O restante já está sendo baixado. Acompanhe o progresso acima.'
-          : 'Este filme não precisa de ação: o download já foi concluído ou não é cobrado.'));
+        panel.append(row);
+      } else if (t.state === 'completing') {
+        const b = el('button', 'btn btn-outline btn-sm btn-icon');
+        b.type = 'button'; b.disabled = true;
+        b.append(icon('arrow-down-to-line'), document.createTextNode('Baixando o restante'));
+        bar.append(b);
       }
-      if (result) root.append(el('p', 'foot', result));
+      if (result) { const message = el('p', 'foot', result); message.setAttribute('role', 'status'); panel.append(message); }
     }
-    return { root, set(t) { const was = current?.state; current = t; if (was !== t.state || !root.childElementCount) render(); } };
+    return { bar, panel, set(t) { const was = current?.state; current = t; if (was !== t.state || !(bar.childElementCount + panel.childElementCount)) render(); } };
   }
 
+  // Gerenciar o seed depois de cumprido: os botões ficam no cabeçalho; a confirmação, abaixo dele.
+  // Antes de o tracker confirmar, o botão aparece desabilitado com o motivo (não some sem explicar).
   function seedFlow() {
-    const root = el('div', 'stack');
+    const bar = el('div', 'film-bar');
+    const panel = el('div', 'stack');
     let current = null; let action = null; let busy = false; let result = ''; let signature = '';
-    const labels = { keep: 'Continuar semeando', stop: 'Parar seed e manter arquivos', delete: 'Excluir arquivos e parar seed' };
+    const labels = { keep: 'Manter semeando (não apagar sozinho)', stop: 'Parar seed e manter arquivos', delete: 'Excluir arquivos e parar seed' };
+    const short = { keep: 'Manter semeando', stop: 'Parar seed', delete: 'Excluir arquivos' };
     function render() {
-      clear(root);
+      clear(bar); clear(panel);
       const t = current;
       if (!t || !/^[0-9a-f]{40}$/.test(t.infoHash)) return;
-      root.append(el('p', 'foot', t.tracker?.satisfied
-        ? 'Seed obrigatório cumprido e confirmado pelo tracker. Você pode manter ou excluir os arquivos.'
-        : 'Parar ou excluir fica disponível depois que o tracker confirmar o seed obrigatório. Para decidir depois, selecione AFTER_SEED=manual nas configurações.'));
       if (t.tracker?.satisfied && !t.tracker.hitAndRun && t.onDisk !== 'none') {
-        const row = el('div', 'item-badges');
+        // "Manter semeando" não é o contrário de "Parar": é "não apague meus arquivos sozinho". Depois
+        // de escolhido, o botão mostra o estado (✓ mantido) em vez de seguir oferecendo a mesma ação.
+        // Não existe "retomar": parar é definitivo, então não há liga/desliga.
+        const kept = t.seedChoice === 'keep';
+        if (!t.active) {
+          const chip = el('span', 'seed-chip');
+          chip.title = 'O seed foi encerrado; os arquivos continuam no disco.';
+          chip.append(icon('wifi-off'), document.createTextNode('Seed parado'));
+          bar.append(chip);
+        }
         for (const key of ['keep', 'stop', 'delete']) {
           if (key !== 'delete' && !t.active) continue;
-          const button = el('button', 'btn btn-outline', labels[key]);
-          button.type = 'button'; button.disabled = busy;
+          const button = el('button', key === 'delete' ? 'btn btn-danger btn-sm btn-icon' : 'btn btn-outline btn-sm btn-icon');
+          const glyph = { keep: kept ? 'circle-check' : 'arrow-up-from-line', stop: 'wifi-off', delete: 'trash-2' }[key];
+          button.append(icon(glyph), document.createTextNode(key === 'keep' && kept ? 'Semeando · mantido' : short[key]));
+          button.type = 'button'; button.disabled = busy || (key === 'keep' && kept); button.title = key === 'keep' && kept ? 'Os arquivos não serão apagados sozinhos.' : labels[key];
+          if (key === 'keep' && kept) { button.classList.add('is-on'); button.setAttribute('aria-pressed', 'true'); }
           button.addEventListener('click', () => { action = key; result = ''; render(); });
-          row.append(button);
+          bar.append(button);
         }
-        root.append(row);
         if (action) {
-          root.append(el('p', '', action === 'delete'
+          panel.append(alertBox(action === 'delete' ? 'leech' : 'primary', labels[action], action === 'delete'
             ? 'Os arquivos deste conteúdo serão apagados. Assistir novamente pode baixar tudo e criar uma nova obrigação de seed.'
             : action === 'stop' ? 'O seed será encerrado e os arquivos ficarão no disco para assistir depois.'
               : 'O seed continuará e este conteúdo não será apagado automaticamente.'));
-          const ok = el('button', 'btn btn-primary', `Confirmar: ${labels[action].toLowerCase()}`);
+          const row = el('div', 'item-badges');
+          const ok = el('button', action === 'delete' ? 'btn btn-danger' : 'btn btn-primary', 'Confirmar');
           const cancel = el('button', 'btn btn-ghost', 'Cancelar');
           ok.type = cancel.type = 'button'; ok.disabled = cancel.disabled = busy;
           cancel.addEventListener('click', () => { action = null; render(); });
@@ -176,12 +193,19 @@
             catch (err) { result = err.message || 'Não foi possível concluir a ação.'; }
             busy = false; action = null; render(); app().refresh();
           });
-          root.append(ok, cancel);
+          row.append(ok, cancel);
+          panel.append(row);
         }
+      } else if (!t.tracker?.hitAndRun && t.onDisk !== 'none' && ['seeding', 'awaiting', 'paused'].includes(t.state)) {
+        // Ainda não dá para parar/excluir: mostra o botão desabilitado com o motivo, em vez de escondê-lo.
+        const b = el('button', 'btn btn-outline btn-sm btn-icon');
+        b.type = 'button'; b.disabled = true;
+        b.append(icon('clock'), document.createTextNode('Gerenciar seed'));
+        bar.append(b, el('span', 'film-hint', 'Disponível depois que o tracker confirmar o seed'));
       }
-      if (result) { const message = el('p', 'foot', result); message.setAttribute('role', 'status'); root.append(message); }
+      if (result) { const message = el('p', 'foot', result); message.setAttribute('role', 'status'); panel.append(message); }
     }
-    return { root, set(t) {
+    return { bar, panel, set(t) {
       current = t;
       const next = JSON.stringify([t.infoHash, t.tracker?.satisfied, t.tracker?.hitAndRun, t.active, t.onDisk, t.seedChoice]);
       if (next !== signature && !busy) { signature = next; action = null; render(); }
@@ -425,10 +449,15 @@
     const title = el('h1');
     const badges = el('div', 'item-badges');
     hl.append(title, badges);
-    const ext = el('a', 'btn btn-outline btn-sm');
+    const ext = el('a', 'btn btn-outline btn-sm btn-icon');
     ext.target = '_blank'; ext.rel = 'noopener noreferrer';
-    ext.append(document.createTextNode('Abrir no ASC'), icon('arrow-up-from-line'));
-    head.append(hl, ext);
+    ext.append(document.createTextNode('Abrir no ASC'), icon('arrow-up-right'));
+    // As ações do filme ficam aqui, ao lado de "Abrir no ASC"; a confirmação aparece abaixo.
+    const flow = completeFlow();
+    const seed = seedFlow();
+    const actions = el('div', 'film-actions');
+    actions.append(flow.bar, seed.bar, ext);
+    head.append(hl, actions);
 
     const alerts = el('div', 'alerts');
     const cols = el('div', 'grid grid-2');
@@ -461,17 +490,13 @@
     const cAct = card();
     const actRows = el('dl', 'rows');
     cAct.append(cardHead('Sua atividade'), actRows);
-    const cBtn = card();
-    const flow = completeFlow();
-    const seed = seedFlow();
-    cBtn.append(cardHead('Ações'), flow.root, seed.root);
     const cDet = card();
     const detRows = el('dl', 'rows');
     cDet.append(cardHead('Detalhes'), detRows);
-    side.append(cAct, cBtn, cDet);
+    side.append(cAct, cDet);
 
     cols.append(main, side);
-    root.append(crumbs, head, alerts, cols);
+    root.append(crumbs, head, flow.panel, seed.panel, alerts, cols);
 
     const kv = (dl, pairs) => {
       clear(dl);

@@ -459,6 +459,15 @@ html[data-route="conta"] .sidebar { display: none; }
 .side-go:hover { background: var(--accent); }
 .side-go:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .side-go .ic { width: 16px; height: 16px; color: var(--muted-foreground); }
+/* Tela de filme: ações no cabeçalho, ao lado de "Abrir no ASC". */
+.film-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.film-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+.film-bar:empty, .page > .stack:empty { display: none; }
+.film-bar { align-items: center; }
+.film-bar .is-on { color: var(--seed); border-color: color-mix(in oklab, var(--seed) 45%, var(--border)); background: color-mix(in oklab, var(--seed) 8%, transparent); opacity: 1; }
+.seed-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px dashed var(--border); border-radius: 8px; font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+.seed-chip .ic { width: 14px; height: 14px; }
+.film-hint { font-size: 12px; color: var(--muted-foreground); max-width: 22ch; line-height: 1.35; }
 .page-conta { max-width: 880px; margin-inline: auto; width: 100%; }
 .page-conta .card { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
 .page-conta .card-head { margin-bottom: 0; }
