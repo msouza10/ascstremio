@@ -623,7 +623,7 @@
     const cDisk = card('card-flush');
     const diskBody = el('div', 'stack'); diskBody.style.setProperty('padding', '0 16px 16px');
     const bar = U.diskBar();
-    const diskRows = el('dl', 'rows');
+    const diskRows = el('dl', 'rows rows-tiles'); // números em blocos: rótulo e valor juntos, sem vão
     diskBody.append(bar.root, diskRows);
     const tw = el('div', 'table-wrap');
     const table = document.createElement('table');

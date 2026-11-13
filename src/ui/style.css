@@ -173,7 +173,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .btn-sm { height: 32px; border-radius: 8px; padding-inline: 12px; font-size: 12px; }
 .btn-ghost { height: 32px; padding-inline: 10px; color: var(--muted-foreground); border-radius: 8px; }
 .btn-ghost:hover:not(:disabled) { background: var(--accent); color: var(--foreground); }
-.btn-danger { height: 40px; border-radius: 12px; border: 1px solid var(--border); color: var(--muted-foreground); }
+.btn-danger { height: 40px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--destructive) 35%, var(--border)); color: color-mix(in oklab, var(--destructive-foreground) 80%, var(--foreground)); }
+.btn-danger.btn-sm { height: 32px; border-radius: 8px; }
 .btn-danger:hover:not(:disabled) { border-color: color-mix(in oklab, var(--destructive) 40%, transparent); background: color-mix(in oklab, var(--destructive) 10%, transparent); color: var(--destructive-foreground); }
 
 /* formulário */
@@ -271,6 +272,12 @@ td a:hover { color: var(--primary); }
 .rows { display: flex; flex-direction: column; }
 .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); font-size: 12px; }
 .row:first-child { border-top: 0; padding-top: 0; }
+/* Espaço em disco: 6 números em blocos de 3 colunas (o rótulo ficava a mais de 1000 px do valor). */
+.rows-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 4px; }
+.rows-tiles .row { flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 14px; border: 1px solid color-mix(in oklab, var(--border) 70%, transparent); border-radius: 10px; }
+.rows-tiles .row:first-child { padding-top: 12px; border-top: 1px solid color-mix(in oklab, var(--border) 70%, transparent); }
+.rows-tiles .row dd { text-align: left; font-size: 16px; font-weight: 600; }
+@media (max-width: 720px) { .rows-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .row.stackrow { flex-direction: column; align-items: flex-start; gap: 2px; }
 .row.stackrow dd { text-align: left; }
 .row dd.mono { font-family: var(--font-mono); font-size: 12px; font-weight: 400; }
