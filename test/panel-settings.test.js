@@ -513,3 +513,84 @@ test('restoreWizard: JSON quebrado, nulo ou de tipo errado volta ao início', ()
   }
   assert.deepEqual(M.restoreWizard(JSON.stringify({ step: 'seed', drafts: [1] }), options, steps), { step: 'seed', drafts: {} });
 });
+
+test('revogar credencial pelo painel: vale na hora, lista mostra revokedAt e a resposta não traz token', async () => {
+  const s = await setup();
+  try {
+    const made = await (await s.post('credentials', { name: 'Sala' })).json();
+    const outra = s.credentials.create({ name: 'Quarto' });
+    const res = await s.post('credentials/revoke', { id: made.credential.id });
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.ok(!text.includes(made.token) && !text.includes(outra.token), 'token nunca volta');
+    assert.ok(!/verifier/.test(text), 'verificador nunca volta');
+    const list = JSON.parse(text).credentials;
+    assert.ok(list.find((c) => c.id === made.credential.id).revokedAt);
+    assert.equal(list.find((c) => c.id === outra.credential.id).revokedAt, null, 'só a pedida é revogada');
+    assert.equal(s.credentials.verify(made.token), null);
+    assert.equal(s.credentials.verify(outra.token).id, outra.credential.id);
+  } finally { await s.close(); }
+});
+
+test('revogar credencial pelo painel: id inexistente é 404 e nada muda', async () => {
+  const s = await setup();
+  try {
+    const c = s.credentials.create({ name: 'x' });
+    const res = await s.post('credentials/revoke', { id: 'c_00000000' });
+    assert.equal(res.status, 404);
+    assert.equal((await res.json()).code, 'not_found');
+    assert.equal(s.credentials.verify(c.token).id, c.credential.id);
+    assert.equal(s.credentials.list().filter((x) => x.revokedAt).length, 0);
+  } finally { await s.close(); }
+});
+
+test('revogar credencial pelo painel: já revogada é 409', async () => {
+  const s = await setup();
+  try {
+    const c = s.credentials.create({ name: 'x' });
+    assert.equal((await s.post('credentials/revoke', { id: c.credential.id })).status, 200);
+    const again = await s.post('credentials/revoke', { id: c.credential.id });
+    assert.equal(again.status, 409);
+    assert.equal((await again.json()).code, 'revoked');
+  } finally { await s.close(); }
+});
+
+test('revogar credencial pelo painel: id ausente ou inválido é 400', async () => {
+  const s = await setup();
+  try {
+    s.credentials.create({ name: 'x' });
+    for (const body of [{}, { id: 5 }, { id: '' }, { id: 'c_zzzzzzzz' }, { id: ['c_00000000'] }, { id: 'c_00000000; drop' }]) {
+      assert.equal((await s.post('credentials/revoke', body)).status, 400, JSON.stringify(body));
+    }
+    assert.equal(s.credentials.list().filter((x) => x.revokedAt).length, 0);
+  } finally { await s.close(); }
+});
+
+test('revogar credencial pelo painel: sem CSRF ou com Origin errado é 403 e nada muda', async () => {
+  const s = await setup();
+  try {
+    const c = s.credentials.create({ name: 'x' });
+    const semCsrf = { 'Content-Type': 'application/json', Origin: s.base };
+    const origemErrada = { ...s.good, Origin: 'http://evil.example' };
+    assert.equal((await s.post('credentials/revoke', { id: c.credential.id }, semCsrf)).status, 403);
+    assert.equal((await s.post('credentials/revoke', { id: c.credential.id }, origemErrada)).status, 403);
+    assert.equal(s.credentials.verify(c.token).id, c.credential.id, 'continua ativa');
+  } finally { await s.close(); }
+});
+
+test('revogar credencial pelo painel: exige sessão do ASC e, ao revogar a última, installPending segue a regra', async () => {
+  const s = await setup();
+  try {
+    const antes = await s.get('settings');
+    await s.post('settings', { expectedRevision: antes.revision, changes: { PORT: '7101' } });
+    await s.post('wizard/complete', {});
+    const c = s.credentials.create({ name: 'x' });
+    assert.equal((await s.get('settings')).wizard.installPending, false);
+    s.asc.connected = false;
+    assert.equal((await s.post('credentials/revoke', { id: c.credential.id })).status, 401);
+    assert.ok(s.credentials.verify(c.token), 'sem sessão nada é revogado');
+    s.asc.connected = true;
+    assert.equal((await s.post('credentials/revoke', { id: c.credential.id })).status, 200);
+    assert.equal((await s.get('settings')).wizard.installPending, true, 'sem credencial ativa o aviso volta');
+  } finally { await s.close(); }
+});
