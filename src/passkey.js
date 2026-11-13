@@ -71,7 +71,7 @@ if (require.main === module) {
   // Diagnóstico sem expor o segredo.
   const passkey = readPasskey({ file: process.argv[2] });
   if (!passkey) {
-    console.log('passkey: não configurada (defina PASSKEY_FILE=private/passkey.txt)');
+    console.log('passkey: não configurada (grave a passkey em passkey.txt na pasta de dados ou defina PASSKEY)');
   } else {
     console.log(`passkey: carregada (${passkey.length} caracteres) — valor não exibido`);
     console.log(`announce: ${announceWithPasskey(DEFAULT_ANNOUNCE_BASE, passkey).replace(/\/[^/]+$/, '/****')}`);

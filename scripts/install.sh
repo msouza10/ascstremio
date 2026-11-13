@@ -393,7 +393,8 @@ fi
 
 # Credencial de reprodução: o addon recusa tudo sem uma. Emite a primeira só se não houver
 # nenhuma ativa (o token aparece uma vez, aqui no terminal; nunca vai ao log do serviço).
-ADDON_LINE="http://127.0.0.1:7000/<credencial>/manifest.json (emita: npm run credenciais -- criar \"Stremio\")"
+# O DATA_DIR vai explícito: na instalação remota ele não é <projeto>/private, que é o padrão da CLI.
+ADDON_LINE="http://127.0.0.1:7000/<credencial>/manifest.json (emita: cd \"$PROJECT\" && DATA_DIR=\"$DATA_DIR\" npm run credenciais -- criar \"Stremio\")"
 if [ "$up" -eq 1 ] && [ "$MODE" != check ]; then
   step "Credencial de reprodução"
   if issued="$(DATA_DIR="$DATA_DIR" node "$PROJECT/src/credenciais-cli.js" garantir 2>&1)"; then
