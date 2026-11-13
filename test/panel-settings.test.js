@@ -445,3 +445,9 @@ test('busca das Configurações: título humano, chave, descrição, acento e ma
   assert.equal(keys('   ').length, 3, 'só espaços equivale a vazio');
   assert.deepEqual(keys('zzz-inexistente'), [], 'sem resultado');
 });
+
+test('rótulo da retenção: não promete limpeza automática (só prévia e execução manual)', () => {
+  const opt = { key: 'RETENTION_MODE' };
+  assert.doesNotMatch(M.labelOf(opt), /autom/i);
+  assert.match(M.hintOf(opt), /nada é removido sozinho/i);
+});

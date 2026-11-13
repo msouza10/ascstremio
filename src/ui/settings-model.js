@@ -137,8 +137,10 @@
     BRIDGE_UPLOAD_LIMIT: { title: 'Limite de upload', hint: '-1 = sem limite. 0 desliga o envio.' },
     BRIDGE_STREAM_UPLOAD_LIMIT: { title: 'Teto de upload durante a reprodução', hint: '-1 = não reduz o upload ao assistir.' },
     RESUME_CONCURRENCY: { title: 'Seeds retomados ao mesmo tempo na partida' },
+    // Não é automática: no modo "preview" nada é removido sozinho; a limpeza é manual e confirmada.
     RETENTION_MODE: {
-      title: 'Limpeza automática da biblioteca',
+      title: 'Limpeza da biblioteca por orçamento',
+      hint: 'Nada é removido sozinho: com a prévia ligada, a limpeza é manual e confirmada (npm run retencao).',
       values: { off: 'Desligada (padrão)', preview: 'Mostrar prévia e permitir execução manual' },
     },
     RETENTION_BUDGET_GIB: { title: 'Orçamento de disco dos filmes' },
