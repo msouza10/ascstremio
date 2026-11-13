@@ -130,7 +130,21 @@
   const hintOf = (option) => FRIENDLY[option.key]?.hint ?? null;
   const valueLabel = (option, value) => FRIENDLY[option.key]?.values?.[value] ?? value;
 
-  module_exports({ textOf, kindOf, display, buildChanges, groupOptions, originText, problemsByKey, changeLine, shouldOfferWizard, wizardSteps, copyName, addonUrls, labelOf, hintOf, valueLabel, AFTER_SEED_EFFECT });
+  // Normaliza para a busca: sem acento e sem diferenciar maiúsculas ("Reprodução" casa "reproducao").
+  const fold = (t) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+  // Casa a consulta com o título humano, a chave ou a descrição. Cada palavra digitada precisa
+  // aparecer em algum deles; consulta vazia casa tudo.
+  function matchesQuery(option, query) {
+    const words = fold(query).split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const hay = fold(`${labelOf(option)} ${option.key} ${FRIENDLY[option.key]?.hint ?? ''} ${option.description ?? ''}`);
+    return words.every((w) => hay.includes(w));
+  }
+
+  const filterOptions = (options, query) => options.filter((o) => matchesQuery(o, query));
+
+  module_exports({ matchesQuery, filterOptions, textOf, kindOf, display, buildChanges, groupOptions, originText, problemsByKey, changeLine, shouldOfferWizard, wizardSteps, copyName, addonUrls, labelOf, hintOf, valueLabel, AFTER_SEED_EFFECT });
 
   function module_exports(api) {
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

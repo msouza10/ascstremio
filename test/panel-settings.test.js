@@ -428,3 +428,20 @@ test('addonUrls: refaz a URL com a base atual e o token guardado (igual à que o
     assert.equal(lan.webUrl, `https://web.stremio.com/#/addons?addon=${encodeURIComponent(lan.manifestUrl)}`);
   } finally { await s.close(); }
 });
+
+test('busca das Configurações: título humano, chave, descrição, acento e maiúsculas', () => {
+  const opts = [
+    { key: 'AFTER_SEED', description: 'O que fazer com o filme depois do seed.' },
+    { key: 'PLAYBACK_MAX_SESSIONS', description: 'Máximo de reproduções simultâneas no total.' },
+    { key: 'LOG_LEVEL', description: 'Nível mínimo registrado.' },
+  ];
+  const keys = (q) => M.filterOptions(opts, q).map((o) => o.key);
+  assert.deepEqual(keys('depois de cumprir'), ['AFTER_SEED'], 'pelo título humano');
+  assert.deepEqual(keys('playback_max'), ['PLAYBACK_MAX_SESSIONS'], 'pela chave');
+  assert.deepEqual(keys('simultaneas'), ['PLAYBACK_MAX_SESSIONS'], 'descrição, sem acento');
+  assert.deepEqual(keys('NÍVEL'), ['LOG_LEVEL'], 'com acento e maiúsculas');
+  assert.deepEqual(keys('cumprir seed'), ['AFTER_SEED'], 'várias palavras, em qualquer ordem');
+  assert.equal(keys('').length, 3, 'consulta vazia mostra tudo');
+  assert.equal(keys('   ').length, 3, 'só espaços equivale a vazio');
+  assert.deepEqual(keys('zzz-inexistente'), [], 'sem resultado');
+});

@@ -455,11 +455,11 @@
 
     // Busca por nome, chave ou explicação. Grupo sem resultado some; avançadas com resultado abrem.
     function applySearch() {
-      const q = search.value.trim().toLowerCase();
+      const q = search.value.trim();
       let any = false;
       for (const s of sections) {
         let hits = 0;
-        for (const row of s.card.querySelectorAll('.opt')) { const ok = !q || row.dataset.q.includes(q); row.hidden = !ok; if (ok) hits += 1; }
+        for (const row of s.card.querySelectorAll('.opt')) { const ok = M.matchesQuery(state.options.find((o) => o.key === row.dataset.key), q); row.hidden = !ok; if (ok) hits += 1; }
         if (s.adv) {
           const advHit = [...s.adv.querySelectorAll('.opt')].some((r) => !r.hidden);
           s.adv.hidden = !advHit;
@@ -610,7 +610,7 @@
         for (const o of g.options) {
           const f = optionField(o, drafts, (v) => { if (v === null || v === M.textOf(o.value)) { if (v === null) drafts[o.key] = null; else delete drafts[o.key]; } else drafts[o.key] = v; previewHost.replaceChildren(); updateBar(); });
           fields.set(o.key, f);
-          f.root.dataset.q = `${M.labelOf(o)} ${o.key} ${o.description ?? ''}`.toLowerCase();
+          f.root.dataset.key = o.key;
           if (errors.byKey[o.key]) f.showError(errors.byKey[o.key]);
           (o.access === 'advanced' ? advList : list).append(f.root);
         }
