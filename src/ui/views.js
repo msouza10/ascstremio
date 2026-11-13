@@ -227,8 +227,23 @@
     hl.append(el('h1', '', 'Visão geral'));
     const updated = el('p', 'page-sub', 'Atualizando…');
     hl.append(updated);
-    head.append(hl, refreshButton());
     const alerts = el('div', 'alerts');
+    // Instalação pendente vem de /api/settings, fora do monitor. Relê na abertura, a cada ciclo da tela
+    // (no máximo a cada 30 s) e no botão "Atualizar": criar ou revogar uma credencial em outra aba ou
+    // pelo terminal muda o aviso. Se a consulta falhar, mantém o último estado conhecido (nunca inventa).
+    const installBox = el('div', 'alerts');
+    let installAt = 0;
+    async function checkInstall(force = false) {
+      if (!force && Date.now() - installAt < 30000) return;
+      installAt = Date.now();
+      try {
+        const pendente = (await app().call('GET', 'settings')).wizard?.installPending === true;
+        clear(installBox);
+        if (pendente) installBox.append(U.installPendingAlert());
+      } catch { /* sem dado novo: fica como estava */ }
+    }
+    checkInstall(true);
+    head.append(hl, refreshButton(() => checkInstall(true)));
 
     const grid = el('div', 'grid grid-kpi');
     const K = {
@@ -262,7 +277,7 @@
     right.append(trafficCard, accCard);
     two.append(left, right);
     // Os avisos vêm depois dos indicadores: primeiro o panorama, depois o que pede ação.
-    root.append(head, grid, alerts, two);
+    root.append(head, grid, installBox, alerts, two);
 
     const rows = new Map();
     return {
@@ -271,6 +286,7 @@
         const s = d.summary;
         setText(updated, `Atualizado às ${U.fmtClock(Date.parse(d.generatedAt))}`);
 
+        checkInstall(); // relê o aviso de instalação pendente (no máximo a cada 30 s)
         // avisos
         clear(alerts);
         const items = [];
@@ -326,14 +342,15 @@
   }
 
   // Atualizar: ícone de "recarregar" (o de carregamento parecia travado); gira só enquanto atualiza.
-  function refreshButton() {
+  // onRefresh: o que mais reler junto com o monitor (a Visão geral relê o aviso de instalação pendente).
+  function refreshButton(onRefresh = () => {}) {
     const b = el('button', 'btn btn-outline btn-sm btn-icon');
     b.type = 'button';
     const ic = icon('refresh-cw');
     b.append(ic, document.createTextNode('Atualizar'));
     b.addEventListener('click', async () => {
       ic.classList.add('spin'); b.disabled = true;
-      try { await app().refresh(true); } finally { ic.classList.remove('spin'); b.disabled = false; }
+      try { await app().refresh(true); await onRefresh(); } finally { ic.classList.remove('spin'); b.disabled = false; }
     });
     return b;
   }

@@ -590,6 +590,7 @@
       clear(host); fields = new Map();
       const alerts = el('div', 'alerts');
       const b = bannerPending(); if (b) alerts.append(b);
+      if (state.wizard?.installPending) alerts.append(U.installPendingAlert());
       for (const p of state.problems) alerts.append(alertBox('leech', 'Problema na configuração', p));
       for (const w of state.warnings) alerts.append(alertBox('complete', 'Aviso', w));
       if (!state.ok) alerts.append(alertBox('primary', 'Como consertar', 'Valores vindos do ambiente (systemd, Compose) são corrigidos lá. Um settings.json ilegível se isola com o aplicativo parado: npm run configurar -- recuperar.'));

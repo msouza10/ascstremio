@@ -146,6 +146,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .alert-title { font-size: 14px; font-weight: 600; color: var(--tone, var(--muted-foreground)); }
 .alert-body { font-size: 12px; line-height: 18px; color: var(--foreground); opacity: .9; }
 .alerts { display: flex; flex-direction: column; gap: 8px; }
+.alerts:empty { display: none; } /* o aviso de instalação pendente só ocupa espaço quando existe */
 
 /* badges: família a 15% no fundo, cor cheia no texto, borda transparente */
 .badge {

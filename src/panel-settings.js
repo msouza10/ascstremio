@@ -110,7 +110,15 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
       dismissed: Boolean(w.dismissedAt) && !w.completedAt,
       dismissedAt: w.dismissedAt ?? null,
       mode: w.mode ?? null,
+      // Calculado, não guardado: criar a primeira credencial (painel ou CLI) apaga o aviso sozinho.
+      installPending: Boolean(w.installPending) && !hasActiveCredential(),
     };
+  }
+
+  // Fail-closed: se a lista não puder ser lida, a instalação continua pendente (mostra o aviso).
+  function hasActiveCredential() {
+    if (!credentials) return false;
+    try { return credentials.list().some((c) => !c.revokedAt); } catch { return false; }
   }
 
   // 'complete' registra a conclusão; 'dismiss' registra "pular por enquanto" (não insistir).
@@ -119,7 +127,12 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     const old = readWizard();
     const now = new Date().toISOString();
     const doc = { ...old, version: WIZARD_VERSION, mode: resolve().mode };
-    if (action === 'complete') { doc.completedAt = now; delete doc.dismissedAt; } else if (!old.completedAt) doc.dismissedAt = now;
+    if (action === 'complete') {
+      doc.completedAt = now; delete doc.dismissedAt;
+      // Rede esperando reinício: a URL do addon não pôde ser gerada, então a instalação no Stremio
+      // ficou para depois. Lembrar disso evita que o usuário ache que já terminou.
+      if (addonUrlInfo(resolve()).url === null) { doc.installPending = true; doc.installPendingAt = now; } else { delete doc.installPending; delete doc.installPendingAt; }
+    } else if (!old.completedAt) doc.dismissedAt = now;
     writeWizard(doc);
     return wizardState();
   }

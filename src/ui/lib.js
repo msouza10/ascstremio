@@ -199,9 +199,17 @@
     return a;
   }
 
+  // Aviso de "instalação pendente" (assistente concluído sem URL do addon): usado na Visão geral
+  // e nas Configurações. Leva direto à aba Addons, onde a credencial é criada.
+  function installPendingAlert() {
+    const go = link('/conta?aba=addons', 'Instalar agora', 'btn btn-outline btn-sm btn-icon');
+    go.append(icon('arrow-right'));
+    return alertBox('complete', 'Falta instalar o addon no Stremio', 'O assistente foi concluído, mas ainda não há credencial para o addon.', go);
+  }
+
   window.UI = {
     el, icon, svg, setText, clear, num, num0, fmtBytes, fmtSpeed, fmtHours, fmtDays, fmtDate, fmtClock, fmtRatio, ago, pct,
     STATE, EXPLAIN, RISK_ORDER, FILTERS, toneOf, iconOf, sortTitles,
-    badge, stateBadge, pill, meter, card, secTitle, cardHead, link, kpi, alertBox,
+    badge, stateBadge, pill, meter, card, secTitle, cardHead, link, kpi, alertBox, installPendingAlert,
   };
 })();

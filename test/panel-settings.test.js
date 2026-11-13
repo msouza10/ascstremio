@@ -429,6 +429,44 @@ test('addonUrls: refaz a URL com a base atual e o token guardado (igual à que o
   } finally { await s.close(); }
 });
 
+test('assistente: concluir com rede pendente marca a instalação como pendente até existir credencial ativa', async () => {
+  const s = await setup();
+  try {
+    const antes = await s.get('settings');
+    await s.post('settings', { expectedRevision: antes.revision, changes: { PORT: '7101' } });
+    assert.equal((await s.get('settings')).addon.url, null);
+    const done = await (await s.post('wizard/complete', {})).json();
+    assert.equal(done.installPending, true);
+    assert.equal((await s.get('settings')).wizard.installPending, true);
+    const doc = JSON.parse(fs.readFileSync(path.join(s.dataDir, 'wizard.json'), 'utf8'));
+    assert.equal(doc.installPending, true);
+    assert.ok(Date.parse(doc.installPendingAt));
+    const cred = s.credentials.create({ name: 'x' });
+    assert.equal((await s.get('settings')).wizard.installPending, false, 'credencial ativa apaga o aviso');
+    s.credentials.revoke(cred.credential.id);
+    assert.equal((await s.get('settings')).wizard.installPending, true, 'sem credencial ativa o aviso volta');
+  } finally { await s.close(); }
+});
+
+test('assistente: concluir com URL disponível não marca instalação pendente', async () => {
+  const s = await setup();
+  try {
+    const done = await (await s.post('wizard/complete', {})).json();
+    assert.equal(done.installPending, false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(s.dataDir, 'wizard.json'), 'utf8')).installPending, undefined);
+  } finally { await s.close(); }
+});
+
+test('assistente: wizard.json antigo, sem installPending, continua legível', async () => {
+  const s = await setup();
+  try {
+    fs.writeFileSync(path.join(s.dataDir, 'wizard.json'), JSON.stringify({ version: 1, completedAt: '2026-01-01T00:00:00.000Z', mode: 'local' }));
+    const w = (await s.get('settings')).wizard;
+    assert.equal(w.completed, true);
+    assert.equal(w.installPending, false);
+  } finally { await s.close(); }
+});
+
 test('busca das Configurações: título humano, chave, descrição, acento e maiúsculas', () => {
   const opts = [
     { key: 'AFTER_SEED', description: 'O que fazer com o filme depois do seed.' },
