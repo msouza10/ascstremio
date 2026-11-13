@@ -31,8 +31,8 @@
     const badges = el('div', 'item-badges');
     main.append(title, badges);
     const metrics = el('div', 'item-metrics');
-    const seed = metricBox('Seed (13.1)');
-    const due = metricBox('Prazo (13.3)');
+    const seed = metricBox('Seed');
+    const due = metricBox('Prazo');
     const net = metricBox('Agora', true);
     metrics.append(seed.root, due.root, net.root);
     const go = icon('chevron-right', 'ic-go');
@@ -61,7 +61,7 @@
         const ob = ['seeding', 'paused', 'missing', 'awaiting', 'hnr', 'done'].includes(t.state);
         const fillTone = t.risk === 'crit' ? 'leech' : t.risk === 'warn' ? 'complete' : (t.state === 'completing' ? 'primary' : 'seed');
         if (ob) {
-          setText(seed.lbl, 'Seed (13.1)');
+          setText(seed.lbl, 'Seed');
           setText(seed.a, t.state === 'done' ? 'Cumprido' : fmtHours(t.seededHours));
           setText(seed.b, t.state === 'done' ? '' : `de ${fmtHours(t.requiredHours)}`);
           seed.m.set(t.state === 'done' ? 1 : t.seededHours / t.requiredHours, fillTone);
@@ -76,7 +76,7 @@
           setText(seed.b, 'parcial');
           seed.m.set(t.progress, 'complete');
         } else {
-          setText(seed.lbl, 'Seed (13.1)'); setText(seed.a, '—'); setText(seed.b, '');
+          setText(seed.lbl, 'Seed'); setText(seed.a, '—'); setText(seed.b, '');
           seed.m.set(0, null, true);
         }
 
@@ -213,7 +213,7 @@
     const two = el('div', 'grid grid-2');
     const left = el('div', 'stack');
     const obl = card('card-flush');
-    const oblHead = cardHead('Obrigações e downloads', link('/filmes', 'Ver todos os filmes'));
+    const oblHead = cardHead('Obrigações e downloads', openBtn('/filmes', 'Ver todos'));
     const oblList = el('div', 'list');
     const oblEmpty = el('div', 'empty', 'Nenhuma obrigação de seed aberta no momento.');
     obl.append(oblHead, oblList, oblEmpty);
@@ -224,13 +224,14 @@
     const chart = U.trafficChart({ compact: true });
     const lg = el('ul', 'legend');
     for (const [k, t] of [['key-down', 'Download'], ['key-up', 'Upload']]) { const li = el('li'); li.append(el('span', `key ${k}`), document.createTextNode(t)); lg.append(li); }
-    trafficCard.append(cardHead('Tráfego · última hora', link('/trafego', 'Detalhes')), lg, chart.root);
+    trafficCard.append(cardHead('Tráfego · última hora', openBtn('/trafego', 'Detalhes')), lg, chart.root);
     const accCard = card();
     const accRows = el('dl', 'rows');
-    accCard.append(cardHead('Conta no ASC', link('/conta', 'Abrir')), accRows);
+    accCard.append(cardHead('Conta no ASC', openBtn('/conta', 'Ver conta')), accRows);
     right.append(trafficCard, accCard);
     two.append(left, right);
-    root.append(head, alerts, grid, two);
+    // Os avisos vêm depois dos indicadores: primeiro o panorama, depois o que pede ação.
+    root.append(head, grid, alerts, two);
 
     const rows = new Map();
     return {
@@ -249,7 +250,7 @@
         if (!items.length) {
           alerts.append(alertBox('seed', 'Tudo em dia', 'Nenhum risco de hit-and-run agora. A ponte segue semeando o que o tracker cobra.'));
         } else {
-          for (const i of items) alerts.append(alertBox(i.tone, i.tone === 'leech' ? 'Aja agora' : 'Atenção', i.text, i.hash ? link(`/filmes/${i.hash}`, 'Abrir') : undefined));
+          for (const i of items) alerts.append(alertBox(i.tone, i.tone === 'leech' ? 'Aja agora' : 'Atenção', i.text, i.hash ? openBtn(`/filmes/${i.hash}`, 'Ver filme') : undefined));
         }
 
         K.pending.set(U.num.format(s.hoursPending), 'h', s.pending ? `${s.pending} filme(s) com obrigação aberta` : 'Nenhuma obrigação aberta');
@@ -293,12 +294,24 @@
     row('Isento de HnR (VIP)', a ? (a.exempt ? 'sim' : 'não') : '—');
   }
 
+  // Atualizar: ícone de "recarregar" (o de carregamento parecia travado); gira só enquanto atualiza.
   function refreshButton() {
-    const b = el('button', 'btn btn-outline btn-sm');
+    const b = el('button', 'btn btn-outline btn-sm btn-icon');
     b.type = 'button';
-    b.append(icon('loader-circle'), document.createTextNode('Atualizar'));
-    b.addEventListener('click', () => app().refresh(true));
+    const ic = icon('refresh-cw');
+    b.append(ic, document.createTextNode('Atualizar'));
+    b.addEventListener('click', async () => {
+      ic.classList.add('spin'); b.disabled = true;
+      try { await app().refresh(true); } finally { ic.classList.remove('spin'); b.disabled = false; }
+    });
     return b;
+  }
+  // Ação de abrir: botão com seta (antes era só o texto "Abrir" solto no canto do aviso).
+  function openBtn(href, label = 'Abrir') {
+    const a = link(href, label);
+    a.className = 'btn btn-outline btn-sm btn-icon';
+    a.append(icon('arrow-right'));
+    return a;
   }
 
   // ------------------------------------------------------------------ filmes
@@ -427,13 +440,13 @@
     const sBig = el('div', 'kpi-value'); const sBigV = el('span'); const sBigU = el('span', 'kpi-unit'); sBig.append(sBigV, sBigU);
     const sMeter = meter({ large: true });
     const sNote = el('p', 'foot');
-    cSeed.append(cardHead('Seed · regra 13.1'), sBig, sMeter.root, sNote);
+    cSeed.append(cardHead('Seed'), sBig, sMeter.root, sNote);
     // prazo
     const cDue = card();
     const dBig = el('div', 'kpi-value'); const dBigV = el('span'); const dBigU = el('span', 'kpi-unit'); dBig.append(dBigV, dBigU);
     const dMeter = meter({ large: true });
     const dNote = el('p', 'foot');
-    cDue.append(cardHead('Prazo · regra 13.3'), dBig, dMeter.root, dNote);
+    cDue.append(cardHead('Prazo'), dBig, dMeter.root, dNote);
     // situação
     const cState = card();
     const stText = el('p');
@@ -501,7 +514,7 @@
         } else if (t.state === 'completing') {
           setText(sBigV, `${U.num0.format(t.progress * 100)}%`); setText(sBigU, 'baixado');
           sMeter.set(t.progress, 'primary');
-          setText(sNote, 'O seed de 72 h só começa quando o download concluir (regra 13.1).');
+          setText(sNote, 'O seed de 72 h só começa quando o download concluir.');
         } else {
           setText(sBigV, `${U.num0.format(t.progress * 100)}%`); setText(sBigU, 'baixado');
           sMeter.set(t.progress, 'complete', t.progress === 0);
@@ -563,7 +576,9 @@
     for (const k of Object.values(K)) grid.append(k.root);
 
     const cChart = card();
-    const toggle = el('button', 'btn btn-ghost', 'Ver como tabela');
+    const toggle = el('button', 'btn btn-outline btn-sm btn-icon');
+    const toggleLabel = el('span', 'btn-label', 'Ver como tabela');
+    toggle.append(icon('list'), toggleLabel);
     toggle.type = 'button'; toggle.setAttribute('aria-pressed', 'false');
     const lg = el('ul', 'legend');
     for (const [k, t] of [['key-down', 'Download'], ['key-up', 'Upload']]) { const li = el('li'); li.append(el('span', `key ${k}`), document.createTextNode(t)); lg.append(li); }
@@ -575,7 +590,7 @@
     toggle.addEventListener('click', () => {
       const on = toggle.getAttribute('aria-pressed') !== 'true';
       toggle.setAttribute('aria-pressed', String(on));
-      setText(toggle, on ? 'Ver como gráfico' : 'Ver como tabela');
+      setText(toggleLabel, on ? 'Ver como gráfico' : 'Ver como tabela');
       chart.asTable(on);
     });
     cChart.append(chartHead, chart.root);
@@ -630,7 +645,7 @@
 
   // ------------------------------------------------------------------- conta
   function conta(q0) {
-    const root = el('div', 'page');
+    const root = el('div', 'page page-conta');
     const head = el('div', 'page-head');
     const hl = el('div');
     hl.append(el('h1', '', 'Conta e serviço'), el('p', 'page-sub', 'Sessão no ASC, situação da conta e configuração do serviço'));
@@ -644,18 +659,23 @@
     // sessão
     const cSess = card();
     const sessRows = el('dl', 'rows');
+    const sessHero = el('div', 'conta-hero'); // estado em destaque: é a primeira coisa que se quer saber
     const sessNotice = el('div');
-    const acts = el('div', 'item-badges');
-    const bVerify = el('button', 'btn btn-outline', 'Verificar sessão'); bVerify.type = 'button';
-    const bRelogin = el('button', 'btn btn-outline', 'Entrar de novo'); bRelogin.type = 'button';
-    const bLogout = el('button', 'btn btn-danger'); bLogout.type = 'button';
+    // Ações em dois grupos: o dia a dia (verificar, entrar de novo) e, separada, a destrutiva.
+    const acts = el('div', 'conta-acts');
+    const bVerify = el('button', 'btn btn-primary btn-icon'); bVerify.type = 'button';
+    bVerify.append(icon('shield-check'), document.createTextNode('Verificar sessão'));
+    const bRelogin = el('button', 'btn btn-outline btn-icon'); bRelogin.type = 'button';
+    bRelogin.append(icon('refresh-cw'), document.createTextNode('Entrar de novo'));
+    const bLogout = el('button', 'btn btn-danger btn-icon'); bLogout.type = 'button';
     bLogout.append(icon('log-out'), document.createTextNode('Remover sessão local'));
-    acts.append(bVerify, bRelogin, bLogout);
+    const actsMain = el('div', 'item-badges'); actsMain.append(bVerify, bRelogin);
+    acts.append(actsMain, bLogout);
     const filterNote = el('p', 'foot');
-    filterNote.append(document.createTextNode('O filtro de releases (somente freeleech, regra 2.7) é uma preferência: altere em '));
+    filterNote.append(document.createTextNode('O filtro de releases (somente freeleech) é uma preferência: altere em '));
     const filterLink = el('a', '', 'Configurações'); filterLink.href = '/configuracoes'; filterLink.setAttribute('data-link', '');
     filterNote.append(filterLink, document.createTextNode('.'));
-    cSess.append(cardHead('Sessão'), sessRows, filterNote, sessNotice, acts, el('p', 'foot', 'Remover a sessão local apaga os cookies salvos neste computador. Não encerra outras sessões no ASC nem torrents ativos.'));
+    cSess.append(cardHead('Sessão'), sessHero, sessRows, filterNote, sessNotice, acts, el('p', 'foot', 'Remover a sessão local apaga os cookies salvos neste computador. Não encerra outras sessões no ASC nem torrents ativos.'));
     bVerify.addEventListener('click', () => app().session('verify'));
     bRelogin.addEventListener('click', () => app().nav('/entrar?de-novo=1'));
     bLogout.addEventListener('click', () => app().session('logout'));
@@ -715,13 +735,19 @@
       params: setParams,
       update(d) {
         const s = app().store.status || {};
+        clear(sessHero);
+        const ok = Boolean(s.connected);
+        const heroText = el('div');
+        heroText.append(el('strong', '', ok ? 'Conectada ao ASC' : 'Sessão não confirmada'),
+          el('small', '', s.lastLoginAt ? `Último login ${ago(s.lastLoginAt)}` : 'Último login desconhecido'));
+        sessHero.dataset.tone = ok ? 'seed' : 'complete';
+        sessHero.append(icon(ok ? 'circle-check' : 'flag', 'ic-20'), heroText);
         kvr(sessRows, [
-          ['Estado', s.connected ? 'conectada ao ASC' : 'não confirmada', s.connected ? 'seed' : 'complete'],
           ['Último login', s.lastLoginAt ? `${fmtDate(s.lastLoginAt)} (${ago(s.lastLoginAt)})` : 'desconhecido'],
           ['Filtro de releases', s.onlyFreeleech === false ? 'todos os releases' : 'somente freeleech'],
         ]);
         clear(sessNotice);
-        if (s.notice) sessNotice.append(alertBox('complete', 'Inatividade (regra 2.6)', s.notice));
+        if (s.notice) sessNotice.append(alertBox('complete', 'Inatividade', s.notice));
 
         const a = d.account; const st = d.stats;
         kvr(accRows, [
@@ -773,7 +799,7 @@
     row.append(submit, cancel);
     const status = el('p', 'status'); status.setAttribute('role', 'status');
     form.append(u.f, p.f, row);
-    form.append(el('p', 'foot', 'As preferências, inclusive o filtro "somente freeleech" (regra 2.7), ficam em Configurações, no menu, depois de entrar.'));
+    form.append(el('p', 'foot', 'As preferências, inclusive o filtro "somente freeleech", ficam em Configurações, no menu, depois de entrar.'));
     c.append(form, status);
     wrap.append(c);
     root.append(wrap);

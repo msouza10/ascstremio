@@ -61,9 +61,11 @@
     row2.append(sw, fonteSel, janelaSel);
     const row3 = el('div', 'item-badges');
     const bLive = el('button', 'btn btn-outline btn-sm'); bLive.type = 'button'; bLive.setAttribute('aria-pressed', 'true');
-    const bEnd = el('button', 'btn btn-ghost', 'Ir para o fim'); bEnd.type = 'button';
-    const bCopy = el('button', 'btn btn-ghost'); bCopy.type = 'button'; bCopy.append(icon('files'), document.createTextNode('Copiar visíveis'));
-    const bClear = el('button', 'btn btn-ghost', 'Limpar tela'); bClear.type = 'button';
+    const bEnd = el('button', 'btn btn-ghost btn-icon'); bEnd.type = 'button';
+    bEnd.append(icon('arrow-down-to-line'), document.createTextNode('Ir para o fim'));
+    const bCopy = el('button', 'btn btn-ghost btn-icon'); bCopy.type = 'button'; bCopy.append(icon('copy'), document.createTextNode('Copiar visíveis'));
+    const bClear = el('button', 'btn btn-ghost btn-icon'); bClear.type = 'button';
+    bClear.append(icon('x'), document.createTextNode('Limpar tela'));
     const hint = el('span', 'page-sub');
     row3.append(bLive, bEnd, bCopy, bClear, hint);
     bar.append(levelRow, row2, row3);
@@ -148,7 +150,9 @@
       if ([...fonteSel.options].some((o) => o.value === st.fonte)) fonteSel.value = st.fonte;
       bLive.setAttribute('aria-pressed', String(st.live));
       clear(bLive);
-      bLive.append(icon(st.live ? 'loader-circle' : 'clock', st.live ? 'spin' : ''), document.createTextNode(st.live ? 'Ao vivo' : 'Pausado'));
+      // Ponto que pulsa quando ao vivo (o ícone de carregamento girando parecia travado/erro).
+      const dot = el('span', st.live ? 'live-dot is-live' : 'live-dot'); dot.setAttribute('aria-hidden', 'true');
+      bLive.append(dot, document.createTextNode(st.live ? 'Ao vivo' : 'Pausado'));
       aTxt.href = `/api/logs/download?${filterQuery({ formato: 'txt' })}`;
       aNd.href = `/api/logs/download?${filterQuery({ formato: 'ndjson' })}`;
     }

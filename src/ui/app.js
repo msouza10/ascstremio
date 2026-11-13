@@ -168,8 +168,14 @@
     side.badge = el('span');
     head.append(side.badge);
     side.sessText = el('p', 'muted');
-    cs.append(head, side.sessText, U.link('/conta', 'Conta e serviço'));
+    // O link vira um botão com seta (antes era um texto azul solto embaixo do cartão).
+    const go = U.link('/conta', 'Conta e serviço');
+    go.className = 'side-go';
+    go.append(icon('arrow-right'));
+    cs.classList.add('side-sessao');
+    cs.append(head, side.sessText, go);
     const cf = U.card();
+    cf.classList.add('side-situacao');
     cf.append(U.cardHead('Situação'));
     const nav2 = el('nav', 'stack');
     nav2.style.setProperty('gap', '2px');
