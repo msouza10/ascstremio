@@ -118,6 +118,38 @@
     },
     ASCSTREMIO_MODE: { title: 'Modo de uso' },
     LAN_ADVERTISE_HOST: { title: 'Endereço deste computador na rede' },
+    PORT: { title: 'Porta do addon Stremio' },
+    BRIDGE_PORT: { title: 'Porta da ponte de vídeo' },
+    TORRENT_PORT: { title: 'Porta de entrada de peers', hint: '0 deixa o sistema escolher uma porta livre.' },
+    STATUS_CATALOG: {
+      title: 'Catálogo de status no Stremio',
+      values: { on: 'Mostrar (padrão)', off: 'Ocultar o catálogo e seus alertas' },
+    },
+    BACKGROUND_COMPLETE: {
+      title: 'Conclusão automática em segundo plano',
+      values: { off: 'Desligada (padrão)', auto: 'Concluir sozinho os freeleech elegíveis parados' },
+    },
+    SEED_REQUIRED_HOURS: { title: 'Meta local de seed', hint: 'Não altera a obrigação imposta pelo tracker.' },
+    KEEP_AWAKE: {
+      title: 'Evitar suspensão durante o seed',
+      values: { auto: 'Bloquear a suspensão enquanto há seed pendente (padrão)', off: 'Não bloquear' },
+    },
+    BRIDGE_UPLOAD_LIMIT: { title: 'Limite de upload', hint: '-1 = sem limite. 0 desliga o envio.' },
+    BRIDGE_STREAM_UPLOAD_LIMIT: { title: 'Teto de upload durante a reprodução', hint: '-1 = não reduz o upload ao assistir.' },
+    RESUME_CONCURRENCY: { title: 'Seeds retomados ao mesmo tempo na partida' },
+    RETENTION_MODE: {
+      title: 'Limpeza automática da biblioteca',
+      values: { off: 'Desligada (padrão)', preview: 'Mostrar prévia e permitir execução manual' },
+    },
+    RETENTION_BUDGET_GIB: { title: 'Orçamento de disco dos filmes' },
+    RETENTION_MAX_TITLES: { title: 'Máximo de títulos com dados no disco', hint: '0 = sem limite.' },
+    RETENTION_MIN_AGE_DAYS: { title: 'Dias sem uso antes de poder limpar' },
+    PLAYBACK_MAX_SESSIONS: { title: 'Máximo de reproduções simultâneas', hint: '0 = sem limite.' },
+    PLAYBACK_MAX_PER_CREDENTIAL: { title: 'Reproduções simultâneas por credencial', hint: '0 = sem limite.' },
+    PLAYBACK_SESSION_GRACE_SECONDS: { title: 'Tempo para liberar a vaga de uma reprodução parada' },
+    ALERTS_ENABLED: { title: 'Alertas por webhook', values: { true: 'Ligados', false: 'Desligados (padrão)' } },
+    LOG_LEVEL: { title: 'Nível de detalhe dos logs' },
+    LOG_RETENTION_DAYS: { title: 'Dias de retenção dos logs' },
   };
   // URLs do addon a partir da base ATUAL e do token guardado na aba. A base muda com o modo LAN, o
   // endereço anunciado e a porta; guardar a URL pronta deixaria um endereço velho na tela.
