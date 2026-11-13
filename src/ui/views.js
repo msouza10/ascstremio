@@ -229,6 +229,12 @@
     hl.append(updated);
     head.append(hl, refreshButton());
     const alerts = el('div', 'alerts');
+    // Instalação pendente vem de /api/settings (uma consulta só, fora do ciclo de atualização).
+    // Fail-closed: se falhar, não mostra nada.
+    const installBox = el('div', 'alerts');
+    (async () => {
+      try { if ((await app().call('GET', 'settings')).wizard?.installPending === true) installBox.append(U.installPendingAlert()); } catch { /* sem dado, sem aviso */ }
+    })();
 
     const grid = el('div', 'grid grid-kpi');
     const K = {
@@ -262,7 +268,7 @@
     right.append(trafficCard, accCard);
     two.append(left, right);
     // Os avisos vêm depois dos indicadores: primeiro o panorama, depois o que pede ação.
-    root.append(head, grid, alerts, two);
+    root.append(head, grid, installBox, alerts, two);
 
     const rows = new Map();
     return {
