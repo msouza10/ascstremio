@@ -112,10 +112,14 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       return [error.status, { error: error.message, code: error.code, problems: error.problems }];
     }
   };
+  // Muda a cada partida: a tela compara e percebe que o aplicativo reiniciou (ou foi refeito do
+  // zero) desde que ela abriu, em vez de seguir mostrando um estado que já não existe.
+  const bootId = randomBytes(8).toString('hex');
   const handler = async (req, res) => {
     const started = Date.now();
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Boot-Id', bootId);
     res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; img-src 'self' data:");
     const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
     let pathname = '';

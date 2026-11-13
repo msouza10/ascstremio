@@ -36,33 +36,48 @@
     };
   }
 
-  async function copy(text, status) {
-    try { await navigator.clipboard.writeText(text); setText(status, 'Copiado.'); } catch { setText(status, 'Não foi possível copiar sozinho: selecione o texto e copie.'); }
+  // Sem texto "Copiado.": o ícone do próprio botão vira ✓ por 2 s (e volta). Só a falha escreve.
+  async function copy(text, btn, status) {
+    try {
+      await navigator.clipboard.writeText(text);
+      const ic = btn.querySelector('.ic use');
+      const label = btn.querySelector('.btn-label');
+      if (ic && label) {
+        const old = label.textContent;
+        ic.setAttribute('href', '#i-check'); setText(label, 'Copiada');
+        setTimeout(() => { ic.setAttribute('href', '#i-copy'); setText(label, old); }, 2000);
+      }
+    } catch { setText(status, 'Não foi possível copiar sozinho: selecione o texto e copie.'); }
   }
 
   // Campo de uma opção do esquema. onInput(texto|null). Segue o que o servidor diz: bloqueio,
   // origem e descrição vêm de `option`; limites só viram atributos do input (o servidor valida).
-  function optionField(option, drafts, onInput, { noReset = false } = {}) {
+  // `short` (assistente): só o aviso de reinício e a dica curta; o texto completo e as origens
+  // continuam na página Configurações.
+  function optionField(option, drafts, onInput, { noReset = false, short = false } = {}) {
     uid += 1;
     const id = `opt-${option.key}-${uid}`;
     const wrap = el('div', 'opt');
     const kind = M.kindOf(option);
-    const label = el('label', 'opt-label');
+    const friendly = M.labelOf(option) !== option.key;
+    const title = el('div', 'opt-title');
+    const label = el('label', friendly ? 'opt-label' : 'opt-label opt-key', M.labelOf(option));
     label.htmlFor = id;
-    label.append(el('span', 'opt-key', option.key));
-    wrap.append(label);
+    title.append(label);
+    if (friendly) title.append(el('span', 'opt-key', option.key));
+    wrap.append(title);
 
     const meta = el('div', 'item-badges');
-    meta.append(badge(M.originText(option), option.source === 'env' ? 'complete' : 'neutral', { line: true }));
-    if (option.access === 'advanced') meta.append(badge('avançada', 'neutral', { line: true }));
-    if (option.restart) meta.append(badge('vale após reiniciar', 'neutral', { line: true }));
-    else meta.append(badge('vale na hora', 'seed', { line: true }));
+    // Só o que foge do padrão ganha selo (ambiente/arquivo) e o reinício pendente. O "vale após
+    // reiniciar" de cada opção aparece na conferência antes de salvar, onde de fato decide algo.
+    if (!short && option.source !== 'default') meta.append(badge(M.originText(option), option.source === 'env' ? 'complete' : 'neutral', { line: true }));
     if (option.pending) meta.append(badge('reinício pendente', 'complete', { icon: 'flag' }));
-    wrap.append(meta);
+    if (meta.children.length) wrap.append(meta);
 
     const descId = `${id}-d`;
     const errId = `${id}-e`;
-    const desc = el('p', 'foot', option.description);
+    const hint = short ? M.hintOf(option) : null;
+    const desc = el('p', hint ? 'opt-hint' : 'foot', hint ?? option.description);
     desc.id = descId;
     const err = el('p', 'opt-error'); err.id = errId; err.hidden = true;
 
@@ -73,7 +88,7 @@
     } else if (kind === 'enum' || kind === 'bool') {
       input = el('select', 'input');
       const values = kind === 'bool' ? ['false', 'true'] : option.values;
-      for (const v of values) { const o = el('option', '', v); o.value = v; input.append(o); }
+      for (const v of values) { const o = el('option', '', M.valueLabel(option, v)); o.value = v; input.append(o); }
       input.value = current;
     } else {
       input = el('input', 'input');
@@ -118,7 +133,9 @@
       input,
       showError(lines) {
         err.hidden = !lines?.length;
-        setText(err, (lines ?? []).join(' '));
+        // O rótulo do campo já está acima: a mensagem fica só com o motivo (sem "CHAVE: ").
+        const bare = (l) => String(l).replace(new RegExp(`^(settings\\.json: )?${option.key}: `), '');
+        setText(err, (lines ?? []).map(bare).join(' '));
         if (lines?.length) input.setAttribute('aria-invalid', 'true'); else input.removeAttribute('aria-invalid');
       },
     };
@@ -151,41 +168,104 @@
   // O Stremio não avisa instalação: ler o manifesto só prova que o link foi aberto; só um pedido
   // de catálogo/stream prova que o addon está instalado. Sem sinal, nunca se diz "conectado".
   const WATCH_MS = 2500;
+  const RECHECK_MS = 10000;
   const WATCH_MAX = 120; // ~5 min; depois pede para verificar de novo, em vez de insistir
+  // Confirmação da instalação: um cartão que troca de título e texto conforme o Stremio avança, e
+  // 3 barras de progresso (instalar → manifesto aberto → abrir um filme). A barra atual anima; as
+  // feitas ficam cheias. "Manifesto aberto" é o que o servidor viu; "abrir um filme" é o que confirma.
   function connectionWatch(credentialId, onChange = () => {}) {
-    const box = el('div', 'stack');
-    const line = el('p', 'muted');
+    const box = el('div', 'conn');
+    const now = el('div', 'conn-now');
+    const dot = el('span', 'conn-dot'); dot.setAttribute('aria-hidden', 'true');
+    const copy = el('div', 'conn-text');
+    const heading = el('strong');
+    const line = el('small');
     line.setAttribute('role', 'status');
     line.setAttribute('aria-live', 'polite');
+    copy.append(heading, line);
+    now.append(dot, copy);
+    const bars = el('div', 'conn-bars');
+    bars.setAttribute('role', 'progressbar');
+    bars.setAttribute('aria-label', 'Progresso da instalação no Stremio');
+    bars.setAttribute('aria-valuemin', '0');
+    bars.setAttribute('aria-valuemax', '3');
+    const items = [0, 1, 2].map(() => { const b = el('span', 'conn-bar'); bars.append(b); return b; });
     const again = el('button', 'btn btn-outline btn-sm', 'Verificar de novo'); again.type = 'button'; again.hidden = true;
-    box.append(line, again);
+    box.append(now, bars, again);
+    mark(0); // já nasce em andamento; a primeira consulta ajusta (ex.: voltou à tela com o addon já instalado)
+    setText(heading, 'Instalar no Stremio');
+    setText(line, 'Abra o link ou cole a URL em Addons e clique em Instalar.');
     const hhmm = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     let timer = null;
     let tries = 0;
     function stop() { if (timer) { clearInterval(timer); timer = null; } }
+    // `at` = quantas barras já estão cheias; a seguinte anima (3 = tudo feito).
+    function mark(at) {
+      items.forEach((b, i) => { b.dataset.s = i < at ? 'done' : (i === at ? 'active' : 'pending'); });
+      dot.dataset.s = at >= 3 ? 'done' : 'active';
+      bars.setAttribute('aria-valuenow', String(at));
+      box.setAttribute('aria-busy', at < 3 ? 'true' : 'false');
+    }
     function show(me) {
       const state = me?.state ?? 'aguardando';
       onChange(state);
       if (state === 'instalado' || state === 'em_uso') {
-        setText(line, `Conectado: o Stremio pediu o catálogo às ${hhmm(me.lastSeenAt)}. O addon está instalado neste aparelho.`);
+        mark(3);
         box.dataset.state = 'conectado';
+        setText(heading, 'Conexão confirmada');
+        setText(line, `Às ${hhmm(me.lastSeenAt)} o Stremio acessou o addon.`);
         return true;
       }
       box.dataset.state = state;
-      setText(line, state === 'manifesto_lido'
-        ? 'O Stremio leu o addon. Confirme em "Instalar" na janela do Stremio; esta mensagem muda sozinha quando ele abrir o catálogo.'
-        : 'Aguardando o Stremio: clique em "Abrir no Stremio" e confirme a instalação.');
+      if (state === 'manifesto_lido') {
+        mark(2);
+        setText(heading, 'Manifesto aberto');
+        setText(line, 'O Stremio já leu o addon. Agora abra qualquer filme, só para confirmar a comunicação.');
+      } else {
+        mark(0);
+        setText(heading, 'Instalar no Stremio');
+        setText(line, 'Abra o link ou cole a URL em Addons e clique em Instalar.');
+      }
+      bars.setAttribute('aria-valuetext', heading.textContent);
       return false;
+    }
+    // A credencial sumiu do servidor (revogada ou dados refeitos): nada de "Conectado" velho na tela.
+    function gone() {
+      stop();
+      items.forEach((b) => { b.dataset.s = 'paused'; });
+      dot.dataset.s = 'paused';
+      box.setAttribute('aria-busy', 'false');
+      box.dataset.state = 'ausente';
+      setText(heading, 'Credencial não encontrada');
+      setText(line, 'Esta credencial não existe mais neste servidor (foi revogada ou os dados foram refeitos). Crie outra para instalar.');
+      again.hidden = true;
+    }
+    // Depois de conectado, confere devagar só se a credencial ainda existe.
+    async function recheck() {
+      if (!box.isConnected) { stop(); return; }
+      try {
+        const out = await app().call('GET', 'addon-connection');
+        if (!out.credentials.some((c) => c.id === credentialId)) gone();
+      } catch { /* mantém o que já foi confirmado */ }
     }
     async function poll() {
       tries += 1;
       try {
         const out = await app().call('GET', 'addon-connection');
-        if (show(out.credentials.find((c) => c.id === credentialId))) { stop(); again.hidden = true; return; }
+        const me = out.credentials.find((c) => c.id === credentialId);
+        if (!me) { gone(); return; }
+        if (show(me)) { stop(); again.hidden = true; timer = setInterval(recheck, RECHECK_MS); return; }
       } catch { setText(line, 'Não foi possível consultar a conexão agora; tentando de novo.'); }
       if (!box.isConnected || tries >= WATCH_MAX) {
         stop();
-        if (box.isConnected) { setText(line, 'Ainda não confirmado. Se o Stremio não abriu, copie a URL e cole em Addons. Remover o addon no Stremio não é detectado aqui.'); again.hidden = false; }
+        if (box.isConnected) {
+          items.forEach((b) => { if (b.dataset.s === 'active') b.dataset.s = 'paused'; });
+          dot.dataset.s = 'paused';
+          box.setAttribute('aria-busy', 'false');
+          setText(heading, 'Ainda não confirmado');
+          setText(line, 'Se o Stremio não abriu, copie a URL e cole em Addons. Remover o addon no Stremio não é detectado aqui.');
+          again.hidden = false;
+        }
       }
     }
     function start() { stop(); tries = 0; again.hidden = true; poll(); timer = setInterval(poll, WATCH_MS); }
@@ -197,8 +277,9 @@
   // Emite uma credencial de instalação e mostra a URL do addon (uma vez). Só mostra o formulário
   // quando a URL se aplica (sem mudança de rede esperando reinício). `onConnection(estado)`
   // avisa o chamador (o assistente) do que o addon já viu do Stremio.
-  function installCard(getState, defaultName, onConnection = () => {}) {
+  function installCard(getState, defaultName, onConnection = () => {}, footer = null) {
     const c = card();
+    c.classList.add('card-stack');
     c.append(cardHead('Instalar o addon no Stremio'));
     const body = el('div', 'stack');
     const out = el('div', 'stack');
@@ -209,7 +290,7 @@
       clear(body);
       const addon = st.addon;
       if (!addon.url) { body.append(alertBox('complete', 'URL ainda indisponível', addon.reason)); return; }
-      body.append(el('p', 'muted', 'Cada aparelho ou instalação do Stremio recebe a sua credencial, que pode ser revogada sozinha. A senha do ASC não é usada aqui e não dá acesso administrativo ao aplicativo.'));
+      if (!shown) body.append(el('p', 'muted', 'Cada aparelho ou instalação do Stremio recebe a sua própria credencial, que pode ser revogada sozinha.'));
       const f = el('form', 'form');
       const lab = el('label', 'field'); lab.htmlFor = 'cred-name';
       const inp = el('input', 'input'); inp.id = 'cred-name'; inp.maxLength = 40; inp.value = defaultName; inp.required = true; inp.autocomplete = 'off';
@@ -220,38 +301,69 @@
         e.preventDefault(); go.disabled = true; err.clear(); setText(status, 'Criando…');
         try {
           const made = await app().call('POST', 'credentials', { name: inp.value });
-          setText(status, 'Credencial criada. Copie a URL agora: ela não será mostrada de novo.');
+          setText(status, '');
           st.credentials.push(made.credential);
+          remember(made);
           showUrl(made);
           draw();
         } catch (ex) { setText(status, ''); err.show('Não foi possível criar a credencial', [ex.message]); } finally { go.disabled = false; }
       });
-      body.append(f);
       const names = st.credentials.filter((x) => !x.revokedAt);
-      if (names.length) body.append(el('p', 'foot', `Credenciais ativas: ${names.map((x) => x.name).join(', ')}. Revogar: npm run credenciais -- revogar.`));
+      const parts = [f];
+      if (names.length) parts.push(el('p', 'foot', `Credenciais ativas: ${names.map((x) => x.name).join(', ')}. Para revogar, use o terminal: npm run credenciais -- revogar.`));
+      if (shown) {
+        // Com a URL já na tela, o foco é instalar: criar outra credencial fica recolhido.
+        const more = el('details', 'more');
+        more.append(el('summary', '', 'Criar outra credencial (para outro aparelho)'), ...parts);
+        body.append(more);
+      } else body.append(...parts);
     }
+    // Só o verificador da credencial fica no servidor; a URL com o token é guardada apenas nesta
+    // aba do navegador (sessionStorage), para reaparecer ao recarregar e sumir ao fechar a aba.
+    const KEEP = 'ascstremio.urls';
+    function kept() {
+      try { return JSON.parse(sessionStorage.getItem(KEEP) ?? '{}') || {}; } catch { return {}; }
+    }
+    function remember(made) {
+      try { sessionStorage.setItem(KEEP, JSON.stringify({ ...kept(), [made.credential.id]: made })); } catch { /* sem armazenamento: a URL só aparece nesta tela */ }
+    }
+    function restore() {
+      const all = kept();
+      const active = getState().credentials.filter((x) => !x.revokedAt && all[x.id]);
+      if (active.length) showUrl(all[active[active.length - 1].id]);
+    }
+    let shown = false;
     function showUrl(made) {
+      shown = true;
+      out.classList.add('install-out');
       clear(out);
       const box = el('div', 'secret-box');
-      const h = el('p', 'alert-title', 'URL do addon (aparece uma vez)');
+      const h = el('p', 'alert-title', 'URL do addon');
       const code = el('code', 'code-wrap', made.manifestUrl);
       code.tabIndex = 0;
       const btns = el('div', 'item-badges');
-      const cp = el('button', 'btn btn-outline', 'Copiar URL'); cp.type = 'button';
-      const open = el('a', 'btn btn-primary', 'Abrir no Stremio'); open.href = made.stremioUrl;
-      cp.addEventListener('click', () => copy(made.manifestUrl, status));
-      btns.append(open, cp);
-      // O Stremio exige HTTPS fora de 127.0.0.1; o link do Stremio Web só faz sentido no loopback.
+      const cp = el('button', 'btn btn-outline btn-icon'); cp.type = 'button';
+      cp.append(icon('copy'), el('span', 'btn-label', 'Copiar URL'));
+      cp.addEventListener('click', () => copy(made.manifestUrl, cp, status));
+      // Não há botão para o app do Stremio: ele troca stremio:// por https:// e perde a porta,
+      // mas o addon fala HTTP. O Stremio Web mantém o http (só no loopback, onde o navegador
+      // aceita) e colar a URL em Addons funciona sempre.
       if (made.manifestUrl.startsWith('http://127.0.0.1')) {
-        const web = el('a', 'btn btn-outline', 'Abrir no Stremio Web'); web.href = made.webUrl; web.target = '_blank'; web.rel = 'noopener noreferrer';
-        btns.append(web);
+        const web = el('a', 'btn btn-primary', 'Abrir no Stremio Web'); web.href = made.webUrl; web.target = '_blank'; web.rel = 'noopener noreferrer';
+        btns.append(web, cp);
+      } else {
+        cp.className = 'btn btn-primary';
+        btns.append(cp);
       }
-      box.append(h, code, btns, el('p', 'foot', 'No Stremio: Addons, cole a URL no campo de busca de addons (ou use o botão acima neste computador). Em outro aparelho, cole a mesma URL lá. Não compartilhe esta URL com outras pessoas.'));
+      box.append(h, code, btns, el('p', 'foot', 'No app do Stremio: Addons, cole a URL no campo de busca de addons. Em outro aparelho, cole a mesma URL lá. Não compartilhe esta URL com outras pessoas.'));
       box.append(connectionWatch(made.credential.id, onConnection));
       out.append(box);
     }
     c.append(err.root, body, out, status);
+    if (footer) c.append(footer);
     draw();
+    restore();
+    if (shown) draw(); // voltou com a URL guardada na aba: recolhe o formulário de novo
     return { root: c, redraw: draw };
   }
 
@@ -268,15 +380,61 @@
 
   // =============================================================== Configurações
   function configuracoes() {
-    const root = el('div', 'page');
+    const root = el('div', 'page page-wide');
     const head = el('div', 'page-head');
     const hl = el('div');
-    hl.append(el('h1', '', 'Configurações'), el('p', 'page-sub', 'As mesmas opções do terminal (npm run configurar): valor em uso, origem e o que exige reinício'));
+    hl.append(el('h1', '', 'Configurações'), el('p', 'page-sub', 'Valores em uso e o que muda ao reiniciar.'));
     const wiz = U.link('/assistente', 'Abrir o assistente');
     wiz.className = 'btn btn-outline';
-    head.append(hl, wiz);
-    const host = el('div', 'stack');
-    root.append(head, host);
+    const searchWrap = el('div', 'search cfg-search');
+    const search = el('input', 'input');
+    search.type = 'search'; search.placeholder = 'Buscar opção'; search.autocomplete = 'off';
+    search.setAttribute('aria-label', 'Buscar opção');
+    const clearBtn = el('button', 'search-clear'); clearBtn.type = 'button'; clearBtn.hidden = true;
+    clearBtn.setAttribute('aria-label', 'Limpar busca');
+    clearBtn.append(icon('x'));
+    searchWrap.append(icon('search'), search, clearBtn);
+    head.append(hl, searchWrap, wiz);
+    const layout = el('div', 'cfg-layout');
+    const index = el('nav', 'cfg-index');
+    index.setAttribute('aria-label', 'Grupos de opções');
+    const host = el('div', 'stack cfg-main');
+    layout.append(index, host);
+    root.append(head, layout);
+    let sections = [];
+    let updateBar = () => {};
+    let emptyNote = null;
+
+    function indexLink(label, id) {
+      const b = el('button', 'cfg-index-link', label); b.type = 'button';
+      b.addEventListener('click', () => {
+        const t = document.getElementById(id);
+        if (!t) return;
+        t.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+        t.tabIndex = -1; t.focus({ preventScroll: true });
+      });
+      return b;
+    }
+
+    // Busca por nome, chave ou explicação. Grupo sem resultado some; avançadas com resultado abrem.
+    function applySearch() {
+      const q = search.value.trim().toLowerCase();
+      let any = false;
+      for (const s of sections) {
+        let hits = 0;
+        for (const row of s.card.querySelectorAll('.opt')) { const ok = !q || row.dataset.q.includes(q); row.hidden = !ok; if (ok) hits += 1; }
+        if (s.adv) {
+          const advHit = [...s.adv.querySelectorAll('.opt')].some((r) => !r.hidden);
+          s.adv.hidden = !advHit;
+          if (q && advHit) s.adv.open = true;
+        }
+        s.card.hidden = hits === 0;
+        if (hits) any = true;
+      }
+      if (emptyNote) emptyNote.hidden = any || !q;
+    }
+    search.addEventListener('input', () => { clearBtn.hidden = !search.value; applySearch(); });
+    clearBtn.addEventListener('click', () => { search.value = ''; clearBtn.hidden = true; applySearch(); search.focus(); });
 
     let state = null;
     let drafts = {};
@@ -309,16 +467,21 @@
       c.append(cardHead('Destino dos alertas por webhook'));
       const info = el('p', 'muted', 'Carregando…');
       const msg = el('p', 'muted');
+      msg.setAttribute('role', 'status'); msg.setAttribute('aria-live', 'polite');
       const url = el('input', 'input'); url.type = 'password'; url.autocomplete = 'off'; url.placeholder = 'URL do destino (segredo; não é exibida depois)';
+      url.setAttribute('aria-label', 'URL do destino do webhook');
       const bearer = el('input', 'input'); bearer.type = 'password'; bearer.autocomplete = 'off'; bearer.placeholder = 'Token bearer (opcional)';
+      bearer.setAttribute('aria-label', 'Token bearer do webhook (opcional)');
       const row = el('div', 'item-badges');
       const save = el('button', 'btn btn-primary', 'Salvar destino'); save.type = 'button';
       const test = el('button', 'btn btn-outline', 'Enviar mensagem de teste'); test.type = 'button';
       const del = el('button', 'btn btn-ghost', 'Remover destino'); del.type = 'button';
       row.append(save, test, del);
-      c.append(info, url, bearer, row, msg);
+      const labeled = (text, input) => { const l = el('label', 'field'); l.append(el('span', '', text), input); return l; };
+      url.placeholder = ''; bearer.placeholder = '';
+      c.append(info, labeled('URL do destino (segredo; não é exibida depois)', url), labeled('Token bearer (opcional)', bearer), row, msg);
       const show = (st) => {
-        info.textContent = `Alertas ${st.enabled ? 'habilitados' : 'desabilitados'}; destino: ${st.configured ? `configurado (${st.source}${st.host ? `, ${st.host}` : ''})` : 'não configurado'}${st.problem ? ` — ${st.problem}` : ''}. Último envio: ${st.lastSuccessAt ?? 'nunca'}; último erro: ${st.lastError ?? 'nenhum'}.`;
+        info.textContent = `Alertas ${st.enabled ? 'habilitados' : 'desabilitados'}; destino: ${st.configured ? `configurado (${st.source}${st.host ? `, ${st.host}` : ''})` : 'não configurado'}${st.problem ? ` — ${st.problem.replace(/\.+$/, '')}` : ''}. Último envio: ${st.lastSuccessAt ?? 'nunca'}; último erro: ${st.lastError ?? 'nenhum'}.`;
       };
       const run = async (route, body, ok) => {
         try {
@@ -335,6 +498,7 @@
 
     // O cartão da porta de peers é redesenhado sozinho (sem tocar no formulário nem nas edições).
     let peerHost = null;
+    let peerOpen = false;
     let peerAt = 0;
     function drawPeer() {
       if (!peerHost) return;
@@ -353,19 +517,26 @@
       const p = state.peerPort;
       if (!p) return null;
       const c = card();
+      c.classList.add('card-stack');
       const names = { escutando: 'Escutando', sem_entrada: 'Sem entrada observada', entrada_observada: 'Entrada observada', sem_escuta: 'Sem escuta', desconhecido: 'Desconhecido' };
       const head = cardHead('Porta de peers (BitTorrent)');
       head.append(badge(names[p.state] ?? 'Desconhecido', p.state === 'entrada_observada' ? 'complete' : 'neutral'));
       c.append(head);
       c.append(el('p', 'muted', p.summary));
+      // O texto longo (firewall, NAT, como conferir) fica recolhido; o resumo acima basta no dia a dia.
+      const more = el('details', 'more');
+      more.open = peerOpen;
+      more.addEventListener('toggle', () => { peerOpen = more.open; });
+      more.append(el('summary', '', 'Ver detalhes e como liberar a porta'));
       const e = p.layers.escuta; const n = p.layers.entrada;
       const ul = el('ul', 'foot-list');
       ul.append(el('li', '', `Escuta: configurada ${e.configurada || 'automática'}; em uso ${e.real ?? 'desconhecida'}; ${e.protocolo}.`));
       ul.append(el('li', '', `Publicação (${p.layers.publicacao.modo}): ${p.layers.publicacao.nota}`));
       ul.append(el('li', '', `Firewall/NAT: ${p.layers.firewallNat.estado}. ${p.layers.firewallNat.nota}`));
       ul.append(el('li', '', `Entradas observadas desde ${n.desde ?? '-'}: ${n.observada}; última: ${n.ultima ?? 'nenhuma'}.`));
-      c.append(ul);
-      for (const t of [...p.notes, ...p.advice]) c.append(el('p', 'foot', t));
+      more.append(ul);
+      for (const t of [...p.notes, ...p.advice]) more.append(el('p', 'foot', t));
+      c.append(more);
       return c;
     }
 
@@ -385,34 +556,67 @@
 
       const form = el('form', 'stack');
       form.noValidate = true;
+      sections = [];
       for (const g of M.groupOptions(state.options, state.groups)) {
         const c = card();
+        c.classList.add('cfg-group');
         const idh = `grp-${g.key}`;
         const h = cardHead(g.label); h.querySelector('h2').id = idh;
         c.setAttribute('aria-labelledby', idh);
         c.append(h);
         const list = el('div', 'opts');
+        const advList = el('div', 'opts');
         for (const o of g.options) {
-          const f = optionField(o, drafts, (v) => { if (v === null || v === M.textOf(o.value)) { if (v === null) drafts[o.key] = null; else delete drafts[o.key]; } else drafts[o.key] = v; previewHost.replaceChildren(); });
+          const f = optionField(o, drafts, (v) => { if (v === null || v === M.textOf(o.value)) { if (v === null) drafts[o.key] = null; else delete drafts[o.key]; } else drafts[o.key] = v; previewHost.replaceChildren(); updateBar(); });
           fields.set(o.key, f);
+          f.root.dataset.q = `${M.labelOf(o)} ${o.key} ${o.description ?? ''}`.toLowerCase();
           if (errors.byKey[o.key]) f.showError(errors.byKey[o.key]);
-          list.append(f.root);
+          (o.access === 'advanced' ? advList : list).append(f.root);
         }
         c.append(list);
+        let adv = null;
+        if (advList.children.length) {
+          adv = el('details', 'more');
+          adv.append(el('summary', '', `Opções avançadas (${advList.children.length})`), advList);
+          c.append(adv);
+        }
+        sections.push({ id: idh, label: g.label, card: c, adv });
         form.append(c);
       }
+      emptyNote = el('div', 'empty-note'); emptyNote.hidden = true;
+      const clearSearch = el('button', 'btn btn-outline btn-sm', 'Limpar busca'); clearSearch.type = 'button';
+      clearSearch.addEventListener('click', () => { search.value = ''; clearBtn.hidden = true; applySearch(); search.focus(); });
+      emptyNote.append(el('span', '', 'Nenhuma opção encontrada para essa busca.'), clearSearch);
+      form.append(emptyNote);
+
       const bar = el('div', 'savebar');
+      const count = el('span', 'savebar-count');
       const review = el('button', 'btn btn-primary', 'Revisar alterações'); review.type = 'submit';
-      const discard = el('button', 'btn btn-ghost', 'Descartar alterações'); discard.type = 'button';
-      bar.append(review, discard, live);
-      form.append(bar);
+      const discard = el('button', 'btn btn-ghost', 'Descartar'); discard.type = 'button';
+      bar.append(count, discard, review);
+      updateBar = () => {
+        const n = Object.keys(M.buildChanges(state.options, drafts)).length;
+        bar.hidden = n === 0;
+        setText(count, `${n} ${n === 1 ? 'alteração não salva' : 'alterações não salvas'}`);
+      };
+      updateBar();
+      form.append(live, bar);
       form.addEventListener('submit', (e) => { e.preventDefault(); doPreview(); });
       discard.addEventListener('click', () => { drafts = {}; errors = { byKey: {}, general: [] }; errBox.clear(); previewHost.replaceChildren(); setText(live, 'Alterações descartadas.'); draw(); });
+
+      clear(index);
+      for (const s of sections) index.append(indexLink(s.label, s.id));
+      index.append(indexLink('Destino do webhook', 'cfg-alerts'));
+
+      // Estado em andamento (só leitura) primeiro; o formulário em seguida; o webhook no fim. A
+      // geração de credenciais do addon não mora mais aqui (fica no assistente por enquanto).
+      const status = el('div', 'cfg-status');
       const pb = playbackCard();
-      if (pb) host.append(pb);
-      peerHost = el('div'); host.append(peerHost); drawPeer();
-      host.append(alertsCard());
-      host.append(errBox.root, previewHost, form, installCard(() => state, M.copyName(state.mode)).root);
+      if (pb) status.append(pb);
+      peerHost = el('div'); status.append(peerHost); drawPeer();
+      const alertsC = alertsCard(); alertsC.id = 'cfg-alerts';
+      host.append(errBox.root, previewHost, status, form, alertsC);
+      applySearch();
     }
 
     function fail(ex, title) {
@@ -476,7 +680,14 @@
       host.append(loadingCard('Carregando configurações…'));
       try { state = await loadState(); draw(); } catch (ex) {
         clear(host);
+        // Sem dados não há o que buscar nem índice: largura total, mensagem e o caminho de volta.
+        searchWrap.hidden = true; index.hidden = true; layout.classList.add('cfg-layout-solo');
         host.append(alertBox('leech', 'Não foi possível abrir as configurações', ex.status === 401 ? 'A sessão do ASC não está confirmada. Entre de novo; as configurações continuam salvas.' : ex.message));
+        if (ex.status === 401) {
+          const again = U.link('/entrar', 'Entrar de novo');
+          again.className = 'btn btn-primary';
+          host.append(again);
+        }
       }
     })();
     return { root, update() {} };
@@ -484,7 +695,7 @@
 
   // ================================================================== Assistente
   function assistente() {
-    const root = el('div', 'page');
+    const root = el('div', 'page page-narrow');
     const head = el('div', 'page-head');
     const hl = el('div');
     hl.append(el('h1', '', 'Assistente de configuração'), el('p', 'page-sub', 'Poucos passos: como você vai usar, seed e disco, e a instalação no Stremio. Dá para mudar tudo depois em Configurações.'));
@@ -497,7 +708,6 @@
     let mode = 'local';
     let drafts = {};
     let step = 'modo';
-    let saved = false;
     let lastPreview = null;
     let connection = 'aguardando';
     let finish = null;
@@ -510,16 +720,18 @@
 
     function drawStepper() {
       clear(stepper);
-      const steps = M.wizardSteps(mode);
+      const steps = order();
       steps.forEach((s, i) => {
         const li = el('li', '', `${i + 1}. ${LABELS[s]}`);
+        li.dataset.s = i < steps.indexOf(step) ? 'done' : (s === step ? 'current' : 'todo');
         if (s === step) li.setAttribute('aria-current', 'step');
         stepper.append(li);
       });
     }
 
+    // Rodapé do cartão: ações secundárias à esquerda, a principal à direita.
     function nav(buttons) {
-      const row = el('div', 'item-badges');
+      const row = el('div', 'actions');
       row.append(...buttons);
       return row;
     }
@@ -530,7 +742,9 @@
       step = next; errBox.clear(); setText(live, ''); draw();
       document.getElementById('view')?.focus({ preventScroll: false });
     }
-    function order() { return M.wizardSteps(mode); }
+    // A etapa de revisão só aparece quando há o que gravar (ou enquanto o operador está nela).
+    const reviewNeeded = () => step === 'revisar' || Object.keys(M.buildChanges(state.options, drafts)).length > 0;
+    function order() { return M.wizardSteps(mode, reviewNeeded()); }
     const nextOf = () => order()[order().indexOf(step) + 1];
     const prevOf = () => order()[order().indexOf(step) - 1];
 
@@ -543,14 +757,19 @@
       mode = draftMode();
       drawStepper(); clear(body);
       body.append(errBox.root);
+      if (step === 'instalar') {
+        // Um cartão só: o da instalação já traz Voltar e Concluir no fim.
+        body.append(installCard(() => state, M.copyName(mode, state.hostname), (s) => { connection = s; syncFinish(); }, installFooter()).root);
+        body.append(live);
+        return;
+      }
       const c = card();
+      c.classList.add('card-stack');
       if (step === 'modo') drawMode(c);
       else if (step === 'endereco') drawAddress(c);
       else if (step === 'seed') drawSeed(c);
-      else if (step === 'revisar') drawReview(c);
-      else drawInstall(c);
+      else drawReview(c);
       body.append(c);
-      if (step === 'instalar') body.append(installCard(() => state, M.copyName(mode), (s) => { connection = s; syncFinish(); }).root);
       body.append(live);
     }
 
@@ -569,14 +788,13 @@
       c.append(cardHead('Como você vai usar'));
       const fs = el('fieldset', 'choices');
       fs.append(el('legend', 'sr-only', 'Modo de uso'));
-      const a = choice('mode', 'local', 'Neste computador', 'Padrão e mais simples: o Stremio roda aqui. Addon e ponte só aceitam este computador (127.0.0.1). Valores seguros já vêm prontos.', mode === 'local', !o.editable);
-      const b = choice('mode', 'lan', 'Host para os meus aparelhos na rede', 'Este computador atende só os SEUS outros aparelhos (TV, celular) na rede local, com a sua conta e o seu seed. Addon e ponte passam a escutar na rede; o painel continua só aqui. Sem TLS: use só em rede doméstica confiável.', mode === 'lan', !o.editable);
+      const a = choice('mode', 'local', 'Neste computador', 'O Stremio roda aqui. É o mais simples e o mais seguro: addon e ponte só aceitam este computador.', mode === 'local', !o.editable);
+      const b = choice('mode', 'lan', 'Também nos meus outros aparelhos', 'Para a sua TV e o seu celular na mesma rede. Addon e ponte passam a escutar na rede local, sem criptografia: use só em rede doméstica confiável. O painel continua só aqui.', mode === 'lan', !o.editable);
       for (const x of [a, b]) x.r.addEventListener('change', () => { if (x.r.checked) { drafts.ASCSTREMIO_MODE = x.r.value; mode = x.r.value; drawStepper(); } });
       fs.append(a.l, b.l);
       c.append(fs);
       if (!o.editable) c.append(alertBox('complete', 'Modo definido fora do painel', `${o.reason}. Valor atual: ${mode}.`));
-      c.append(el('p', 'foot', 'Não é um serviço compartilhado: a conta, a passkey e o seed são seus (regra 2.2 do ASC). Nunca exponha à internet.'));
-      c.append(nav([button('Continuar', 'btn-primary', () => go(nextOf())), button('Pular por enquanto', 'btn-ghost', dismiss)]));
+      c.append(nav([button('Pular por enquanto', 'btn-ghost', dismiss), button('Próximo', 'btn-primary', () => go(nextOf()))]));
     }
 
     // Vazio = escolha automática: se havia endereço salvo no arquivo, a alteração é REMOVÊ-LO
@@ -608,7 +826,7 @@
         f.append(lab, sel);
         c.append(f);
       }
-      const manual = optionField(o, drafts, (v) => setAddress(v ?? ''), { noReset: true });
+      const manual = optionField(o, drafts, (v) => setAddress(v ?? ''), { noReset: true, short: true });
       c.append(manual.root);
       const info = el('ul', 'foot-list');
       for (const t of [
@@ -618,27 +836,22 @@
         'Checar que o endereço é deste computador não prova que a TV o alcança (roteador, firewall, Wi-Fi isolado): teste no aparelho.',
       ]) info.append(el('li', '', t));
       c.append(info);
-      c.append(nav([button('Voltar', 'btn-ghost', () => go(prevOf())), button('Continuar', 'btn-primary', () => go(nextOf()))]));
+      c.append(nav([button('Voltar', 'btn-ghost', () => go(prevOf())), button('Próximo', 'btn-primary', () => go(nextOf()))]));
     }
 
     function drawSeed(c) {
       c.append(cardHead('Seed, disco e filtro de releases'));
-      c.append(el('p', 'muted', mode === 'lan' ? 'Confira os padrões. O seed e a conta ficam neste host.' : 'Os valores seguros já estão preenchidos: pode continuar sem mexer em nada.'));
-      const effect = alertBox('primary', 'O que esta escolha faz', M.AFTER_SEED_EFFECT[draft('AFTER_SEED')]);
-      const effectText = effect.querySelector('.alert-body');
+      c.append(el('p', 'muted', mode === 'lan' ? 'Confira os padrões. O seed e a conta ficam neste host.' : 'Os valores seguros já estão preenchidos: pode seguir sem mexer em nada.'));
       for (const key of ['AFTER_SEED', 'DISK_RESERVE_GIB', 'DISK_RESERVE_PERCENT', 'ASC_ONLY_FREELEECH']) {
         const o = opt(key);
         const f = optionField(o, drafts, (v) => {
           if (v === null || v === M.textOf(o.value)) delete drafts[key]; else drafts[key] = v;
-          if (key === 'AFTER_SEED') setText(effectText, M.AFTER_SEED_EFFECT[draft('AFTER_SEED')] ?? '');
-        }, { noReset: true });
+        }, { noReset: true, short: true });
         c.append(f.root);
-        if (key === 'AFTER_SEED') c.append(effect);
       }
-      c.append(el('p', 'foot', 'O tracker manda: 72 h de seed ou ratio 1.0 (regra 13.1). Nenhum arquivo é apagado antes de o tracker confirmar.'));
-      c.append(nav([button('Voltar', 'btn-ghost', () => go(prevOf())), button('Revisar', 'btn-primary', () => { go('revisar'); })]));
+      // Sem alterações, vai direto para a instalação; com alterações, passa pela conferência.
+      c.append(nav([button('Voltar', 'btn-ghost', () => go(prevOf())), button('Próximo', 'btn-primary', () => go(nextOf()))]));
     }
-    const draft = (key) => (drafts[key] ?? M.textOf(opt(key).value));
 
     async function preview() {
       const changes = M.buildChanges(state.options, drafts);
@@ -662,7 +875,7 @@
             try {
               if (!lastPreview.empty) {
                 const out = await app().call('POST', 'settings', { expectedRevision: state.revision, changes: M.buildChanges(state.options, drafts) });
-                state = out.state; drafts = {}; saved = true;
+                state = out.state; drafts = {};
               }
               go('instalar');
             } catch (ex) {
@@ -684,24 +897,14 @@
       })();
     }
 
-    function drawInstall(c) {
-      c.append(cardHead('Instalar no Stremio'));
-      if (state.pending.length) {
-        c.append(alertBox('complete', 'Reinicie para aplicar', `${state.pending.join(', ')} só vale(m) depois de reiniciar. ${state.restartHint}`));
-        c.append(el('p', 'muted', mode === 'lan'
-          ? 'Depois de reiniciar, abra Configurações e crie a credencial de cada aparelho: a URL do addon depende do endereço novo.'
-          : 'Depois de reiniciar, abra Configurações para criar a credencial e obter a URL do addon.'));
-      } else {
-        c.append(el('p', 'muted', mode === 'lan'
-          ? 'Crie uma credencial para cada aparelho (TV, celular) e instale a URL no Stremio dele.'
-          : 'Crie a credencial deste computador e instale a URL no Stremio.'));
-      }
-      c.append(alertBox('primary', 'Quase pronto', saved ? 'A configuração foi salva.' : 'Nada precisou mudar.'));
+    // Rodapé do cartão de instalação. Concluir leva ao Início (a visão geral), onde a pessoa vai
+    // acompanhar o dia a dia; Configurações continua a um clique no menu.
+    function installFooter() {
       finish = button('Concluir sem confirmar a instalação', 'btn-outline', async () => {
-        try { await app().call('POST', 'wizard/complete', {}); app().nav('/configuracoes'); } catch (ex) { errBox.show('Não foi possível registrar a conclusão', [ex.message]); }
+        try { await app().call('POST', 'wizard/complete', {}); app().nav('/'); } catch (ex) { errBox.show('Não foi possível registrar a conclusão', [ex.message]); }
       });
       syncFinish();
-      c.append(nav([button('Voltar', 'btn-ghost', () => go('revisar')), finish]));
+      return nav([button('Voltar', 'btn-ghost', () => go(prevOf())), finish]);
     }
 
     // O botão final destaca quando o Stremio já falou com o addon; concluir sem isso segue

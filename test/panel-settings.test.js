@@ -266,7 +266,6 @@ test('credencial: token aparece só na emissão; listagem e estado não o trazem
     const made = await res.json();
     assert.match(made.token, /^ascc_[A-Za-z0-9_-]{43}$/);
     assert.equal(made.manifestUrl, `http://127.0.0.1:7000/${made.token}/manifest.json`);
-    assert.equal(made.stremioUrl, `stremio://127.0.0.1:7000/${made.token}/manifest.json`);
     assert.equal(t.credentials.verify(made.token).id, made.credential.id);
     for (const rota of ['credentials', 'settings']) {
       const txt = JSON.stringify(await t.get(rota));
@@ -363,4 +362,37 @@ test('conexão do Stremio: link do Stremio Web e estado por credencial, sem afir
     s.asc.connected = false;
     assert.equal((await fetch(`${s.base}/api/addon-connection`)).status, 401);
   } finally { await s.close(); }
+});
+
+test('modelo da UI: revisão só quando há o que gravar, nome do aparelho e rótulos humanos', () => {
+  assert.deepEqual(M.wizardSteps('local', false), ['modo', 'seed', 'instalar']);
+  assert.deepEqual(M.wizardSteps('lan', false), ['modo', 'endereco', 'seed', 'instalar']);
+  assert.equal(M.copyName('local', 'meu-pc'), 'meu-pc');
+  assert.equal(M.copyName('local', ''), 'Stremio neste computador');
+  assert.equal(M.copyName('local', 'x'.repeat(60)).length, 40);
+  assert.equal(M.copyName('lan', 'meu-pc'), 'Stremio da sala');
+  assert.equal(M.labelOf({ key: 'AFTER_SEED' }), 'Depois de cumprir o seed');
+  assert.equal(M.labelOf({ key: 'CHAVE_SEM_ROTULO' }), 'CHAVE_SEM_ROTULO');
+  assert.equal(M.valueLabel({ key: 'AFTER_SEED' }, 'keep'), 'Continuar semeando');
+  assert.equal(M.valueLabel({ key: 'OUTRA' }, 'x'), 'x');
+});
+
+test('o estado do painel traz o hostname para nomear a credencial', async () => {
+  const s = await setup();
+  try {
+    const st = await s.get('settings');
+    assert.equal(st.hostname, require('node:os').hostname());
+  } finally { await s.close(); }
+});
+
+test('X-Boot-Id: estável numa partida e diferente em outra (a tela percebe o reinício)', async () => {
+  const a = await setup();
+  const b = await setup();
+  try {
+    const id = async (s) => (await fetch(`${s.base}/api/status`)).headers.get('x-boot-id');
+    const [a1, a2, b1] = [await id(a), await id(a), await id(b)];
+    assert.match(a1, /^[0-9a-f]{16}$/);
+    assert.equal(a1, a2);
+    assert.notEqual(a1, b1);
+  } finally { await a.close(); await b.close(); }
 });

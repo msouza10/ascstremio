@@ -62,7 +62,7 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'ASC_ONLY_FREELEECH', type: 'bool', default: true, group: 'conta', access: 'editable', restart: false,
-    description: 'true (padrão) lista e baixa só releases freeleech: o download deles não conta no ratio (regra 2.7 do ASC). false mostra todos os releases e o download dos que não são freeleech gasta ratio. Vale na hora, sem novo login.',
+    description: 'true (padrão) lista e baixa só releases freeleech: o download deles não conta no ratio. false mostra todos os releases e o download dos que não são freeleech gasta ratio. Vale na hora, sem novo login.',
   },
   {
     key: 'DATA_DIR', type: 'path', default: null, group: 'caminhos', access: 'readonly', envOnly: true, restart: true, risky: true,
@@ -180,7 +180,7 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'SEED_REQUIRED_HOURS', type: 'number', min: 0, default: 72, unit: 'h', group: 'seed', access: 'advanced', restart: true,
-    description: 'Meta local de seed; não altera a obrigação imposta pelo tracker (regra 13.1).',
+    description: 'Meta local de seed; não altera a obrigação imposta pelo tracker.',
   },
   {
     key: 'KEEP_AWAKE', type: 'enum', values: ['auto', 'off'], default: 'auto', group: 'seed', access: 'advanced', restart: true,
@@ -188,7 +188,7 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'BRIDGE_UPLOAD_LIMIT', type: 'int', min: -1, default: -1, unit: 'B/s', group: 'seed', access: 'advanced', restart: true,
-    description: 'Limite de upload em bytes por segundo. -1 = sem limite. 0 desliga o envio e é respeitado como está (afeta o ratio da regra 13.1).',
+    description: 'Limite de upload em bytes por segundo. -1 = sem limite. 0 desliga o envio e é respeitado como está (afeta o ratio).',
   },
   {
     key: 'BRIDGE_STREAM_UPLOAD_LIMIT', type: 'int', min: 16384, special: [-1], default: -1, unit: 'B/s', group: 'seed', access: 'advanced', restart: true,

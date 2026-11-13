@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const settings = require('./settings');
 const admin = require('./config-admin');
 const network = require('./network');
@@ -197,6 +198,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
       mode: snapshot.mode,
       runningMode: live.ASCSTREMIO_MODE,
       container: snapshot.container,
+      hostname: os.hostname(), // nome padrão do aparelho na credencial (só texto; não é segredo)
       ok: snapshot.ok,
       problems: snapshot.problems,
       warnings: snapshot.warnings,
@@ -336,8 +338,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
       credential: made.credential,
       token: made.token,
       manifestUrl: manifest,
-      stremioUrl: manifest.replace(/^https?:\/\//, 'stremio://'),
-      once: 'Este é o único momento em que o token aparece: copie agora. Depois só é possível revogar e emitir outro.',
+      once: 'O servidor guarda só o verificador do token: depois que o painel perder esta URL (aba fechada), só é possível revogar e emitir outra.',
     };
   }
 

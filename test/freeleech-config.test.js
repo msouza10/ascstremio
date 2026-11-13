@@ -41,13 +41,13 @@ function sessionFile(dir, extra) {
 const sessionOf = (dir) => JSON.parse(fs.readFileSync(path.join(dir, 'asc-session.json'), 'utf8'));
 const loaded = async (dir) => { const c = new AscClient({ stateFile: path.join(dir, 'asc-session.json'), delay: 0 }); await c.load(); return c; };
 
-test('esquema: ASC_ONLY_FREELEECH é bool, padrão ligado, editável, vale na hora e cita a regra 2.7', () => {
+test('esquema: ASC_ONLY_FREELEECH é bool, padrão ligado, editável, vale na hora e explica o ratio', () => {
   const entry = settings.schemaEntry(KEY);
   assert.equal(entry.type, 'bool');
   assert.equal(entry.default, true);
   assert.equal(entry.access, 'editable');
   assert.equal(entry.restart, false);
-  assert.match(entry.description, /2\.7/);
+  assert.match(entry.description, /freeleech.*ratio/);
   assert.ok(settings.GROUPS[entry.group]);
 });
 

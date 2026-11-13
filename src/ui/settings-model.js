@@ -85,16 +85,45 @@
     return Boolean(state) && !state.wizard.completed && !state.wizard.dismissed;
   }
 
-  // Etapas do assistente conforme o modo escolhido (a de endereço só existe na LAN).
-  function wizardSteps(mode) {
-    return mode === 'lan'
+  // Etapas do assistente conforme o modo escolhido (a de endereço só existe na LAN). A de
+  // revisão só existe quando há algo a gravar: "revisar" sem mudança não diz nada ao operador.
+  function wizardSteps(mode, review = true) {
+    const steps = mode === 'lan'
       ? ['modo', 'endereco', 'seed', 'revisar', 'instalar']
       : ['modo', 'seed', 'revisar', 'instalar'];
+    return review ? steps : steps.filter((s) => s !== 'revisar');
   }
 
-  function copyName(mode) { return mode === 'lan' ? 'Stremio da sala' : 'Stremio neste computador'; }
+  // Nome padrão do aparelho: no mesmo computador, o hostname dele (limite de 40 da credencial).
+  function copyName(mode, hostname) {
+    if (mode === 'lan') return 'Stremio da sala';
+    const name = String(hostname ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().replace(/\s+/g, ' ').slice(0, 40).trim();
+    return name || 'Stremio neste computador';
+  }
 
-  module_exports({ textOf, kindOf, display, buildChanges, groupOptions, originText, problemsByKey, changeLine, shouldOfferWizard, wizardSteps, copyName, AFTER_SEED_EFFECT });
+  // Rótulos em linguagem humana das opções do assistente. A chave continua visível, pequena,
+  // para quem usa o terminal; o texto do servidor (description) segue valendo nas Configurações.
+  const FRIENDLY = {
+    AFTER_SEED: {
+      title: 'Depois de cumprir o seed',
+      hint: 'O que fazer com o filme quando o tracker confirmar o seed.',
+      values: { delete: 'Apagar os arquivos (padrão)', stop: 'Encerrar o seed e guardar os arquivos', keep: 'Continuar semeando', manual: 'Eu decido no painel' },
+    },
+    DISK_RESERVE_GIB: { title: 'Espaço livre a preservar', hint: 'Parte do disco que nenhum download novo pode usar. Deixe 0 para desligar.' },
+    DISK_RESERVE_PERCENT: { title: 'Reserva em % do disco', hint: 'Outra forma de reservar espaço: vale a que guardar mais. Deixe 0 para usar só os GiB.' },
+    ASC_ONLY_FREELEECH: {
+      title: 'Quais releases mostrar',
+      hint: 'Freeleech não gasta ratio.',
+      values: { true: 'Só freeleech (recomendado)', false: 'Todos (os demais gastam ratio)' },
+    },
+    ASCSTREMIO_MODE: { title: 'Modo de uso' },
+    LAN_ADVERTISE_HOST: { title: 'Endereço deste computador na rede' },
+  };
+  const labelOf = (option) => FRIENDLY[option.key]?.title ?? option.key;
+  const hintOf = (option) => FRIENDLY[option.key]?.hint ?? null;
+  const valueLabel = (option, value) => FRIENDLY[option.key]?.values?.[value] ?? value;
+
+  module_exports({ textOf, kindOf, display, buildChanges, groupOptions, originText, problemsByKey, changeLine, shouldOfferWizard, wizardSteps, copyName, labelOf, hintOf, valueLabel, AFTER_SEED_EFFECT });
 
   function module_exports(api) {
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

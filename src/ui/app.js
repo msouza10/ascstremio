@@ -20,11 +20,32 @@
     }
     let res;
     try { res = await fetch(`/api/${route}`, opts); } catch { throw new Error('Falha ao falar com o addon local.'); }
+    watchBoot(res.headers.get('x-boot-id'));
     let data = {};
     try { data = await res.json(); } catch { /* corpo vazio */ }
     if (res.status === 401 && data.code === 'admin_required' && store.admin?.enabled) { adminExpired(); }
     if (!res.ok) { const err = new Error(data.error || 'Não foi possível concluir.'); err.status = res.status; err.data = data; throw err; }
     return data;
+  }
+
+  // O servidor manda um id novo a cada partida (X-Boot-Id). Se mudar com a página aberta, o que
+  // ela mostra pode já não existir (reinício, dados refeitos do zero): o assistente recarrega
+  // sozinho para voltar ao estado real; nas outras telas, um aviso evita perder o que se digitou.
+  let bootSeen = null;
+  function watchBoot(id) {
+    if (!id) return;
+    if (!bootSeen) { bootSeen = id; return; }
+    if (id === bootSeen) return;
+    bootSeen = id;
+    if (viewKey === 'assistente') { location.reload(); return; }
+    if ($('boot-banner')) return;
+    const bar = el('div', 'boot-banner');
+    bar.id = 'boot-banner';
+    bar.setAttribute('role', 'alert');
+    const reload = el('button', 'btn btn-outline btn-sm', 'Recarregar'); reload.type = 'button';
+    reload.addEventListener('click', () => location.reload());
+    bar.append(el('span', '', 'O aplicativo foi reiniciado desde que esta página abriu. Recarregue para ver o estado atual.'), reload);
+    document.body.prepend(bar);
   }
 
   // ------------------------------------------------------------- rotas
