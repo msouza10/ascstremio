@@ -106,7 +106,15 @@ async function resumeSeed(bridge, infoHash, entry, fail) {
       bridge.admitTorrent(infoHash);
       const previous = { seedChoice: entry.seedChoice, releasedAs: entry.releasedAs, releasedAt: entry.releasedAt };
       try {
-        const torrent = await bridge.getTorrent(infoHash, { seedResume: true, torrentData: verified.data });
+        const torrent = await bridge.getTorrent(infoHash, {
+          seedResume: true,
+          torrentData: verified.data,
+          // client.get() é assíncrono: confira de novo no ponto síncrono anterior ao add.
+          beforeOpen: () => {
+            idle(); verified.unchanged();
+            if (!hnr.trackerConfirmed(entry) || entry.tracker.hitAndRun) throw fail(409, 'O estado do tracker mudou. Nada foi retomado.');
+          },
+        });
         idle();
         if (!torrent.ready || !torrent.done || !hnr.trackerConfirmed(entry) || entry.tracker.hitAndRun) throw fail(409, 'O estado mudou durante a abertura. O seed continua parado.');
         bridge.vault.setSeedChoice(infoHash, 'keep');

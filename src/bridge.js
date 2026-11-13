@@ -1038,7 +1038,7 @@ class Bridge {
     return send(405, { error: 'método não permitido' });
   }
 
-  async getTorrent(infoHash, { seedResume = false, torrentData = null } = {}) {
+  async getTorrent(infoHash, { seedResume = false, torrentData = null, beforeOpen = () => {} } = {}) {
     // Reconfira depois de cada espera anterior à abertura: a manutenção pode começar
     // enquanto um play já aguarda client.get(). Só a própria retomada atravessa a trava.
     const checkMaintenance = () => {
@@ -1100,6 +1100,7 @@ class Bridge {
         const announce = this.passkey && base
           ? [announceWithPasskey(base, this.passkey)]
           : undefined;
+        beforeOpen();
         pending = this.client.add(torrentData ?? entry.torrentPath, {
           path: this.storeDir,
           // Sem deselect o WebTorrent baixaria o torrent inteiro sozinho.

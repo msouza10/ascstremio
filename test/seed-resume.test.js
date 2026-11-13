@@ -279,3 +279,14 @@ test('motor sem progresso por cinco minutos aborta sem perder arquivos ou a esco
   assert.equal(s.vault.get(s.hash).seedChoice, 'stop');
   assert.ok(fs.existsSync(path.join(s.dir, 'Filme', 'video.mkv')));
 });
+
+test('alteração enquanto client.get aguarda é recusada antes de abrir/anunciar', async () => {
+  const s = await setup();
+  s.b.client.get = async () => {
+    fs.writeFileSync(path.join(s.dir, 'Filme', 'extra.nfo'), 'alterado');
+    return null;
+  };
+  await assert.rejects(s.b.manageSeed(s.hash, 'resume'), e => e.status === 409);
+  assert.equal(s.opened(), 0);
+  assert.equal(s.vault.get(s.hash).seedChoice, 'stop');
+});
