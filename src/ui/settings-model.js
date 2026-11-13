@@ -94,6 +94,26 @@
     return review ? steps : steps.filter((s) => s !== 'revisar');
   }
 
+  // Valida o que o assistente guardou no sessionStorage antes de reaproveitar. O dado vem do
+  // navegador (pode estar velho, corrompido ou ter sido editado), então nada é confiado: passo
+  // inexistente volta ao início, e só entra rascunho de chave editável que ainda existe, com
+  // valor texto ou null (voltar ao padrão). Nunca lança; sem dado válido devolve o estado inicial.
+  function restoreWizard(raw, options, steps) {
+    const vazio = { step: steps[0] ?? 'modo', drafts: {} };
+    let data;
+    try { data = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return vazio; }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return vazio;
+    const step = steps.includes(data.step) ? data.step : vazio.step;
+    const saved = data.drafts && typeof data.drafts === 'object' && !Array.isArray(data.drafts) ? data.drafts : {};
+    const drafts = {};
+    for (const o of options ?? []) {
+      if (!o.editable || !Object.prototype.hasOwnProperty.call(saved, o.key)) continue;
+      const v = saved[o.key];
+      if (v === null || typeof v === 'string') drafts[o.key] = v;
+    }
+    return { step, drafts };
+  }
+
   // Nome padrão do aparelho: no mesmo computador, o hostname dele (limite de 40 da credencial).
   function copyName(mode, hostname) {
     if (mode === 'lan') return 'Stremio da sala';
@@ -118,6 +138,40 @@
     },
     ASCSTREMIO_MODE: { title: 'Modo de uso' },
     LAN_ADVERTISE_HOST: { title: 'Endereço deste computador na rede' },
+    PORT: { title: 'Porta do addon Stremio' },
+    BRIDGE_PORT: { title: 'Porta da ponte de vídeo' },
+    TORRENT_PORT: { title: 'Porta de entrada de peers', hint: '0 deixa o sistema escolher uma porta livre.' },
+    STATUS_CATALOG: {
+      title: 'Catálogo de status no Stremio',
+      values: { on: 'Mostrar (padrão)', off: 'Ocultar o catálogo e seus alertas' },
+    },
+    BACKGROUND_COMPLETE: {
+      title: 'Conclusão automática em segundo plano',
+      values: { off: 'Desligada (padrão)', auto: 'Concluir sozinho os freeleech elegíveis parados' },
+    },
+    SEED_REQUIRED_HOURS: { title: 'Meta local de seed', hint: 'Não altera a obrigação imposta pelo tracker.' },
+    KEEP_AWAKE: {
+      title: 'Evitar suspensão durante o seed',
+      values: { auto: 'Bloquear a suspensão enquanto há seed pendente (padrão)', off: 'Não bloquear' },
+    },
+    BRIDGE_UPLOAD_LIMIT: { title: 'Limite de upload', hint: '-1 = sem limite. 0 desliga o envio.' },
+    BRIDGE_STREAM_UPLOAD_LIMIT: { title: 'Teto de upload durante a reprodução', hint: '-1 = não reduz o upload ao assistir.' },
+    RESUME_CONCURRENCY: { title: 'Seeds retomados ao mesmo tempo na partida' },
+    // Não é automática: no modo "preview" nada é removido sozinho; a limpeza é manual e confirmada.
+    RETENTION_MODE: {
+      title: 'Limpeza da biblioteca por orçamento',
+      hint: 'Nada é removido sozinho: com a prévia ligada, a limpeza é manual e confirmada (npm run retencao).',
+      values: { off: 'Desligada (padrão)', preview: 'Mostrar prévia e permitir execução manual' },
+    },
+    RETENTION_BUDGET_GIB: { title: 'Orçamento de disco dos filmes' },
+    RETENTION_MAX_TITLES: { title: 'Máximo de títulos com dados no disco', hint: '0 = sem limite.' },
+    RETENTION_MIN_AGE_DAYS: { title: 'Dias sem uso antes de poder limpar' },
+    PLAYBACK_MAX_SESSIONS: { title: 'Máximo de reproduções simultâneas', hint: '0 = sem limite.' },
+    PLAYBACK_MAX_PER_CREDENTIAL: { title: 'Reproduções simultâneas por credencial', hint: '0 = sem limite.' },
+    PLAYBACK_SESSION_GRACE_SECONDS: { title: 'Tempo para liberar a vaga de uma reprodução parada' },
+    ALERTS_ENABLED: { title: 'Alertas por webhook', values: { true: 'Ligados', false: 'Desligados (padrão)' } },
+    LOG_LEVEL: { title: 'Nível de detalhe dos logs' },
+    LOG_RETENTION_DAYS: { title: 'Dias de retenção dos logs' },
   };
   // URLs do addon a partir da base ATUAL e do token guardado na aba. A base muda com o modo LAN, o
   // endereço anunciado e a porta; guardar a URL pronta deixaria um endereço velho na tela.
@@ -130,7 +184,21 @@
   const hintOf = (option) => FRIENDLY[option.key]?.hint ?? null;
   const valueLabel = (option, value) => FRIENDLY[option.key]?.values?.[value] ?? value;
 
-  module_exports({ textOf, kindOf, display, buildChanges, groupOptions, originText, problemsByKey, changeLine, shouldOfferWizard, wizardSteps, copyName, addonUrls, labelOf, hintOf, valueLabel, AFTER_SEED_EFFECT });
+  // Normaliza para a busca: sem acento e sem diferenciar maiúsculas ("Reprodução" casa "reproducao").
+  const fold = (t) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+  // Casa a consulta com o título humano, a chave ou a descrição. Cada palavra digitada precisa
+  // aparecer em algum deles; consulta vazia casa tudo.
+  function matchesQuery(option, query) {
+    const words = fold(query).split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const hay = fold(`${labelOf(option)} ${option.key} ${FRIENDLY[option.key]?.hint ?? ''} ${option.description ?? ''}`);
+    return words.every((w) => hay.includes(w));
+  }
+
+  const filterOptions = (options, query) => options.filter((o) => matchesQuery(o, query));
+
+  module_exports({ matchesQuery, filterOptions, textOf, kindOf, display, buildChanges, groupOptions, originText, problemsByKey, changeLine, shouldOfferWizard, wizardSteps, restoreWizard, copyName, addonUrls, labelOf, hintOf, valueLabel, AFTER_SEED_EFFECT });
 
   function module_exports(api) {
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

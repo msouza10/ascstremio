@@ -466,3 +466,50 @@ test('assistente: wizard.json antigo, sem installPending, continua legível', as
     assert.equal(w.installPending, false);
   } finally { await s.close(); }
 });
+
+test('busca das Configurações: título humano, chave, descrição, acento e maiúsculas', () => {
+  const opts = [
+    { key: 'AFTER_SEED', description: 'O que fazer com o filme depois do seed.' },
+    { key: 'PLAYBACK_MAX_SESSIONS', description: 'Máximo de reproduções simultâneas no total.' },
+    { key: 'LOG_LEVEL', description: 'Nível mínimo registrado.' },
+  ];
+  const keys = (q) => M.filterOptions(opts, q).map((o) => o.key);
+  assert.deepEqual(keys('depois de cumprir'), ['AFTER_SEED'], 'pelo título humano');
+  assert.deepEqual(keys('playback_max'), ['PLAYBACK_MAX_SESSIONS'], 'pela chave');
+  assert.deepEqual(keys('simultaneas'), ['PLAYBACK_MAX_SESSIONS'], 'descrição, sem acento');
+  assert.deepEqual(keys('NÍVEL'), ['LOG_LEVEL'], 'com acento e maiúsculas');
+  assert.deepEqual(keys('cumprir seed'), ['AFTER_SEED'], 'várias palavras, em qualquer ordem');
+  assert.equal(keys('').length, 3, 'consulta vazia mostra tudo');
+  assert.equal(keys('   ').length, 3, 'só espaços equivale a vazio');
+  assert.deepEqual(keys('zzz-inexistente'), [], 'sem resultado');
+});
+
+test('rótulo da retenção: não promete limpeza automática (só prévia e execução manual)', () => {
+  const opt = { key: 'RETENTION_MODE' };
+  assert.doesNotMatch(M.labelOf(opt), /autom/i);
+  assert.match(M.hintOf(opt), /nada é removido sozinho/i);
+});
+
+test('restoreWizard: devolve passo e rascunhos válidos guardados na sessão', () => {
+  const options = [{ key: 'AFTER_SEED', editable: true }, { key: 'PORT', editable: false }, { key: 'DISK_RESERVE_GIB', editable: true }];
+  const steps = M.wizardSteps('local', true);
+  const raw = JSON.stringify({ step: 'seed', drafts: { AFTER_SEED: 'keep', DISK_RESERVE_GIB: null } });
+  assert.deepEqual(M.restoreWizard(raw, options, steps), { step: 'seed', drafts: { AFTER_SEED: 'keep', DISK_RESERVE_GIB: null } });
+});
+
+test('restoreWizard: descarta passo inexistente, chave desconhecida, não editável e valor não-string', () => {
+  const options = [{ key: 'AFTER_SEED', editable: true }, { key: 'PORT', editable: false }, { key: 'DISK_RESERVE_GIB', editable: true }];
+  const raw = JSON.stringify({ step: 'endereco', drafts: { AFTER_SEED: 'stop', PORT: '9999', INEXISTENTE: 'x', DISK_RESERVE_GIB: 5 } });
+  // 'endereco' só existe na LAN: no modo local volta ao primeiro passo.
+  assert.deepEqual(M.restoreWizard(raw, options, M.wizardSteps('local', true)), { step: 'modo', drafts: { AFTER_SEED: 'stop' } });
+  assert.equal(M.restoreWizard(raw, options, M.wizardSteps('lan', true)).step, 'endereco');
+});
+
+test('restoreWizard: JSON quebrado, nulo ou de tipo errado volta ao início', () => {
+  const options = [{ key: 'AFTER_SEED', editable: true }];
+  const steps = M.wizardSteps('local', true);
+  for (const raw of ['{quebrado', null, undefined, '', 'null', '[]', '42']) {
+    assert.deepEqual(M.restoreWizard(raw, options, steps), { step: 'modo', drafts: {} });
+  }
+  assert.deepEqual(M.restoreWizard(JSON.stringify({ step: 'seed', drafts: [1] }), options, steps), { step: 'seed', drafts: {} });
+});
