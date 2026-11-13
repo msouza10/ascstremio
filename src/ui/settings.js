@@ -764,6 +764,7 @@
     hl.append(el('h1', '', 'Assistente de configuração'), el('p', 'page-sub', 'Poucos passos: como você vai usar, seed e disco, e a instalação no Stremio. Dá para mudar tudo depois em Configurações.'));
     head.append(hl);
     const stepper = el('ol', 'stepper');
+    stepper.setAttribute('aria-label', 'Etapas do assistente');
     const body = el('div', 'stack');
     root.append(head, stepper, body);
 
@@ -771,6 +772,9 @@
     let mode = 'local';
     let drafts = {};
     let step = 'modo';
+    // Etapas já abertas nesta sessão (por nome: a revisão pode aparecer e sumir). Voltar à etapa 1 não
+    // pode tirar das etapas seguintes, já visitadas, o botão de ir direto até elas.
+    const visited = new Set();
     let lastPreview = null;
     let connection = 'aguardando';
     let finish = null;
@@ -781,13 +785,50 @@
     // O modo efetivo (state.mode) vale: BRIDGE_ALLOW_LAN=1 liga a LAN com ASCSTREMIO_MODE ainda no padrão.
     const draftMode = () => (drafts.ASCSTREMIO_MODE ?? state.mode);
 
+    // Progresso na sessão da aba (some ao fechá-la): recarregar não devolve ao passo 1 nem apaga o
+    // que foi digitado. O assistente não coleta segredo, então só passo e rascunhos vão para lá.
+    // Sempre em try/catch: o storage lança em janela privada ou com dados do site bloqueados.
+    const WIZARD_KEY = 'ascstremio.wizard';
+    function saveProgress() {
+      try { sessionStorage.setItem(WIZARD_KEY, JSON.stringify({ step, drafts })); } catch { /* sem storage: só não persiste */ }
+    }
+    function clearProgress() {
+      try { sessionStorage.removeItem(WIZARD_KEY); } catch { /* idem */ }
+    }
+    function loadProgress() {
+      let raw = null;
+      try { raw = sessionStorage.getItem(WIZARD_KEY); } catch { /* idem */ }
+      if (raw === null) return;
+      drafts = M.restoreWizard(raw, state.options, M.wizardSteps('lan', true)).drafts;
+      // O passo só vale se existir no modo restaurado (a etapa de endereço é só da LAN).
+      const saved = M.restoreWizard(raw, state.options, M.wizardSteps(draftMode(), true)).step;
+      step = saved;
+    }
+    // Os campos alteram `drafts` em handlers próprios; o evento sobe até a raiz depois deles.
+    root.addEventListener('input', saveProgress);
+    root.addEventListener('change', saveProgress);
+
     function drawStepper() {
       clear(stepper);
       const steps = order();
+      visited.add(step);
       steps.forEach((s, i) => {
-        const li = el('li', '', `${i + 1}. ${LABELS[s]}`);
-        li.dataset.s = i < steps.indexOf(step) ? 'done' : (s === step ? 'current' : 'todo');
+        const li = el('li');
+        const label = `${i + 1}. ${LABELS[s]}`;
+        const done = i < steps.indexOf(step);
+        const reachable = s !== step && (done || visited.has(s));
+        li.dataset.s = done ? 'done' : (s === step ? 'current' : (reachable ? 'visited' : 'todo'));
         if (s === step) li.setAttribute('aria-current', 'step');
+        if (reachable) {
+          // Já visitada: botão para ir direto (corrigir o passo 1 da revisão sem passar por todos), inclusive
+          // para uma etapa à frente depois de voltar. O ✓ é visual (::before) e só marca as anteriores à
+          // atual; o leitor de tela ouve "concluída" ou "já visitada".
+          const b = el('button', 'step-link', label);
+          b.type = 'button';
+          b.append(el('span', 'sr-only', done ? ' (concluída)' : ' (já visitada)'));
+          b.addEventListener('click', () => go(s));
+          li.append(b);
+        } else li.append(label);
         stepper.append(li);
       });
     }
@@ -813,11 +854,13 @@
 
     async function dismiss() {
       try { await app().call('POST', 'wizard/dismiss', {}); } catch { /* adiar é só conveniência */ }
+      clearProgress();
       app().nav('/');
     }
 
     function draw() {
       mode = draftMode();
+      saveProgress();
       drawStepper(); clear(body);
       body.append(errBox.root);
       if (step === 'instalar') {
@@ -964,7 +1007,7 @@
     // acompanhar o dia a dia; Configurações continua a um clique no menu.
     function installFooter() {
       finish = button('Concluir sem confirmar a instalação', 'btn-outline', async () => {
-        try { await app().call('POST', 'wizard/complete', {}); app().nav('/'); } catch (ex) { errBox.show('Não foi possível registrar a conclusão', [ex.message]); }
+        try { await app().call('POST', 'wizard/complete', {}); clearProgress(); app().nav('/'); } catch (ex) { errBox.show('Não foi possível registrar a conclusão', [ex.message]); }
       });
       syncFinish();
       return nav([button('Voltar', 'btn-ghost', () => go(prevOf())), finish]);
@@ -983,7 +1026,7 @@
 
     (async () => {
       body.append(loadingCard('Carregando…'));
-      try { state = await loadState(); mode = state.mode; draw(); } catch (ex) {
+      try { state = await loadState(); mode = state.mode; loadProgress(); draw(); } catch (ex) {
         clear(body);
         body.append(alertBox('leech', 'Não foi possível abrir o assistente', ex.status === 401 ? 'A sessão do ASC não está confirmada. Entre de novo; o assistente continua disponível.' : ex.message));
       }
