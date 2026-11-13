@@ -8,6 +8,7 @@ const settings = require('../src/settings');
 const { startConfig } = require('../src/config-server');
 const { createPanelSettings } = require('../src/panel-settings');
 const { CredentialStore } = require('../src/credentials');
+const { createAddonActivity } = require('../src/addon-activity');
 const { Logger } = require('../src/logger');
 const M = require('../src/ui/settings-model');
 const { tmpdir } = require('./tmp-helper');
@@ -22,8 +23,9 @@ async function setup({ env = {}, connected = true, interfaces = NET } = {}) {
   const snap = settings.load({ dataDir, env: bootEnv, interfaces });
   const credentials = new CredentialStore({ file: path.join(dataDir, 'credentials.json') });
   const levels = [];
+  const activity = createAddonActivity();
   const panel = createPanelSettings({
-    dataDir, bootEnv, running: snap.values, credentials, interfaces, peerPort: () => require('../src/network').evaluatePeerPort({ engine: { known: true, listening: true, port: 7030 }, configuredPort: 7030 }), playback: () => ({ active: 1, maxSessions: 2, maxPerCredential: 0, graceSeconds: 30, credentials: [] }),
+    activity, dataDir, bootEnv, running: snap.values, credentials, interfaces, peerPort: () => require('../src/network').evaluatePeerPort({ engine: { known: true, listening: true, port: 7030 }, configuredPort: 7030 }), playback: () => ({ active: 1, maxSessions: 2, maxPerCredential: 0, graceSeconds: 30, credentials: [] }),
     addonBase: snap.derived.network.urls.addon,
     applyLive: (key, value) => { if (key === 'LOG_LEVEL') { levels.push(value); return true; } return false; },
   });
@@ -36,7 +38,7 @@ async function setup({ env = {}, connected = true, interfaces = NET } = {}) {
   const post = (route, body, headers = good) => fetch(`${base}/api/${route}`, { method: 'POST', headers, body: JSON.stringify(body) });
   const get = async (route) => (await fetch(`${base}/api/${route}`)).json();
   return {
-    dataDir, base, port, panel, asc, post, get, good, levels, credentials,
+    dataDir, base, port, panel, asc, post, get, good, levels, credentials, activity,
     close: () => new Promise((r) => server.close(r)),
   };
 }
@@ -264,7 +266,6 @@ test('credencial: token aparece só na emissão; listagem e estado não o trazem
     const made = await res.json();
     assert.match(made.token, /^ascc_[A-Za-z0-9_-]{43}$/);
     assert.equal(made.manifestUrl, `http://127.0.0.1:7000/${made.token}/manifest.json`);
-    assert.equal(made.stremioUrl, `stremio://127.0.0.1:7000/${made.token}/manifest.json`);
     assert.equal(t.credentials.verify(made.token).id, made.credential.id);
     for (const rota of ['credentials', 'settings']) {
       const txt = JSON.stringify(await t.get(rota));
@@ -337,4 +338,93 @@ test('modelo da UI: agrupa na ordem do esquema, associa problemas aos campos e e
   assert.match(M.AFTER_SEED_EFFECT.delete, /APAGADOS/);
   assert.equal(M.shouldOfferWizard({ wizard: { completed: false, dismissed: false } }), true);
   assert.equal(M.shouldOfferWizard({ wizard: { completed: true, dismissed: false } }), false);
+});
+
+test('conexão do Stremio: link do Stremio Web e estado por credencial, sem afirmar instalação sem catálogo', async () => {
+  const s = await setup();
+  try {
+    const r = await s.post('credentials', { name: 'Sala' });
+    assert.equal(r.status, 201);
+    const made = await r.json();
+    assert.equal(made.webUrl, `https://web.stremio.com/#/addons?addon=${encodeURIComponent(made.manifestUrl)}`);
+
+    const id = made.credential.id;
+    const state = async () => (await s.get('addon-connection')).credentials.find((c) => c.id === id);
+    assert.equal((await state()).state, 'aguardando');
+    s.activity.record(id, '/manifest.json');
+    assert.equal((await state()).state, 'manifesto_lido');
+    s.activity.record(id, '/catalog/movie/asc.json');
+    const done = await state();
+    assert.equal(done.state, 'instalado');
+    assert.ok(done.lastSeenAt);
+    assert.equal(JSON.stringify(done).includes(made.token), false, 'o token nunca volta na consulta');
+
+    s.asc.connected = false;
+    assert.equal((await fetch(`${s.base}/api/addon-connection`)).status, 401);
+  } finally { await s.close(); }
+});
+
+test('modelo da UI: revisão só quando há o que gravar, nome do aparelho e rótulos humanos', () => {
+  assert.deepEqual(M.wizardSteps('local', false), ['modo', 'seed', 'instalar']);
+  assert.deepEqual(M.wizardSteps('lan', false), ['modo', 'endereco', 'seed', 'instalar']);
+  assert.equal(M.copyName('local', 'meu-pc'), 'meu-pc');
+  assert.equal(M.copyName('local', ''), 'Stremio neste computador');
+  assert.equal(M.copyName('local', 'x'.repeat(60)).length, 40);
+  assert.equal(M.copyName('lan', 'meu-pc'), 'Stremio da sala');
+  assert.equal(M.labelOf({ key: 'AFTER_SEED' }), 'Depois de cumprir o seed');
+  assert.equal(M.labelOf({ key: 'CHAVE_SEM_ROTULO' }), 'CHAVE_SEM_ROTULO');
+  assert.equal(M.valueLabel({ key: 'AFTER_SEED' }, 'keep'), 'Continuar semeando');
+  assert.equal(M.valueLabel({ key: 'OUTRA' }, 'x'), 'x');
+});
+
+test('o estado do painel traz o hostname para nomear a credencial', async () => {
+  const s = await setup();
+  try {
+    const st = await s.get('settings');
+    assert.equal(st.hostname, require('node:os').hostname());
+  } finally { await s.close(); }
+});
+
+test('X-Boot-Id: estável numa partida e diferente em outra (a tela percebe o reinício)', async () => {
+  const a = await setup();
+  const b = await setup();
+  try {
+    const id = async (s) => (await fetch(`${s.base}/api/status`)).headers.get('x-boot-id');
+    const [a1, a2, b1] = [await id(a), await id(a), await id(b)];
+    assert.match(a1, /^[0-9a-f]{16}$/);
+    assert.equal(a1, a2);
+    assert.notEqual(a1, b1);
+  } finally { await a.close(); await b.close(); }
+});
+
+test('reinício de rede pendente: a URL do addon não é gerada e o texto aponta para Conta › Addons', async () => {
+  const s = await setup();
+  try {
+    const antes = await s.get('settings');
+    assert.ok(antes.addon.url, 'sem mudança pendente a URL existe');
+    // Trocar uma porta só vale depois de reiniciar: a URL anunciada ainda é a da partida.
+    const r = await s.post('settings', { expectedRevision: antes.revision, changes: { PORT: '7101' } });
+    assert.equal(r.status, 200);
+    const depois = await s.get('settings');
+    assert.equal(depois.addon.url, null);
+    assert.match(depois.addon.reason, /PORT/);
+    assert.match(depois.addon.reason, /Conta › Addons/);
+    assert.doesNotMatch(depois.addon.reason, /abra o assistente/i);
+    const bloqueada = await s.post('credentials', { name: 'Sala' });
+    assert.equal(bloqueada.status, 409, 'não emite credencial enquanto a rede espera reinício');
+  } finally { await s.close(); }
+});
+
+test('addonUrls: refaz a URL com a base atual e o token guardado (igual à que o servidor emite)', async () => {
+  const s = await setup();
+  try {
+    const st = await s.get('settings');
+    const made = await (await s.post('credentials', { name: 'Sala' })).json();
+    // Mesma conta que o servidor faz: a URL guardada na aba pode ser refeita sem divergir.
+    assert.deepEqual(M.addonUrls(st.addon.url, made.token), { manifestUrl: made.manifestUrl, webUrl: made.webUrl });
+    // Se a base mudou (modo LAN, porta, endereço), a URL nova usa a base nova e o mesmo token.
+    const lan = M.addonUrls('http://192.168.1.20:7000/', made.token);
+    assert.equal(lan.manifestUrl, `http://192.168.1.20:7000/${made.token}/manifest.json`);
+    assert.equal(lan.webUrl, `https://web.stremio.com/#/addons?addon=${encodeURIComponent(lan.manifestUrl)}`);
+  } finally { await s.close(); }
 });

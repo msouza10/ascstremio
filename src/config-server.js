@@ -20,7 +20,7 @@ const TYPES = {
 // Páginas do painel: todas devolvem o mesmo shell, o roteador do cliente escolhe a view.
 const PAGES = [/^\/$/, /^\/filmes$/, /^\/filmes\/[A-Za-z0-9_-]{1,64}$/, /^\/trafego$/, /^\/logs$/, /^\/conta$/, /^\/entrar$/, /^\/configuracoes$/, /^\/assistente$/];
 // Leituras repetidas pelo próprio painel: não geram linha de log (seria ruído e laço).
-const QUIET = new Set(['/api/monitor', '/api/status', '/api/logs', '/api/logs/files', '/config.js']);
+const QUIET = new Set(['/api/monitor', '/api/status', '/api/logs', '/api/logs/files', '/api/addon-connection', '/config.js']);
 const MAX_DOWNLOAD = 100_000;
 const PANEL_POSTS = ['/api/settings', '/api/settings/preview', '/api/wizard/complete', '/api/wizard/dismiss', '/api/credentials'];
 const ALERT_POSTS = ['/api/alerts/webhook', '/api/alerts/webhook/clear', '/api/alerts/test'];
@@ -112,10 +112,14 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       return [error.status, { error: error.message, code: error.code, problems: error.problems }];
     }
   };
+  // Muda a cada partida: a tela compara e percebe que o aplicativo reiniciou (ou foi refeito do
+  // zero) desde que ela abriu, em vez de seguir mostrando um estado que já não existe.
+  const bootId = randomBytes(8).toString('hex');
   const handler = async (req, res) => {
     const started = Date.now();
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Boot-Id', bootId);
     res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; img-src 'self' data:");
     const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
     let pathname = '';
@@ -261,9 +265,10 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         if (!asc.connected) return send(401, { error: 'Conecte e confirme a sessão do ASC para abrir o painel.' });
         return send(200, monitor.snapshot());
       }
-      if (req.method === 'GET' && (url.pathname === '/api/settings' || url.pathname === '/api/credentials')) {
+      if (req.method === 'GET' && (url.pathname === '/api/settings' || url.pathname === '/api/credentials' || url.pathname === '/api/addon-connection')) {
         if (!panel) return send(404, { error: 'Configurações indisponíveis.' });
         if (!asc.connected) return send(401, { error: 'Conecte e confirme a sessão do ASC para abrir as configurações.' });
+        if (url.pathname === '/api/addon-connection') return send(200, panel.connection());
         return send(200, url.pathname === '/api/settings' ? panel.state() : { credentials: panel.listCredentials() });
       }
       if (req.method === 'GET' && url.pathname === '/api/alerts') {

@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const settings = require('./settings');
 const admin = require('./config-admin');
 const network = require('./network');
@@ -73,7 +74,7 @@ function fromSettingsError(err) {
 // efetivos em uso agora (cfg.values da partida); applyLive(key, value): aplica sem reiniciar
 // (hoje só LOG_LEVEL), devolve true se aplicou; credentials: CredentialStore; addonBase: URL
 // do addon que os aparelhos usam (cfg.derived.network.urls.addon).
-function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => false, credentials = null, addonBase = null, addSecret = () => {}, interfaces = undefined, playback = null, peerPort = null, alertsGuard = null } = {}) {
+function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => false, credentials = null, addonBase = null, addSecret = () => {}, interfaces = undefined, playback = null, peerPort = null, alertsGuard = null, activity = null } = {}) {
   if (!dataDir || !bootEnv || !running) throw new Error('panel-settings: dataDir, bootEnv e running são obrigatórios');
   const live = { ...running };
   const wizardPath = path.join(dataDir, WIZARD_FILE);
@@ -172,7 +173,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
 
   function addonUrlInfo(snapshot) {
     const pending = pendingKeys(snapshot).filter((k) => NETWORK_KEYS.has(k));
-    if (pending.length) return { url: null, reason: `Há mudanças de rede esperando reinício (${pending.join(', ')}). Reinicie e abra o assistente de novo para gerar a URL.` };
+    if (pending.length) return { url: null, reason: `Há mudanças de rede esperando reinício (${pending.join(', ')}). Reinicie o aplicativo e gere a URL em Conta › Addons.` };
     if (!addonBase) return { url: null, reason: 'Sem endereço utilizável para os aparelhos: defina LAN_ADVERTISE_HOST.' };
     return { url: addonBase, reason: null };
   }
@@ -197,6 +198,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
       mode: snapshot.mode,
       runningMode: live.ASCSTREMIO_MODE,
       container: snapshot.container,
+      hostname: os.hostname(), // nome padrão do aparelho na credencial (só texto; não é segredo)
       ok: snapshot.ok,
       problems: snapshot.problems,
       warnings: snapshot.warnings,
@@ -328,16 +330,32 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
     }
     addSecret(made.token); // o token também fica redigido nos logs
     const manifest = `${info.url}/${made.token}/manifest.json`;
+    // Stremio Web abre o diálogo de instalação com ?addon=<manifesto codificado>. Fora do
+    // loopback, o Stremio exige HTTPS (docs do SDK), então este link só vale para 127.0.0.1.
+    const webUrl = `https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifest)}`;
     return {
+      webUrl,
       credential: made.credential,
       token: made.token,
       manifestUrl: manifest,
-      stremioUrl: manifest.replace(/^https?:\/\//, 'stremio://'),
-      once: 'Este é o único momento em que o token aparece: copie agora. Depois só é possível revogar e emitir outro.',
+      once: 'O servidor guarda só o verificador do token: depois que o painel perder esta URL (aba fechada), só é possível revogar e emitir outra.',
     };
   }
 
-  return { state, preview, save, wizardState, wizardMark, createCredential, listCredentials: () => (credentials ? credentials.list() : []) };
+  // Conexão do Stremio por credencial ativa (só leitura; vem do que o addon recebeu, ver
+  // src/addon-activity.js). Sem o módulo, tudo fica "aguardando": nunca se afirma instalação.
+  function connection() {
+    const list = credentials ? credentials.list().filter((c) => !c.revokedAt) : [];
+    return {
+      credentials: list.map((c) => ({
+        id: c.id,
+        name: c.name,
+        ...(activity ? activity.get(c.id) : { state: 'aguardando', manifestAt: null, catalogAt: null, streamAt: null, lastSeenAt: null }),
+      })),
+    };
+  }
+
+  return { state, preview, save, wizardState, wizardMark, createCredential, connection, listCredentials: () => (credentials ? credentials.list() : []) };
 }
 
 module.exports = { createPanelSettings, PanelError, NETWORK_KEYS, WIZARD_FILE };

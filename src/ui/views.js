@@ -31,8 +31,8 @@
     const badges = el('div', 'item-badges');
     main.append(title, badges);
     const metrics = el('div', 'item-metrics');
-    const seed = metricBox('Seed (13.1)');
-    const due = metricBox('Prazo (13.3)');
+    const seed = metricBox('Seed');
+    const due = metricBox('Prazo');
     const net = metricBox('Agora', true);
     metrics.append(seed.root, due.root, net.root);
     const go = icon('chevron-right', 'ic-go');
@@ -61,7 +61,7 @@
         const ob = ['seeding', 'paused', 'missing', 'awaiting', 'hnr', 'done'].includes(t.state);
         const fillTone = t.risk === 'crit' ? 'leech' : t.risk === 'warn' ? 'complete' : (t.state === 'completing' ? 'primary' : 'seed');
         if (ob) {
-          setText(seed.lbl, 'Seed (13.1)');
+          setText(seed.lbl, 'Seed');
           setText(seed.a, t.state === 'done' ? 'Cumprido' : fmtHours(t.seededHours));
           setText(seed.b, t.state === 'done' ? '' : `de ${fmtHours(t.requiredHours)}`);
           seed.m.set(t.state === 'done' ? 1 : t.seededHours / t.requiredHours, fillTone);
@@ -76,7 +76,7 @@
           setText(seed.b, 'parcial');
           seed.m.set(t.progress, 'complete');
         } else {
-          setText(seed.lbl, 'Seed (13.1)'); setText(seed.a, '—'); setText(seed.b, '');
+          setText(seed.lbl, 'Seed'); setText(seed.a, '—'); setText(seed.b, '');
           seed.m.set(0, null, true);
         }
 
@@ -94,24 +94,27 @@
   }
 
   // ------------------------------------------------------- concluir download
-  // Fluxo com confirmação dentro da página (sem confirm()).
+  // Fluxo com confirmação dentro da página (sem confirm()). `bar` (botões) vai para o cabeçalho,
+  // ao lado de "Abrir no ASC"; `panel` (confirmação e resultado) aparece logo abaixo dele.
   function completeFlow() {
-    const root = el('div', 'stack');
+    const bar = el('div', 'film-bar');
+    const panel = el('div', 'stack');
     let confirming = false; let result = ''; let busy = false; let current = null;
     function render() {
-      clear(root);
+      clear(bar); clear(panel);
       const t = current;
       if (!t) return;
       const can = t.state === 'partial' || t.state === 'unstarted';
       if (can && !confirming) {
-        const b = el('button', 'btn btn-outline');
+        const b = el('button', 'btn btn-primary btn-sm btn-icon');
         b.type = 'button';
-        b.append(icon('download'), document.createTextNode('Concluir download em segundo plano'));
+        b.title = 'Baixa o restante com prioridade baixa e abre a obrigação de 72 h de seed.';
+        b.append(icon('download'), document.createTextNode('Concluir download'));
         b.addEventListener('click', () => { confirming = true; result = ''; render(); });
-        root.append(b, el('p', 'foot', 'Baixa o restante com prioridade baixa e abre a obrigação de 72 h de seed.'));
+        bar.append(b);
       } else if (can && confirming) {
         const free = t.freeleech === true;
-        root.append(alertBox(free ? 'complete' : 'leech', free ? 'Abre 72 h de seed' : 'Não é freeleech',
+        panel.append(alertBox(free ? 'complete' : 'leech', free ? 'Abre 72 h de seed' : 'Não é freeleech',
           free ? 'Só faça se for manter a ponte ligada: o seed é cobrado pelo tracker.'
             : 'O download inteiro conta no seu ratio, e concluir também abre 72 h de seed.'));
         const row = el('div', 'item-badges');
@@ -129,44 +132,58 @@
           busy = false; confirming = false; render(); app().refresh();
         });
         row.append(ok, cancel);
-        root.append(row);
-      } else if (!result) {
-        root.append(el('p', 'foot', t.state === 'completing'
-          ? 'O restante já está sendo baixado. Acompanhe o progresso acima.'
-          : 'Este filme não precisa de ação: o download já foi concluído ou não é cobrado.'));
+        panel.append(row);
+      } else if (t.state === 'completing') {
+        const b = el('button', 'btn btn-outline btn-sm btn-icon');
+        b.type = 'button'; b.disabled = true;
+        b.append(icon('arrow-down-to-line'), document.createTextNode('Baixando o restante'));
+        bar.append(b);
       }
-      if (result) root.append(el('p', 'foot', result));
+      if (result) { const message = el('p', 'foot', result); message.setAttribute('role', 'status'); panel.append(message); }
     }
-    return { root, set(t) { const was = current?.state; current = t; if (was !== t.state || !root.childElementCount) render(); } };
+    return { bar, panel, set(t) { const was = current?.state; current = t; if (was !== t.state || !(bar.childElementCount + panel.childElementCount)) render(); } };
   }
 
+  // Gerenciar o seed depois de cumprido: os botões ficam no cabeçalho; a confirmação, abaixo dele.
+  // Antes de o tracker confirmar, o botão aparece desabilitado com o motivo (não some sem explicar).
   function seedFlow() {
-    const root = el('div', 'stack');
+    const bar = el('div', 'film-bar');
+    const panel = el('div', 'stack');
     let current = null; let action = null; let busy = false; let result = ''; let signature = '';
-    const labels = { keep: 'Continuar semeando', stop: 'Parar seed e manter arquivos', delete: 'Excluir arquivos e parar seed' };
+    const labels = { keep: 'Manter semeando (não apagar sozinho)', stop: 'Parar seed e manter arquivos', delete: 'Excluir arquivos e parar seed' };
+    const short = { keep: 'Manter semeando', stop: 'Parar seed', delete: 'Excluir arquivos' };
     function render() {
-      clear(root);
+      clear(bar); clear(panel);
       const t = current;
       if (!t || !/^[0-9a-f]{40}$/.test(t.infoHash)) return;
-      root.append(el('p', 'foot', t.tracker?.satisfied
-        ? 'Seed obrigatório cumprido e confirmado pelo tracker. Você pode manter ou excluir os arquivos.'
-        : 'Parar ou excluir fica disponível depois que o tracker confirmar o seed obrigatório. Para decidir depois, selecione AFTER_SEED=manual nas configurações.'));
       if (t.tracker?.satisfied && !t.tracker.hitAndRun && t.onDisk !== 'none') {
-        const row = el('div', 'item-badges');
+        // "Manter semeando" não é o contrário de "Parar": é "não apague meus arquivos sozinho". Depois
+        // de escolhido, o botão mostra o estado (✓ mantido) em vez de seguir oferecendo a mesma ação.
+        // Não existe "retomar": parar é definitivo, então não há liga/desliga.
+        const kept = t.seedChoice === 'keep';
+        if (!t.active) {
+          const chip = el('span', 'seed-chip');
+          chip.title = 'O seed foi encerrado; os arquivos continuam no disco.';
+          chip.append(icon('wifi-off'), document.createTextNode('Seed parado'));
+          bar.append(chip);
+        }
         for (const key of ['keep', 'stop', 'delete']) {
           if (key !== 'delete' && !t.active) continue;
-          const button = el('button', 'btn btn-outline', labels[key]);
-          button.type = 'button'; button.disabled = busy;
+          const button = el('button', key === 'delete' ? 'btn btn-danger btn-sm btn-icon' : 'btn btn-outline btn-sm btn-icon');
+          const glyph = { keep: kept ? 'circle-check' : 'arrow-up-from-line', stop: 'wifi-off', delete: 'trash-2' }[key];
+          button.append(icon(glyph), document.createTextNode(key === 'keep' && kept ? 'Semeando · mantido' : short[key]));
+          button.type = 'button'; button.disabled = busy || (key === 'keep' && kept); button.title = key === 'keep' && kept ? 'Os arquivos não serão apagados sozinhos.' : labels[key];
+          if (key === 'keep' && kept) { button.classList.add('is-on'); button.setAttribute('aria-pressed', 'true'); }
           button.addEventListener('click', () => { action = key; result = ''; render(); });
-          row.append(button);
+          bar.append(button);
         }
-        root.append(row);
         if (action) {
-          root.append(el('p', '', action === 'delete'
+          panel.append(alertBox(action === 'delete' ? 'leech' : 'primary', labels[action], action === 'delete'
             ? 'Os arquivos deste conteúdo serão apagados. Assistir novamente pode baixar tudo e criar uma nova obrigação de seed.'
             : action === 'stop' ? 'O seed será encerrado e os arquivos ficarão no disco para assistir depois.'
               : 'O seed continuará e este conteúdo não será apagado automaticamente.'));
-          const ok = el('button', 'btn btn-primary', `Confirmar: ${labels[action].toLowerCase()}`);
+          const row = el('div', 'item-badges');
+          const ok = el('button', action === 'delete' ? 'btn btn-danger' : 'btn btn-primary', 'Confirmar');
           const cancel = el('button', 'btn btn-ghost', 'Cancelar');
           ok.type = cancel.type = 'button'; ok.disabled = cancel.disabled = busy;
           cancel.addEventListener('click', () => { action = null; render(); });
@@ -176,12 +193,26 @@
             catch (err) { result = err.message || 'Não foi possível concluir a ação.'; }
             busy = false; action = null; render(); app().refresh();
           });
-          root.append(ok, cancel);
+          row.append(ok, cancel);
+          panel.append(row);
         }
+      } else if (!t.tracker?.hitAndRun && t.onDisk !== 'none' && ['seeding', 'awaiting', 'paused'].includes(t.state)) {
+        // Ainda não dá para parar/excluir: mostra o botão desabilitado com o motivo, em vez de escondê-lo.
+        const b = el('button', 'btn btn-outline btn-sm btn-icon');
+        b.type = 'button'; b.disabled = true;
+        b.append(icon('clock'), document.createTextNode('Gerenciar seed'));
+        bar.append(b, el('span', 'film-hint', 'Disponível depois que o tracker confirmar o seed'));
+      } else if (t.tracker?.hitAndRun && t.onDisk !== 'none') {
+        // Hit-and-run: parar ou excluir agora seria reincidência, então não há ação segura. Em vez de
+        // sumir sem explicar, a barra diz o que fazer.
+        const chip = el('span', 'seed-chip is-warn');
+        chip.title = 'O tracker registrou hit-and-run neste filme (não é uma configuração): parar o seed ou excluir os arquivos agora seria reincidência. Continue semeando até o tracker confirmar o cumprimento.';
+        chip.append(icon('flag'), document.createTextNode('Parar e excluir bloqueados · continue semeando'));
+        bar.append(chip);
       }
-      if (result) { const message = el('p', 'foot', result); message.setAttribute('role', 'status'); root.append(message); }
+      if (result) { const message = el('p', 'foot', result); message.setAttribute('role', 'status'); panel.append(message); }
     }
-    return { root, set(t) {
+    return { bar, panel, set(t) {
       current = t;
       const next = JSON.stringify([t.infoHash, t.tracker?.satisfied, t.tracker?.hitAndRun, t.active, t.onDisk, t.seedChoice]);
       if (next !== signature && !busy) { signature = next; action = null; render(); }
@@ -213,7 +244,7 @@
     const two = el('div', 'grid grid-2');
     const left = el('div', 'stack');
     const obl = card('card-flush');
-    const oblHead = cardHead('Obrigações e downloads', link('/filmes', 'Ver todos os filmes'));
+    const oblHead = cardHead('Obrigações e downloads', openBtn('/filmes', 'Ver todos'));
     const oblList = el('div', 'list');
     const oblEmpty = el('div', 'empty', 'Nenhuma obrigação de seed aberta no momento.');
     obl.append(oblHead, oblList, oblEmpty);
@@ -224,13 +255,14 @@
     const chart = U.trafficChart({ compact: true });
     const lg = el('ul', 'legend');
     for (const [k, t] of [['key-down', 'Download'], ['key-up', 'Upload']]) { const li = el('li'); li.append(el('span', `key ${k}`), document.createTextNode(t)); lg.append(li); }
-    trafficCard.append(cardHead('Tráfego · última hora', link('/trafego', 'Detalhes')), lg, chart.root);
+    trafficCard.append(cardHead('Tráfego · última hora', openBtn('/trafego', 'Detalhes')), lg, chart.root);
     const accCard = card();
     const accRows = el('dl', 'rows');
-    accCard.append(cardHead('Conta no ASC', link('/conta', 'Abrir')), accRows);
+    accCard.append(cardHead('Conta no ASC', openBtn('/conta', 'Ver conta')), accRows);
     right.append(trafficCard, accCard);
     two.append(left, right);
-    root.append(head, alerts, grid, two);
+    // Os avisos vêm depois dos indicadores: primeiro o panorama, depois o que pede ação.
+    root.append(head, grid, alerts, two);
 
     const rows = new Map();
     return {
@@ -249,7 +281,7 @@
         if (!items.length) {
           alerts.append(alertBox('seed', 'Tudo em dia', 'Nenhum risco de hit-and-run agora. A ponte segue semeando o que o tracker cobra.'));
         } else {
-          for (const i of items) alerts.append(alertBox(i.tone, i.tone === 'leech' ? 'Aja agora' : 'Atenção', i.text, i.hash ? link(`/filmes/${i.hash}`, 'Abrir') : undefined));
+          for (const i of items) alerts.append(alertBox(i.tone, i.tone === 'leech' ? 'Aja agora' : 'Atenção', i.text, i.hash ? openBtn(`/filmes/${i.hash}`, 'Ver filme') : undefined));
         }
 
         K.pending.set(U.num.format(s.hoursPending), 'h', s.pending ? `${s.pending} filme(s) com obrigação aberta` : 'Nenhuma obrigação aberta');
@@ -293,12 +325,24 @@
     row('Isento de HnR (VIP)', a ? (a.exempt ? 'sim' : 'não') : '—');
   }
 
+  // Atualizar: ícone de "recarregar" (o de carregamento parecia travado); gira só enquanto atualiza.
   function refreshButton() {
-    const b = el('button', 'btn btn-outline btn-sm');
+    const b = el('button', 'btn btn-outline btn-sm btn-icon');
     b.type = 'button';
-    b.append(icon('loader-circle'), document.createTextNode('Atualizar'));
-    b.addEventListener('click', () => app().refresh(true));
+    const ic = icon('refresh-cw');
+    b.append(ic, document.createTextNode('Atualizar'));
+    b.addEventListener('click', async () => {
+      ic.classList.add('spin'); b.disabled = true;
+      try { await app().refresh(true); } finally { ic.classList.remove('spin'); b.disabled = false; }
+    });
     return b;
+  }
+  // Ação de abrir: botão com seta (antes era só o texto "Abrir" solto no canto do aviso).
+  function openBtn(href, label = 'Abrir') {
+    const a = link(href, label);
+    a.className = 'btn btn-outline btn-sm btn-icon';
+    a.append(icon('arrow-right'));
+    return a;
   }
 
   // ------------------------------------------------------------------ filmes
@@ -412,10 +456,15 @@
     const title = el('h1');
     const badges = el('div', 'item-badges');
     hl.append(title, badges);
-    const ext = el('a', 'btn btn-outline btn-sm');
+    const ext = el('a', 'btn btn-outline btn-sm btn-icon');
     ext.target = '_blank'; ext.rel = 'noopener noreferrer';
-    ext.append(document.createTextNode('Abrir no ASC'), icon('arrow-up-from-line'));
-    head.append(hl, ext);
+    ext.append(document.createTextNode('Abrir no ASC'), icon('arrow-up-right'));
+    // As ações do filme ficam aqui, ao lado de "Abrir no ASC"; a confirmação aparece abaixo.
+    const flow = completeFlow();
+    const seed = seedFlow();
+    const actions = el('div', 'film-actions');
+    actions.append(flow.bar, seed.bar, ext);
+    head.append(hl, actions);
 
     const alerts = el('div', 'alerts');
     const cols = el('div', 'grid grid-2');
@@ -427,13 +476,13 @@
     const sBig = el('div', 'kpi-value'); const sBigV = el('span'); const sBigU = el('span', 'kpi-unit'); sBig.append(sBigV, sBigU);
     const sMeter = meter({ large: true });
     const sNote = el('p', 'foot');
-    cSeed.append(cardHead('Seed · regra 13.1'), sBig, sMeter.root, sNote);
+    cSeed.append(cardHead('Seed'), sBig, sMeter.root, sNote);
     // prazo
     const cDue = card();
     const dBig = el('div', 'kpi-value'); const dBigV = el('span'); const dBigU = el('span', 'kpi-unit'); dBig.append(dBigV, dBigU);
     const dMeter = meter({ large: true });
     const dNote = el('p', 'foot');
-    cDue.append(cardHead('Prazo · regra 13.3'), dBig, dMeter.root, dNote);
+    cDue.append(cardHead('Prazo'), dBig, dMeter.root, dNote);
     // situação
     const cState = card();
     const stText = el('p');
@@ -448,17 +497,13 @@
     const cAct = card();
     const actRows = el('dl', 'rows');
     cAct.append(cardHead('Sua atividade'), actRows);
-    const cBtn = card();
-    const flow = completeFlow();
-    const seed = seedFlow();
-    cBtn.append(cardHead('Ações'), flow.root, seed.root);
     const cDet = card();
     const detRows = el('dl', 'rows');
     cDet.append(cardHead('Detalhes'), detRows);
-    side.append(cAct, cBtn, cDet);
+    side.append(cAct, cDet);
 
     cols.append(main, side);
-    root.append(crumbs, head, alerts, cols);
+    root.append(crumbs, head, flow.panel, seed.panel, alerts, cols);
 
     const kv = (dl, pairs) => {
       clear(dl);
@@ -501,7 +546,7 @@
         } else if (t.state === 'completing') {
           setText(sBigV, `${U.num0.format(t.progress * 100)}%`); setText(sBigU, 'baixado');
           sMeter.set(t.progress, 'primary');
-          setText(sNote, 'O seed de 72 h só começa quando o download concluir (regra 13.1).');
+          setText(sNote, 'O seed de 72 h só começa quando o download concluir.');
         } else {
           setText(sBigV, `${U.num0.format(t.progress * 100)}%`); setText(sBigU, 'baixado');
           sMeter.set(t.progress, 'complete', t.progress === 0);
@@ -563,7 +608,9 @@
     for (const k of Object.values(K)) grid.append(k.root);
 
     const cChart = card();
-    const toggle = el('button', 'btn btn-ghost', 'Ver como tabela');
+    const toggle = el('button', 'btn btn-outline btn-sm btn-icon');
+    const toggleLabel = el('span', 'btn-label', 'Ver como tabela');
+    toggle.append(icon('list'), toggleLabel);
     toggle.type = 'button'; toggle.setAttribute('aria-pressed', 'false');
     const lg = el('ul', 'legend');
     for (const [k, t] of [['key-down', 'Download'], ['key-up', 'Upload']]) { const li = el('li'); li.append(el('span', `key ${k}`), document.createTextNode(t)); lg.append(li); }
@@ -575,7 +622,7 @@
     toggle.addEventListener('click', () => {
       const on = toggle.getAttribute('aria-pressed') !== 'true';
       toggle.setAttribute('aria-pressed', String(on));
-      setText(toggle, on ? 'Ver como gráfico' : 'Ver como tabela');
+      setText(toggleLabel, on ? 'Ver como gráfico' : 'Ver como tabela');
       chart.asTable(on);
     });
     cChart.append(chartHead, chart.root);
@@ -583,18 +630,25 @@
     const cDisk = card('card-flush');
     const diskBody = el('div', 'stack'); diskBody.style.setProperty('padding', '0 16px 16px');
     const bar = U.diskBar();
-    const diskRows = el('dl', 'rows');
+    const diskRows = el('dl', 'rows rows-tiles'); // números em blocos: rótulo e valor juntos, sem vão
     diskBody.append(bar.root, diskRows);
     const tw = el('div', 'table-wrap');
     const table = document.createElement('table');
+    table.className = 'files-table';
     const th = document.createElement('thead'); const thr = document.createElement('tr');
     for (const [h, r] of [['Filme', false], ['Situação', false], ['Em disco', true], ['% do arquivo', true]]) { const c = el('th', r ? 'r' : '', h); c.scope = 'col'; thr.append(c); }
     th.append(thr);
     const tb = document.createElement('tbody');
     table.append(th, tb); tw.append(table);
-    cDisk.append(cardHead('Espaço em disco'), diskBody, tw);
+    cDisk.append(cardHead('Espaço em disco'), diskBody);
+    // A lista de filmes ganha cartão e título próprios (antes pendurava no cartão de espaço).
+    const cFiles = card();
+    const filesHead = cardHead('Filmes em disco');
+    const filesCount = el('span', 'muted');
+    filesHead.append(filesCount);
+    cFiles.append(filesHead, tw);
 
-    root.append(head, grid, cChart, cDisk);
+    root.append(head, grid, cChart, cDisk, cFiles);
     return {
       root,
       update(d) {
@@ -615,11 +669,23 @@
         }
         clear(tb);
         const withDisk = d.titles.filter((t) => t.diskBytes > 0).sort((a, b) => b.diskBytes - a.diskBytes);
+        setText(filesCount, withDisk.length ? `${withDisk.length} filme(s)` : '');
+        // Barras: "Em disco" é relativa ao maior filme; "% do arquivo" mostra o quanto do filme já está aqui.
+        const cell = (text, pct, full, label) => {
+          const td = el('td', 'r cell-meter');
+          td.dataset.label = label; // no celular a linha vira bloco e o rótulo vem daqui
+          const bar = el('div', full ? 'cell-bar is-full' : 'cell-bar');
+          bar.style.setProperty('--w', `${Math.max(2, Math.min(100, pct))}%`);
+          td.append(el('span', '', text), bar);
+          return td;
+        };
+        const maior = withDisk[0]?.diskBytes || 1;
         for (const t of withDisk) {
           const tr = document.createElement('tr');
           const c1 = document.createElement('td'); c1.append(link(`/filmes/${t.infoHash}`, t.name, ''));
           const c2 = document.createElement('td'); c2.append(stateBadge(t));
-          tr.append(c1, c2, el('td', 'r', fmtBytes(t.diskBytes)), el('td', 'r', t.size ? `${U.num0.format((t.diskBytes / t.size) * 100)}%` : '—'));
+          const frac = t.size ? (t.diskBytes / t.size) * 100 : 0;
+          tr.append(c1, c2, cell(fmtBytes(t.diskBytes), (t.diskBytes / maior) * 100, false, 'Em disco'), t.size ? cell(`${U.num0.format(frac)}%`, frac, frac >= 99.5, '% do arquivo') : el('td', 'r', '—'));
           tb.append(tr);
         }
         if (!withDisk.length) { const tr = document.createElement('tr'); const c = el('td', 'muted', 'Nenhum filme com dados em disco.'); c.colSpan = 4; tr.append(c); tb.append(tr); }
@@ -630,32 +696,37 @@
 
   // ------------------------------------------------------------------- conta
   function conta(q0) {
-    const root = el('div', 'page');
+    const root = el('div', 'page page-conta');
     const head = el('div', 'page-head');
     const hl = el('div');
     hl.append(el('h1', '', 'Conta e serviço'), el('p', 'page-sub', 'Sessão no ASC, situação da conta e configuração do serviço'));
     head.append(hl);
     const tabs = el('div', 'tabs');
     tabs.setAttribute('role', 'tablist');
-    const panels = { sessao: el('div', 'stack'), conta: el('div', 'stack'), servico: el('div', 'stack'), regras: el('div', 'stack') };
-    const LABELS = [['sessao', 'Sessão'], ['conta', 'Conta no ASC'], ['servico', 'Serviço'], ['regras', 'Regras']];
+    const panels = { sessao: el('div', 'stack'), conta: el('div', 'stack'), servico: el('div', 'stack'), addons: el('div', 'stack') };
+    const LABELS = [['sessao', 'Sessão'], ['conta', 'Conta no ASC'], ['servico', 'Serviço'], ['addons', 'Addons']];
     let aba = 'sessao';
 
     // sessão
     const cSess = card();
     const sessRows = el('dl', 'rows');
+    const sessHero = el('div', 'conta-hero'); // estado em destaque: é a primeira coisa que se quer saber
     const sessNotice = el('div');
-    const acts = el('div', 'item-badges');
-    const bVerify = el('button', 'btn btn-outline', 'Verificar sessão'); bVerify.type = 'button';
-    const bRelogin = el('button', 'btn btn-outline', 'Entrar de novo'); bRelogin.type = 'button';
-    const bLogout = el('button', 'btn btn-danger'); bLogout.type = 'button';
+    // Ações em dois grupos: o dia a dia (verificar, entrar de novo) e, separada, a destrutiva.
+    const acts = el('div', 'conta-acts');
+    const bVerify = el('button', 'btn btn-primary btn-icon'); bVerify.type = 'button';
+    bVerify.append(icon('shield-check'), document.createTextNode('Verificar sessão'));
+    const bRelogin = el('button', 'btn btn-outline btn-icon'); bRelogin.type = 'button';
+    bRelogin.append(icon('refresh-cw'), document.createTextNode('Entrar de novo'));
+    const bLogout = el('button', 'btn btn-danger btn-icon'); bLogout.type = 'button';
     bLogout.append(icon('log-out'), document.createTextNode('Remover sessão local'));
-    acts.append(bVerify, bRelogin, bLogout);
+    const actsMain = el('div', 'item-badges'); actsMain.append(bVerify, bRelogin);
+    acts.append(actsMain, bLogout);
     const filterNote = el('p', 'foot');
-    filterNote.append(document.createTextNode('O filtro de releases (somente freeleech, regra 2.7) é uma preferência: altere em '));
+    filterNote.append(document.createTextNode('O filtro de releases (somente freeleech) é uma preferência: altere em '));
     const filterLink = el('a', '', 'Configurações'); filterLink.href = '/configuracoes'; filterLink.setAttribute('data-link', '');
     filterNote.append(filterLink, document.createTextNode('.'));
-    cSess.append(cardHead('Sessão'), sessRows, filterNote, sessNotice, acts, el('p', 'foot', 'Remover a sessão local apaga os cookies salvos neste computador. Não encerra outras sessões no ASC nem torrents ativos.'));
+    cSess.append(cardHead('Sessão'), sessHero, sessRows, filterNote, sessNotice, acts, el('p', 'foot', 'Remover a sessão local apaga os cookies salvos neste computador. Não encerra outras sessões no ASC nem torrents ativos.'));
     bVerify.addEventListener('click', () => app().session('verify'));
     bRelogin.addEventListener('click', () => app().nav('/entrar?de-novo=1'));
     bLogout.addEventListener('click', () => app().session('logout'));
@@ -674,26 +745,6 @@
     cCmd.append(cardHead('Comandos do serviço'), pre, el('p', 'foot', 'As variáveis ficam em private/service.env (modelo comentado). Depois de editar, reinicie o serviço.'));
     panels.servico.append(cSvc, cCmd);
 
-    // regras
-    const cRules = card();
-    const rl = el('dl', 'rows');
-    const RULES = [
-      ['13.1', 'Depois de concluir, semear 72 h ou até ratio 1.0 no torrent.', 'A ponte semeia o que o tracker cobra e só considera cumprido quando o site confirma.'],
-      ['13.3', 'Só é hit-and-run quem passa 12 dias sem semear antes de cumprir.', 'Avisos de prazo curto, torrent inativo e arquivo ausente; cada announce renova o prazo.'],
-      ['13.5', 'Parar de semear depois de um hit-and-run é reincidência (advertência de 30 dias).', 'Se o tracker registrar HnR, o painel pede para continuar semeando.'],
-      ['2.6', 'Conta sem acesso por 90 dias é banida.', 'O addon guarda o último login e avisa a partir de 60 dias. Semear não conta como acesso ao site.'],
-      ['2.7', 'Manter o ratio em 1.0 ou mais.', 'Filtro freeleech ligado por padrão e aviso quando o release não é freeleech.'],
-      ['2.2', 'A conta é pessoal e intransferível.', 'Ponte e painel só em 127.0.0.1; não hospede o addon para outras pessoas.'],
-    ];
-    for (const [n, rule, how] of RULES) {
-      const r = el('div', 'row');
-      const dt = el('dt'); dt.append(badge(n, 'primary'));
-      const dd = el('dd'); dd.append(el('div', '', rule), el('div', 'muted', how));
-      dd.style.setProperty('text-align', 'left');
-      r.append(dt, dd); rl.append(r);
-    }
-    cRules.append(cardHead('Regras do ASC e como o addon as segue'), rl);
-    panels.regras.append(cRules);
 
     function renderTabs() {
       clear(tabs);
@@ -704,7 +755,12 @@
         tabs.append(b);
       }
     }
-    function showPanel() { for (const [k, p] of Object.entries(panels)) p.hidden = k !== aba; }
+    // A aba Addons só é montada (e só consulta o servidor) na primeira vez que é aberta.
+    let addonsBuilt = false;
+    function showPanel() {
+      for (const [k, p] of Object.entries(panels)) p.hidden = k !== aba;
+      if (aba === 'addons' && !addonsBuilt && window.Views.addonsPanel) { addonsBuilt = true; panels.addons.append(window.Views.addonsPanel()); }
+    }
     function setParams(q) { const a = new URLSearchParams(q || '').get('aba'); aba = LABELS.some(([k]) => k === a) ? a : 'sessao'; renderTabs(); showPanel(); }
     root.append(head, tabs, ...Object.values(panels));
     setParams(q0);
@@ -715,13 +771,19 @@
       params: setParams,
       update(d) {
         const s = app().store.status || {};
+        clear(sessHero);
+        const ok = Boolean(s.connected);
+        const heroText = el('div');
+        heroText.append(el('strong', '', ok ? 'Conectada ao ASC' : 'Sessão não confirmada'),
+          el('small', '', s.lastLoginAt ? `Último login ${ago(s.lastLoginAt)}` : 'Último login desconhecido'));
+        sessHero.dataset.tone = ok ? 'seed' : 'complete';
+        sessHero.append(icon(ok ? 'circle-check' : 'flag', 'ic-20'), heroText);
         kvr(sessRows, [
-          ['Estado', s.connected ? 'conectada ao ASC' : 'não confirmada', s.connected ? 'seed' : 'complete'],
           ['Último login', s.lastLoginAt ? `${fmtDate(s.lastLoginAt)} (${ago(s.lastLoginAt)})` : 'desconhecido'],
           ['Filtro de releases', s.onlyFreeleech === false ? 'todos os releases' : 'somente freeleech'],
         ]);
         clear(sessNotice);
-        if (s.notice) sessNotice.append(alertBox('complete', 'Inatividade (regra 2.6)', s.notice));
+        if (s.notice) sessNotice.append(alertBox('complete', 'Inatividade', s.notice));
 
         const a = d.account; const st = d.stats;
         kvr(accRows, [
@@ -773,7 +835,7 @@
     row.append(submit, cancel);
     const status = el('p', 'status'); status.setAttribute('role', 'status');
     form.append(u.f, p.f, row);
-    form.append(el('p', 'foot', 'As preferências, inclusive o filtro "somente freeleech" (regra 2.7), ficam em Configurações, no menu, depois de entrar.'));
+    form.append(el('p', 'foot', 'As preferências, inclusive o filtro "somente freeleech", ficam em Configurações, no menu, depois de entrar.'));
     c.append(form, status);
     wrap.append(c);
     root.append(wrap);

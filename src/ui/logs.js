@@ -61,9 +61,11 @@
     row2.append(sw, fonteSel, janelaSel);
     const row3 = el('div', 'item-badges');
     const bLive = el('button', 'btn btn-outline btn-sm'); bLive.type = 'button'; bLive.setAttribute('aria-pressed', 'true');
-    const bEnd = el('button', 'btn btn-ghost', 'Ir para o fim'); bEnd.type = 'button';
-    const bCopy = el('button', 'btn btn-ghost'); bCopy.type = 'button'; bCopy.append(icon('files'), document.createTextNode('Copiar visíveis'));
-    const bClear = el('button', 'btn btn-ghost', 'Limpar tela'); bClear.type = 'button';
+    const bEnd = el('button', 'btn btn-ghost btn-icon'); bEnd.type = 'button';
+    bEnd.append(icon('arrow-down-to-line'), document.createTextNode('Ir para o fim'));
+    const bCopy = el('button', 'btn btn-ghost btn-icon'); bCopy.type = 'button'; bCopy.append(icon('copy'), document.createTextNode('Copiar visíveis'));
+    const bClear = el('button', 'btn btn-ghost btn-icon'); bClear.type = 'button';
+    bClear.append(icon('x'), document.createTextNode('Limpar tela'));
     const hint = el('span', 'page-sub');
     row3.append(bLive, bEnd, bCopy, bClear, hint);
     bar.append(levelRow, row2, row3);
@@ -87,8 +89,11 @@
     fh.append(fhr);
     const fb = document.createElement('tbody');
     fTable.append(fh, fb); fBody.append(fTable);
-    const fNote = el('p', 'foot'); fNote.style.setProperty('padding', '12px 16px 16px');
-    cFiles.append(cardHead('Arquivos de log no disco'), fBody, fNote);
+    // O texto sobre formato, permissão e retenção fica recolhido: é referência, não o que se lê todo dia.
+    const fNote = el('p', 'foot');
+    const fMore = el('details', 'more more-pad');
+    fMore.append(el('summary', '', 'Como os arquivos funcionam'), fNote);
+    cFiles.append(cardHead('Arquivos de log no disco'), fBody, fMore);
 
     const cCfg = card();
     const lvlSel = el('select', 'input'); lvlSel.id = 'lognivel'; lvlSel.setAttribute('aria-label', 'Nível mínimo de gravação');
@@ -96,8 +101,12 @@
     const cfgStatus = el('p', 'status'); cfgStatus.setAttribute('role', 'status');
     const lvlField = el('label', 'field'); lvlField.htmlFor = 'lognivel';
     lvlField.append(el('span', '', 'Nível mínimo de gravação'), lvlSel);
+    // Uma frase diz o essencial; o detalhe (debug, redação de segredos, como fixar) fica em "Saiba mais".
+    const cfgMore = el('details', 'more');
+    cfgMore.append(el('summary', '', 'Saiba mais'),
+      el('p', 'foot', 'Debug mostra cada requisição ao ASC e cada pedido de streaming. A passkey, cookies, senhas e tokens são removidos antes de qualquer gravação. A mudança vale até reiniciar o serviço; para fixar, use LOG_LEVEL em private/service.env.'));
     cCfg.append(cardHead('Gravação'), lvlField, cfgStatus,
-      el('p', 'foot', 'Linhas abaixo do nível escolhido não são gravadas (nem na memória nem em disco). Debug mostra cada requisição ao ASC e cada pedido de streaming. A passkey, cookies, senhas e tokens são removidos antes de qualquer gravação. A mudança vale até reiniciar o serviço; para fixar, use LOG_LEVEL em private/service.env.'));
+      el('p', 'foot', 'Linhas abaixo deste nível não são gravadas, nem na memória nem em disco.'), cfgMore);
 
     const grid = el('div', 'grid grid-2');
     grid.append(cFiles, cCfg);
@@ -148,7 +157,9 @@
       if ([...fonteSel.options].some((o) => o.value === st.fonte)) fonteSel.value = st.fonte;
       bLive.setAttribute('aria-pressed', String(st.live));
       clear(bLive);
-      bLive.append(icon(st.live ? 'loader-circle' : 'clock', st.live ? 'spin' : ''), document.createTextNode(st.live ? 'Ao vivo' : 'Pausado'));
+      // Ponto que pulsa quando ao vivo (o ícone de carregamento girando parecia travado/erro).
+      const dot = el('span', st.live ? 'live-dot is-live' : 'live-dot'); dot.setAttribute('aria-hidden', 'true');
+      bLive.append(dot, document.createTextNode(st.live ? 'Ao vivo' : 'Pausado'));
       aTxt.href = `/api/logs/download?${filterQuery({ formato: 'txt' })}`;
       aNd.href = `/api/logs/download?${filterQuery({ formato: 'ndjson' })}`;
     }
@@ -289,7 +300,9 @@
           tr.append(c1, el('td', 'r', fmtBytes(f.bytes)), el('td', 'r', fmtDate(new Date(f.modifiedAt).toISOString())), c4);
           fb.append(tr);
         }
-        if (!d.files.length) { const tr = document.createElement('tr'); const c = el('td', 'muted', 'Nenhum arquivo ainda: a gravação em disco começa com o serviço.'); c.colSpan = 4; tr.append(c); fb.append(tr); }
+        // Sem arquivos não há o que mostrar na tabela: o cabeçalho some e fica só o aviso curto.
+        fh.hidden = !d.files.length;
+        if (!d.files.length) { const tr = document.createElement('tr'); const c = el('td', 'empty-cell', 'Nenhum arquivo ainda. A gravação em disco começa com o serviço.'); c.colSpan = 4; tr.append(c); fb.append(tr); }
         setText(fNote, `Cada arquivo guarda um dia (NDJSON, uma linha por registro), com permissão 0600 em private/logs/. Arquivos com mais de ${d.retentionDays} dias são apagados. Passado o teto de 20 MB por dia, só aviso e erro continuam sendo gravados.`);
       } catch { /* sem arquivos */ }
     }

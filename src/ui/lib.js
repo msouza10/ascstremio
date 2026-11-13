@@ -73,7 +73,7 @@
   };
   const RISK_ORDER = { crit: 0, warn: 1, ok: 2 };
   const EXPLAIN = {
-    hnr: 'O tracker registrou hit-and-run. Continue semeando: parar de novo é reincidência (regra 13.5).',
+    hnr: 'O tracker registrou hit-and-run. Continue semeando: parar de novo é reincidência.',
     paused: 'Há obrigação de seed e o torrent não está ativo. Mantenha a ponte ligada.',
     missing: 'O tracker cobra seed, mas falta o .torrent ou o arquivo completo aqui, então não dá para semear. É preciso obter o .torrent pelo catálogo ASC e/ou baixar de novo.',
     seeding: 'Semeando para cumprir as 72 h. O tracker confirma em seguida.',
