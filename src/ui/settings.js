@@ -26,7 +26,15 @@
       show(title, lines) {
         clear(box);
         const body = el('div');
-        for (const l of lines ?? []) body.append(el('div', 'alert-body', l));
+        for (const l of lines ?? []) {
+          if (l && typeof l === 'object') {
+            // Item com ação (ex.: ir até o campo inválido): botão em forma de link, alcançável por teclado.
+            const row = el('div', 'alert-body');
+            const b = el('button', 'link-btn', l.text); b.type = 'button';
+            b.addEventListener('click', l.onClick);
+            row.append(b); body.append(row);
+          } else body.append(el('div', 'alert-body', l));
+        }
         const a = alertBox('leech', title);
         a.querySelector('div').append(...body.childNodes);
         box.append(a);
@@ -116,13 +124,32 @@
     row.append(input);
     if (option.unit) row.append(el('span', 'muted', option.unit));
     if (option.editable && option.source === 'file' && !noReset) {
+      // "Voltar ao padrão" é uma alternância: o campo continua editável e o botão mantém o foco; clicar
+      // de novo desfaz só esta restauração (as outras edições não são perdidas).
       const reset = el('button', 'btn btn-ghost btn-sm', 'Voltar ao padrão');
       reset.type = 'button';
+      reset.setAttribute('aria-pressed', 'false');
+      let restoring = false; let before = '';
+      const setRestoring = (on) => {
+        restoring = on;
+        reset.setAttribute('aria-pressed', String(on));
+        reset.textContent = on ? 'Desfazer restauração' : 'Voltar ao padrão';
+        wrap.classList.toggle('is-restoring', on);
+      };
       reset.addEventListener('click', () => {
-        onInput(null);
-        input.value = M.textOf(option.default);
-        input.disabled = true; reset.disabled = true; reset.textContent = 'Será restaurado ao salvar';
+        if (!restoring) {
+          before = input.value;
+          onInput(null);
+          input.value = M.textOf(option.default);
+          setRestoring(true);
+        } else {
+          input.value = before;
+          onInput(before);
+          setRestoring(false);
+        }
       });
+      // Digitar no campo enquanto está "será restaurado" vira uma edição normal.
+      input.addEventListener('input', () => { if (restoring) setRestoring(false); });
       row.append(reset);
     }
     wrap.append(row, desc, err);
@@ -469,6 +496,7 @@
       const c = card();
       c.append(cardHead('Destino dos alertas por webhook'));
       const info = el('p', 'muted', 'Carregando…');
+      info.setAttribute('role', 'status'); info.setAttribute('aria-live', 'polite');
       const msg = el('p', 'muted');
       msg.setAttribute('role', 'status'); msg.setAttribute('aria-live', 'polite');
       const url = el('input', 'input'); url.type = 'password'; url.autocomplete = 'off'; url.placeholder = 'URL do destino (segredo; não é exibida depois)';
@@ -486,11 +514,14 @@
       const show = (st) => {
         info.textContent = `Alertas ${st.enabled ? 'habilitados' : 'desabilitados'}; destino: ${st.configured ? `configurado (${st.source}${st.host ? `, ${st.host}` : ''})` : 'não configurado'}${st.problem ? ` — ${st.problem.replace(/\.+$/, '')}` : ''}. Último envio: ${st.lastSuccessAt ?? 'nunca'}; último erro: ${st.lastError ?? 'nenhum'}.`;
       };
+      // Botões travados durante a chamada (evita envio de teste duplicado); a falha é anunciada como alerta.
       const run = async (route, body, ok) => {
+        for (const b of [save, test, del]) b.disabled = true;
         try {
           const r = await app().call('POST', route, body);
-          show(r.status ?? r); msg.textContent = ok; url.value = ''; bearer.value = '';
-        } catch (ex) { msg.textContent = ex.data?.error ?? ex.message; }
+          show(r.status ?? r); msg.setAttribute('role', 'status'); msg.textContent = ok; url.value = ''; bearer.value = '';
+        } catch (ex) { msg.setAttribute('role', 'alert'); msg.textContent = ex.data?.error ?? ex.message; }
+        finally { for (const b of [save, test, del]) b.disabled = false; }
       };
       app().call('GET', 'alerts').then(show, (ex) => { info.textContent = ex.message; });
       save.addEventListener('click', () => run('alerts/webhook', { url: url.value, bearerToken: bearer.value }, 'Destino salvo. Habilite ALERTS_ENABLED acima depois de testar.'));
@@ -625,9 +656,18 @@
     function fail(ex, title) {
       const problems = ex.data?.problems?.length ? ex.data.problems : [ex.message];
       errors = M.problemsByKey(ex.data?.code === 'conflict' ? [] : problems, state.options);
-      for (const [k, lines] of Object.entries(errors.byKey)) fields.get(k)?.showError(lines);
-      // Problemas ligados a um campo ficam no campo; o resumo cobre o resto (e orienta a corrigir).
-      const resumo = errors.general.length ? errors.general : (Object.keys(errors.byKey).length ? ['Corrija os campos marcados abaixo.'] : problems);
+      for (const [k, lines] of Object.entries(errors.byKey)) {
+        fields.get(k)?.showError(lines);
+        // Um campo avançado inválido não pode ficar escondido na seção recolhida.
+        const hidden = fields.get(k)?.root.closest('details'); if (hidden) hidden.open = true;
+      }
+      // O resumo nomeia cada campo com problema e leva até ele (foco e rolagem), por teclado ou clique.
+      const links = Object.entries(errors.byKey).map(([k, lines]) => {
+        const opt = state.options.find((o) => o.key === k);
+        const reason = String(lines[0]).replace(new RegExp(`^(settings\\.json: )?${k}: `), '');
+        return { text: `${opt ? M.labelOf(opt) : k}: ${reason}`, onClick: () => { const f = fields.get(k); if (f) { f.input.scrollIntoView({ block: 'center' }); f.input.focus(); } } };
+      });
+      const resumo = links.length || errors.general.length ? [...links, ...errors.general] : problems;
       errBox.show(title, ex.data?.code === 'conflict' ? [ex.message] : resumo);
     }
 
@@ -915,7 +955,9 @@
     function syncFinish() {
       if (!finish) return;
       const ok = connection === 'instalado' || connection === 'em_uso';
-      finish.textContent = ok ? 'Concluir assistente' : 'Concluir sem confirmar a instalação';
+      // Sem URL (reinício de rede pendente) não há o que instalar agora: o texto diz que fica para depois.
+      const later = !state.addon?.url;
+      finish.textContent = ok ? 'Concluir assistente' : (later ? 'Concluir e instalar depois' : 'Concluir sem confirmar a instalação');
       finish.className = `btn ${ok ? 'btn-primary' : 'btn-outline'}`;
     }
 

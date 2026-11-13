@@ -396,3 +396,21 @@ test('X-Boot-Id: estável numa partida e diferente em outra (a tela percebe o re
     assert.notEqual(a1, b1);
   } finally { await a.close(); await b.close(); }
 });
+
+test('reinício de rede pendente: a URL do addon não é gerada e o texto aponta para Conta › Addons', async () => {
+  const s = await setup();
+  try {
+    const antes = await s.get('settings');
+    assert.ok(antes.addon.url, 'sem mudança pendente a URL existe');
+    // Trocar uma porta só vale depois de reiniciar: a URL anunciada ainda é a da partida.
+    const r = await s.post('settings', { expectedRevision: antes.revision, changes: { PORT: '7101' } });
+    assert.equal(r.status, 200);
+    const depois = await s.get('settings');
+    assert.equal(depois.addon.url, null);
+    assert.match(depois.addon.reason, /PORT/);
+    assert.match(depois.addon.reason, /Conta › Addons/);
+    assert.doesNotMatch(depois.addon.reason, /abra o assistente/i);
+    const bloqueada = await s.post('credentials', { name: 'Sala' });
+    assert.equal(bloqueada.status, 409, 'não emite credencial enquanto a rede espera reinício');
+  } finally { await s.close(); }
+});

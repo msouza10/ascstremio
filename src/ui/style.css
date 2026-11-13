@@ -272,6 +272,9 @@ td a:hover { color: var(--primary); }
 .rows { display: flex; flex-direction: column; }
 .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); font-size: 12px; }
 .row:first-child { border-top: 0; padding-top: 0; }
+.link-btn { color: var(--primary); text-decoration: underline; text-align: left; padding: 2px 0; }
+.link-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+.opt.is-restoring .opt-row .input { border-style: dashed; }
 /* Conta › Addons: lista dos addons gerados. */
 .cred-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .cred-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }

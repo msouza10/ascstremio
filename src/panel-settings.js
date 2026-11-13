@@ -173,7 +173,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
 
   function addonUrlInfo(snapshot) {
     const pending = pendingKeys(snapshot).filter((k) => NETWORK_KEYS.has(k));
-    if (pending.length) return { url: null, reason: `Há mudanças de rede esperando reinício (${pending.join(', ')}). Reinicie e abra o assistente de novo para gerar a URL.` };
+    if (pending.length) return { url: null, reason: `Há mudanças de rede esperando reinício (${pending.join(', ')}). Reinicie o aplicativo e gere a URL em Conta › Addons.` };
     if (!addonBase) return { url: null, reason: 'Sem endereço utilizável para os aparelhos: defina LAN_ADVERTISE_HOST.' };
     return { url: addonBase, reason: null };
   }
