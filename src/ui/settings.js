@@ -4,7 +4,7 @@
 (() => {
   const U = window.UI;
   const M = window.SettingsModel;
-  const { el, icon, clear, setText, badge, card, cardHead, alertBox } = U;
+  const { el, icon, clear, setText, badge, card, cardHead, alertBox, ago, fmtDate } = U;
   const app = () => window.App;
   let uid = 0;
 
@@ -277,7 +277,9 @@
   // Emite uma credencial de instalação e mostra a URL do addon (uma vez). Só mostra o formulário
   // quando a URL se aplica (sem mudança de rede esperando reinício). `onConnection(estado)`
   // avisa o chamador (o assistente) do que o addon já viu do Stremio.
-  function installCard(getState, defaultName, onConnection = () => {}, footer = null) {
+  // showActiveList: mostra "Credenciais ativas: …" no próprio cartão (a aba Addons tem lista própria);
+  // onCreated(made): avisa quando uma credencial nova é criada (para a lista se atualizar).
+  function installCard(getState, defaultName, onConnection = () => {}, footer = null, showActiveList = true, onCreated = () => {}) {
     const c = card();
     c.classList.add('card-stack');
     c.append(cardHead('Instalar o addon no Stremio'));
@@ -306,11 +308,12 @@
           remember(made);
           showUrl(made);
           draw();
+          onCreated(made);
         } catch (ex) { setText(status, ''); err.show('Não foi possível criar a credencial', [ex.message]); } finally { go.disabled = false; }
       });
       const names = st.credentials.filter((x) => !x.revokedAt);
       const parts = [f];
-      if (names.length) parts.push(el('p', 'foot', `Credenciais ativas: ${names.map((x) => x.name).join(', ')}. Para revogar, use o terminal: npm run credenciais -- revogar.`));
+      if (names.length && showActiveList) parts.push(el('p', 'foot', `Credenciais ativas: ${names.map((x) => x.name).join(', ')}. Para revogar, use o terminal: npm run credenciais -- revogar.`));
       if (shown) {
         // Com a URL já na tela, o foco é instalar: criar outra credencial fica recolhido.
         const more = el('details', 'more');
@@ -926,5 +929,65 @@
     return { root, update() {} };
   }
 
-  window.Views = Object.assign(window.Views ?? {}, { configuracoes, assistente });
+  // Aba "Addons" da página Conta: gerar um addon novo (credencial + URL + confirmação no Stremio) e
+  // ver os já gerados. Revogar ainda é pelo terminal (o servidor não tem essa ação no painel).
+  function addonsPanel() {
+    const root = el('div', 'stack');
+    let state = null;
+    const SITUACAO = {
+      aguardando: 'Sem atividade desde que o serviço iniciou',
+      manifesto_lido: 'Manifesto lido',
+      instalado: 'Instalado',
+      em_uso: 'Em uso',
+    };
+
+    function listCard() {
+      const c = card();
+      c.append(cardHead('Addons gerados'));
+      const active = state.credentials.filter((x) => !x.revokedAt);
+      if (!active.length) { c.append(el('p', 'muted', 'Nenhum addon gerado ainda.')); return c; }
+      const ul = el('ul', 'cred-list');
+      const status = new Map();
+      for (const x of active) {
+        const li = el('li');
+        const meta = el('div', 'cred-meta');
+        meta.append(el('strong', '', x.name), el('small', '', `Criado em ${fmtDate(new Date(x.createdAt).toISOString())}`));
+        const chip = el('span', 'cred-status', '…');
+        status.set(x.id, chip);
+        li.append(meta, chip);
+        ul.append(li);
+      }
+      c.append(ul, el('p', 'foot', 'A URL de um addon só aparece quando ele é criado. Para revogar um addon, use o terminal: npm run credenciais -- revogar.'));
+      // A situação vem da atividade vista pelo serviço (zera quando ele reinicia).
+      app().call('GET', 'addon-connection').then((r) => {
+        for (const cr of r.credentials) {
+          const chip = status.get(cr.id);
+          if (!chip) continue;
+          const base = SITUACAO[cr.state] ?? SITUACAO.aguardando;
+          setText(chip, cr.lastSeenAt ? `${base} · visto ${ago(cr.lastSeenAt)}` : base);
+          chip.dataset.s = cr.state;
+        }
+      }, () => { for (const chip of status.values()) setText(chip, ''); });
+      return c;
+    }
+
+    function draw() {
+      clear(root);
+      let list = listCard();
+      const refreshList = () => { const next = listCard(); list.replaceWith(next); list = next; };
+      // Quando a conexão de um addon muda (ex.: o Stremio confirmou), a lista relê a situação.
+      let seen = '';
+      const onConnection = (s) => { if (s !== seen) { seen = s; if (s !== 'aguardando') refreshList(); } };
+      root.append(installCard(() => state, M.copyName(state.mode, state.hostname), onConnection, null, false, refreshList).root, list);
+    }
+
+    root.append(loadingCard('Carregando…'));
+    loadState().then((s) => { state = s; draw(); }, (ex) => {
+      clear(root);
+      root.append(alertBox('leech', 'Não foi possível abrir os addons', ex.status === 401 ? 'A sessão do ASC não está confirmada. Entre de novo.' : ex.message));
+    });
+    return root;
+  }
+
+  window.Views = Object.assign(window.Views ?? {}, { configuracoes, assistente, addonsPanel });
 })();

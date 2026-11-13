@@ -703,8 +703,8 @@
     head.append(hl);
     const tabs = el('div', 'tabs');
     tabs.setAttribute('role', 'tablist');
-    const panels = { sessao: el('div', 'stack'), conta: el('div', 'stack'), servico: el('div', 'stack'), regras: el('div', 'stack') };
-    const LABELS = [['sessao', 'Sessão'], ['conta', 'Conta no ASC'], ['servico', 'Serviço'], ['regras', 'Regras']];
+    const panels = { sessao: el('div', 'stack'), conta: el('div', 'stack'), servico: el('div', 'stack'), addons: el('div', 'stack') };
+    const LABELS = [['sessao', 'Sessão'], ['conta', 'Conta no ASC'], ['servico', 'Serviço'], ['addons', 'Addons']];
     let aba = 'sessao';
 
     // sessão
@@ -745,26 +745,6 @@
     cCmd.append(cardHead('Comandos do serviço'), pre, el('p', 'foot', 'As variáveis ficam em private/service.env (modelo comentado). Depois de editar, reinicie o serviço.'));
     panels.servico.append(cSvc, cCmd);
 
-    // regras
-    const cRules = card();
-    const rl = el('dl', 'rows');
-    const RULES = [
-      ['13.1', 'Depois de concluir, semear 72 h ou até ratio 1.0 no torrent.', 'A ponte semeia o que o tracker cobra e só considera cumprido quando o site confirma.'],
-      ['13.3', 'Só é hit-and-run quem passa 12 dias sem semear antes de cumprir.', 'Avisos de prazo curto, torrent inativo e arquivo ausente; cada announce renova o prazo.'],
-      ['13.5', 'Parar de semear depois de um hit-and-run é reincidência (advertência de 30 dias).', 'Se o tracker registrar HnR, o painel pede para continuar semeando.'],
-      ['2.6', 'Conta sem acesso por 90 dias é banida.', 'O addon guarda o último login e avisa a partir de 60 dias. Semear não conta como acesso ao site.'],
-      ['2.7', 'Manter o ratio em 1.0 ou mais.', 'Filtro freeleech ligado por padrão e aviso quando o release não é freeleech.'],
-      ['2.2', 'A conta é pessoal e intransferível.', 'Ponte e painel só em 127.0.0.1; não hospede o addon para outras pessoas.'],
-    ];
-    for (const [n, rule, how] of RULES) {
-      const r = el('div', 'row');
-      const dt = el('dt'); dt.append(badge(n, 'primary'));
-      const dd = el('dd'); dd.append(el('div', '', rule), el('div', 'muted', how));
-      dd.style.setProperty('text-align', 'left');
-      r.append(dt, dd); rl.append(r);
-    }
-    cRules.append(cardHead('Regras do ASC e como o addon as segue'), rl);
-    panels.regras.append(cRules);
 
     function renderTabs() {
       clear(tabs);
@@ -775,7 +755,12 @@
         tabs.append(b);
       }
     }
-    function showPanel() { for (const [k, p] of Object.entries(panels)) p.hidden = k !== aba; }
+    // A aba Addons só é montada (e só consulta o servidor) na primeira vez que é aberta.
+    let addonsBuilt = false;
+    function showPanel() {
+      for (const [k, p] of Object.entries(panels)) p.hidden = k !== aba;
+      if (aba === 'addons' && !addonsBuilt && window.Views.addonsPanel) { addonsBuilt = true; panels.addons.append(window.Views.addonsPanel()); }
+    }
     function setParams(q) { const a = new URLSearchParams(q || '').get('aba'); aba = LABELS.some(([k]) => k === a) ? a : 'sessao'; renderTabs(); showPanel(); }
     root.append(head, tabs, ...Object.values(panels));
     setParams(q0);
