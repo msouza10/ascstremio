@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.3.0](https://github.com/msouza10/ascstremio/compare/v0.2.0...v0.3.0) (2026-11-13)
+
+
+### Novidades
+
+* **painel:** busca testável, mais rótulos e avançadas que abrem sozinhas nas configurações ([#74](https://github.com/msouza10/ascstremio/issues/74)) ([679adf1](https://github.com/msouza10/ascstremio/commit/679adf14b63516bf5b92fcd434458b5af0261fa2))
+* **painel:** dê título em português às opções restantes ([#76](https://github.com/msouza10/ascstremio/issues/76)) ([20aed13](https://github.com/msouza10/ascstremio/commit/20aed134e890ba792fb0de06d661d569949c632f))
+* **painel:** guarde o progresso do assistente e torne as etapas acessíveis ([#73](https://github.com/msouza10/ascstremio/issues/73)) ([05eb074](https://github.com/msouza10/ascstremio/commit/05eb07496542cc4de5a361b8774a7a77de3c0268))
+* **painel:** lembre que falta instalar o addon depois de concluir o assistente ([#75](https://github.com/msouza10/ascstremio/issues/75)) ([e93c87a](https://github.com/msouza10/ascstremio/commit/e93c87abebe05b303f5141e78a9e94d5be673c4e))
+* **painel:** reorganize o painel e confirme a instalação do addon no Stremio ([#72](https://github.com/msouza10/ascstremio/issues/72)) ([da81c1a](https://github.com/msouza10/ascstremio/commit/da81c1af33973a3a8d2c648de138b584674d444a))
+* **painel:** revogue credenciais de instalação pelo painel ([#77](https://github.com/msouza10/ascstremio/issues/77)) ([ec9fee3](https://github.com/msouza10/ascstremio/commit/ec9fee3f9e12316d4fc1529e653104846ee89a7e))
+* **painel:** substitua credenciais e mostre o último uso ([#78](https://github.com/msouza10/ascstremio/issues/78)) ([102f883](https://github.com/msouza10/ascstremio/commit/102f883caac7509532b902acbf8d574a9d0196b2))
+* **seed:** permita voltar a semear pelo painel ([#79](https://github.com/msouza10/ascstremio/issues/79)) ([4ce0cb8](https://github.com/msouza10/ascstremio/commit/4ce0cb80c51abdaa0897de0336f3c165db5b27c2))
+
+
+### Segurança
+
+* remova a ferramenta avulsa de download público ([#58](https://github.com/msouza10/ascstremio/issues/58)) ([5ae1200](https://github.com/msouza10/ascstremio/commit/5ae120035bb257e98248f81c10af9cb34204a7f6))
+
+
+### Documentação
+
+* esclareça a proteção dos torrents e da passkey ([#61](https://github.com/msouza10/ascstremio/issues/61)) ([82783b2](https://github.com/msouza10/ascstremio/commit/82783b2726913509d0c87d05ee6e7938593e8276))
+* reconcilie rede, credenciais e relato de vulnerabilidades ([#62](https://github.com/msouza10/ascstremio/issues/62)) ([6c2ef2e](https://github.com/msouza10/ascstremio/commit/6c2ef2ed646d12cea0bbd6a193e34885fd7c828a)), closes [#12](https://github.com/msouza10/ascstremio/issues/12)
+
+
+### Esteira (CI/CD)
+
+* **auditoria:** varre a imagem do contêiner e o instalador com o gitleaks ([#59](https://github.com/msouza10/ascstremio/issues/59)) ([568dea7](https://github.com/msouza10/ascstremio/commit/568dea7d6ba75cd5c4f2bd7a5f9cef8248400e7b)), closes [#11](https://github.com/msouza10/ascstremio/issues/11)
+
 ## [0.2.0](https://github.com/msouza10/ascstremio/compare/v0.1.1...v0.2.0) (2026-11-12)
 
 
