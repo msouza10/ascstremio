@@ -23,6 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/msouza10/ascstremio/main/scripts/in
   ASCSTREMIO_BASE_URL=https://github.com/msouza10/ascstremio/releases/latest/download bash
 ```
 
+Se o repositório estiver privado, esse `curl` falha com 404 ou 401: use o download autenticado pelo `gh` descrito no [guia de instalação](docs/instalacao.md#instalar-pelo-github-com-curl). O guia também lista os pré-requisitos, como atualizar e como desinstalar.
+
 Para Docker/Podman, use a imagem pronta **`ghcr.io/msouza10/ascstremio:latest`**, conforme o [guia de instalação](docs/instalacao.md#usar-a-imagem-pronta-do-ghcr). O guia também cobre Windows e acesso autenticado quando o repositório ou pacote são privados.
 
 Para executar a partir do código, com Node.js 22+ e npm disponíveis:

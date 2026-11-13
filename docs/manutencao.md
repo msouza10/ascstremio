@@ -14,6 +14,8 @@ Antes de atualizar ou mover uma instalação, identifique o `DATA_DIR` e verifiq
 | `scripts/docker.sh` | Pare com `scripts/docker.sh stop`, execute `scripts/docker.sh build` e depois `scripts/docker.sh run`; preserve o volume |
 | Windows | Pare pelo atalho e execute o instalador da versão desejada; os dados ficam fora da pasta do programa |
 
+**Faça o [backup](#backup-e-restauração) dos dados antes de atualizar.** Quem vem de uma versão anterior à 0.2.0 precisa emitir uma credencial (`credenciais garantir`) e reinstalar o addon no Stremio com a URL nova: a chave única antiga (`bridge-key`) deixou de valer. Os dados e o seed não são afetados. Depois de atualizar, confirme a versão e o estado do serviço no painel e nos logs.
+
 `scripts/docker.sh run` reutiliza a imagem `latest` existente e recria o contêiner. Use `build` explicitamente para incorporar código novo. Não use `docker compose down -v` para uma atualização: `-v` remove os volumes.
 
 No serviço Linux, alterar `service.env` exige reiniciar. O serviço tenta iniciar mesmo sem rede e o monitor volta a consultar o ASC depois. Verifique logs e status; processo ativo não significa sessão válida ou tracker acessível.
@@ -37,7 +39,7 @@ Ao iniciar, o programa cria o arquivo `.ascstremio.lock` em `DATA_DIR` (e em `AS
 
 O cache pode ser grande, mas restaurar apenas o cofre não restaura os dados necessários para semear. No Docker, copie o conteúdo do volume correto; os nomes de Compose e `docker.sh` podem ser diferentes. Restaurar contadores antigos nunca substitui a leitura do tracker.
 
-Desinstalar o serviço Linux ou o programa Windows preserva os dados. A exclusão definitiva deve considerar seed pendente e revogação das credenciais, além de backups existentes.
+Desinstalar o serviço Linux ou o programa Windows preserva os dados (passo a passo em [instalação](instalacao.md#desinstalar)). A exclusão definitiva deve considerar seed pendente e revogação das credenciais, além de backups existentes.
 
 ## Retenção por orçamento
 

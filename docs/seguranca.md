@@ -34,7 +34,7 @@ Cada instalação do addon no Stremio (por exemplo, o computador e a TV) usa uma
 
 **Como funciona.** O Stremio não envia cabeçalhos de autenticação e só propaga a URL base do manifesto para catálogo, meta e stream; por isso o token vai no prefixo do caminho: `http://host:7000/<token>/manifest.json`. As URLs de vídeo que o addon devolve carregam o mesmo token em `?k=`. O token (`ascc_` + 256 bits aleatórios) aparece uma única vez, na emissão; em disco (`credentials.json`, 0600) fica só o SHA-256. Sem credencial ativa, o manifesto e todos os recursos dão 403.
 
-**Emitir, listar, girar e revogar** (com o aplicativo em execução; usam o token administrativo de `admin-key`):
+**Emitir, listar, girar e revogar** (com o aplicativo em execução; usam o token administrativo de `admin-key`; na instalação remota Linux, rode na pasta `~/.local/share/ascstremio/app` com `DATA_DIR="$HOME/.local/share/ascstremio/data"`, veja [instalação](instalacao.md#instalar-pelo-github-com-curl)):
 
 ```bash
 npm run credenciais -- garantir              # emite "Stremio local" só se não houver nenhuma ativa
