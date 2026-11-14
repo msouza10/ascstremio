@@ -67,26 +67,44 @@ test('lookup de série oferece /e/<id>/<T>/<E> com o tamanho do episódio e o gr
   assert.equal(streams[0].url, 'http://x/e/5/1/2');
   assert.equal(streams[0].behaviorHints.bingeGroup, 'asc-5');
   assert.equal(streams[0].behaviorHints.filename, 'Show.S01E02.mkv');
-  assert.match(streams[0].description, /S01E02 · 💾 este episódio: 2 GB/);
-  assert.match(streams[0].description, /📦 Temporada 1 completa: 10 GB \(tamanho do pacote inteiro, não só deste episódio\)/);
+  assert.ok(streams[0].description.startsWith('📦 Temporada 1 completa\n💾 Pacote: 10 GB\n▶ Este episódio: 2 GB\n'));
   assert.equal(streams[0].description.match(/💾/g).length, 1, 'o tamanho do release não aparece de novo, sem rótulo');
   assert.equal(calls.downloads.length, 0, 'listar não baixa .torrent');
 });
 
-test('lookup de série: episódio avulso não ganha rótulo de pacote; pack sem escopo no nome ganha', async (t) => {
+test('lookup de série: o tipo do release vem primeiro e cada tamanho tem o seu rótulo', async (t) => {
   const { provider } = await provedor(t, {
-    rows: [{ ...row(1, 'Show S02E03 1080p'), size: 1.5 * GB }, row(2, 'Show Completo 1080p')],
+    rows: [
+      { ...row(1, 'Show S02E03 1080p'), size: 1.5 * GB },
+      row(2, 'Show Completo 1080p'),
+      row(3, 'Show 1080p WEB-DL'),
+      row(4, 'Show 720p'),
+    ],
     pages: {
       1: { files: [{ path: 'Show.S02E03.mkv', size: 1.5 * GB }], total: 1, complete: true },
       2: { files: [{ path: 'T1/Show.S02E03.mkv', size: GB }, { path: 'T1/Show.S02E04.mkv', size: GB }], total: 2, complete: true },
+      3: { files: [{ path: 'T1/Show.S02E03.mkv', size: GB }, { path: 'T1/Show.S02E04.mkv', size: GB }], total: 2, complete: true },
     },
   });
   const { streams } = await provider.lookup(video(2, 3));
   const por = (id) => streams.find((s) => s.url.includes(`/e/${id}/`)).description;
-  assert.doesNotMatch(por(1), /📦/);
-  assert.match(por(1), /💾 1,5 GB/);
-  assert.match(por(2), /📦 Pacote completo: 10 GB \(tamanho do pacote inteiro, não só deste episódio\)/);
-  assert.match(por(2), /este episódio: 1 GB/);
+  assert.ok(por(1).startsWith('📺 Episódio avulso\n💾 1,5 GB\n'), 'avulso: um tamanho só, sem rótulo de pacote');
+  assert.doesNotMatch(por(1), /📦|Pacote/);
+  assert.ok(por(2).startsWith('📚 Série completa\n💾 Pacote: 10 GB\n▶ Este episódio: 1 GB\n'));
+  assert.ok(por(3).startsWith('📦 Pacote de episódios\n💾 Pacote: 10 GB\n▶ Este episódio: 1 GB\n'), 'sem dica no nome: o tamanho da lista de arquivos decide');
+  assert.ok(por(4).startsWith('💾 Release: 10 GB\nℹ A confirmar ao tocar\n'), 'sem evidência: não chama de episódio nem de temporada');
+});
+
+test('lookup de série: as linhas de tipo e tamanho cabem no Stremio (até 26 caracteres)', async (t) => {
+  const { provider } = await provedor(t, {
+    rows: [row(1, 'Show S12 1080p'), row(2, 'Show S02E03'), row(3, 'Show Completo'), row(4, 'Show 720p')],
+    pages: { 1: { files: [{ path: 'Show.S12E01.mkv', size: 12.5 * GB }], total: 1, complete: true } },
+  });
+  for (const stream of (await provider.lookup(video(12, 1))).streams) {
+    const nossas = stream.description.split('\n').filter((l) => /^(📦|📚|📺|💾|▶|ℹ)/u.test(l));
+    assert.ok(nossas.length > 0);
+    for (const linha of nossas) assert.ok([...linha].length <= 26, `"${linha}" tem ${[...linha].length} caracteres`);
+  }
 });
 
 test('lookup de série: quem não tem o episódio não ocupa vaga das 12 opções', async (t) => {
@@ -97,7 +115,7 @@ test('lookup de série: quem não tem o episódio não ocupa vaga das 12 opçõe
   assert.equal(streams.length, 12);
   const ids = streams.map((s) => Number(s.url.split('/')[4]));
   assert.ok(ids.every((id) => id > 8), 'os 8 releases sem o episódio ficaram de fora');
-  assert.ok(streams.every((s) => /não confirmado/.test(s.description)), 'os demais seguem como candidatos a confirmar ao tocar');
+  assert.ok(streams.every((s) => /A confirmar ao tocar/.test(s.description)), 'os demais seguem como candidatos a confirmar ao tocar');
 });
 
 test('lookup de série com o ASC fora do ar: lista vazia e o motivo, sem lançar', async (t) => {
