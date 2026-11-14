@@ -107,4 +107,38 @@ function findEpisode(index, season, episode) {
   return file ? { file } : null;
 }
 
-module.exports = { parseEpisode, buildEpisodeIndex, findEpisode, episodeKey };
+// ---- Escopo declarado no NOME do release (antes de ler a lista de arquivos) ----------------------
+// Serve para poupar consultas: "Show S02" não pode ser a fonte de S01E03. Só descarta o que o nome
+// contradiz com clareza; nome sem escopo, com intervalo de temporadas ("S01-S05") ou ambíguo fica
+// como candidato, e quem decide é a lista de arquivos. O nome é do uploader e pode estar errado,
+// por isso isto nunca AFIRMA que o episódio existe.
+const ANY_EPISODE = /(?<![a-z0-9])s\d{1,2}[ ._-]?e\d/i;
+const SEASON_ONLY = /(?<![a-z0-9])s(\d{1,2})(?![0-9a-z])/gi;
+const SEASON_WORD = /(?:temporada|season)[ ._-]*(\d{1,2})(?![0-9])|(?<![0-9])(\d{1,2})\s*[ªº]?\s*temporada/gi;
+// Resolução (`1080p`, `720p`) colada ao hífen não é fim de intervalo: `(?![0-9pi])`.
+const SEASON_RANGE = /(?<![a-z0-9])s\d{1,2}\s*[-–~]\s*s?\d{1,2}(?![0-9a-z])|temporadas?\s*\d{1,2}\s*(?:[-–~]|a|ao|e)\s*\d{1,2}(?![0-9pi])/i;
+
+// `{ season, episode, episodeEnd? }` (episódio), `{ season, episode: null }` (temporada) ou null (não diz).
+function scopeOfName(name) {
+  const text = String(name ?? '');
+  if (SEASON_RANGE.test(text)) return null;
+  if (ANY_EPISODE.test(text)) {
+    const id = parseEpisode(text);
+    return id ? { season: id.season, episode: id.episode, ...(id.episodeEnd ? { episodeEnd: id.episodeEnd } : {}) } : null;
+  }
+  const seasons = new Set();
+  for (const m of text.matchAll(SEASON_ONLY)) seasons.add(Number(m[1]));
+  for (const m of text.matchAll(SEASON_WORD)) seasons.add(Number(m[1] ?? m[2]));
+  return seasons.size === 1 ? { season: [...seasons][0], episode: null } : null;
+}
+
+// O nome contradiz o episódio pedido? true só quando o escopo do nome é claro e é outro.
+function nameExcludes(name, season, episode) {
+  const scope = scopeOfName(name);
+  if (!scope) return false;
+  if (scope.season !== season) return true;
+  if (scope.episode === null) return false;
+  return !(episode >= scope.episode && episode <= (scope.episodeEnd ?? scope.episode));
+}
+
+module.exports = { parseEpisode, buildEpisodeIndex, findEpisode, episodeKey, scopeOfName, nameExcludes };

@@ -1,9 +1,13 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { readTorrent, mainVideo } = require('./library');
+const { readTorrent, mainVideo, isVideo } = require('./library');
+const { buildEpisodeIndex, findEpisode, nameExcludes, scopeOfName } = require('./episodes');
 const log = require('./logger').logger.child('asc');
 
 const MAX_OPTIONS = 12; // listar é de graça: filmes com muitas versões aparecem inteiros
+const SERIES_FILE_LOOKUPS = 8; // páginas de release lidas por pedido de episódio (o resto fica "não visto")
+const FILES_TTL_MS = 6 * 3600_000; // lista de arquivos completa de um release muda raramente
+const FILES_CACHE_MAX = 200;
 const num = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 
 function fmtBytes(n) {
@@ -307,6 +311,68 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return out;
   }
 
+  // Imagens de disco e releases sem seeders vão para o fim da lista (continuam visíveis);
+  // no resto, mais seeders primeiro e, em empate, freeleech antes.
+  function byPreference(rows) {
+    const weak = (row) => (isDisc(row) ? 2 : 0) + (row.seeders === 0 ? 1 : 0);
+    return [...rows].sort((a, b) => weak(a) - weak(b)
+      || (b.seeders ?? 0) - (a.seeders ?? 0)
+      || (b.freeleech === true) - (a.freeleech === true));
+  }
+
+  // ---- Séries: quais releases têm o episódio pedido (SÓ LEITURA) ---------------------------------
+  // Não baixa .torrent, não anuncia e não toca em `records`/`unsupported`/`prepared`: uma temporada
+  // que não traz o episódio pedido não é "incompatível", só não serve a este pedido. Os arquivos
+  // vêm da lista da página do release; a POSIÇÃO ali não é o índice do torrent (o índice real só
+  // sai do .torrent, no play), por isso o candidato leva caminho e tamanho, nunca um fileIdx.
+  const filesCache = new Map(); // id -> { at, result }  (só listas completas)
+
+  async function filesOf(id) {
+    const hit = filesCache.get(id);
+    if (hit && now() - hit.at < FILES_TTL_MS) return { result: hit.result, fetched: false };
+    const result = await asc.releaseFiles(id);
+    if (result.complete) {
+      filesCache.delete(id);
+      filesCache.set(id, { at: now(), result });
+      if (filesCache.size > FILES_CACHE_MAX) filesCache.delete(filesCache.keys().next().value);
+    }
+    return { result, fetched: true };
+  }
+
+  // status: 'tem' (o episódio está na lista), 'nao-visto' (lista não lida ou incompleta: segue como
+  // candidato, o play confirma). Fora: nome que contradiz, lista completa sem o episódio, ambíguo.
+  async function seriesCandidates(video) {
+    const { season, episode } = video;
+    const { rows, truncated } = await asc.searchSeries(video.imdbId);
+    const plausible = byPreference(rows.filter((row) => !nameExcludes(row.name, season, episode)));
+    const candidates = [];
+    let lookups = 0;
+    for (const row of plausible) {
+      const id = String(row.id);
+      let status = 'nao-visto';
+      let file = null;
+      if (filesCache.has(id) || lookups < SERIES_FILE_LOOKUPS) {
+        try {
+          const { result, fetched } = await filesOf(id);
+          if (fetched) lookups += 1;
+          const index = buildEpisodeIndex(result.files.map((f, i) => ({ index: i, path: f.path, length: f.size, isVideo: isVideo(f.path) })));
+          const found = findEpisode(index, season, episode);
+          if (found?.conflict) continue; // dois arquivos dizem ser o episódio: não adivinha
+          if (found) {
+            status = 'tem';
+            file = { path: found.file.path, length: found.file.length, confidence: found.file.confidence };
+          } else if (result.complete) {
+            continue; // lista inteira lida e sem o episódio: este release não serve a este pedido
+          }
+        } catch (error) {
+          log.warn(`lista de arquivos do release #${id} não lida: ${error?.message ?? error}`);
+        }
+      }
+      candidates.push({ row, status, file, scope: scopeOfName(row.name) });
+    }
+    return { candidates, truncated, total: rows.length };
+  }
+
   // Busca por IMDb: online quando possível; senão cai para os arquivos locais completos. Devolve
   // { streams, offline } — `offline` = null (consulta feita) ou { kind, message } com o motivo.
   // Sem resultados na consulta online é ausência real (não cai para o cache). Nunca baixa .torrent.
@@ -326,12 +392,7 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     }
     if (!availability.online) log.info('fontes online voltaram a responder');
     availability = { online: true, kind: null, message: null, since: null };
-    // Imagens de disco e releases sem seeders vão para o fim da lista (continuam visíveis);
-    // no resto, mais seeders primeiro e, em empate, freeleech antes.
-    const weak = (row) => (isDisc(row) ? 2 : 0) + (row.seeders === 0 ? 1 : 0);
-    const ordered = [...rows].sort((a, b) => weak(a) - weak(b)
-      || (b.seeders ?? 0) - (a.seeders ?? 0)
-      || (b.freeleech === true) - (a.freeleech === true));
+    const ordered = byPreference(rows);
     await loadOriginal(video.imdbId, rows);
     const top = ordered.slice(0, MAX_OPTIONS);
     const streams = top.map((row) => streamFromRow(row, video.imdbId)).filter(Boolean);
@@ -361,6 +422,7 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     streamsFor,
     resolve,
     lookup,
+    seriesCandidates,
     availability: () => ({ ...availability }),
     // Compatível com quem só quer a lista: a indisponibilidade fica em `lookup`/`availability`.
     async findStreams(video) { return (await lookup(video)).streams; },

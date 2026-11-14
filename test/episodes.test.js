@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseEpisode, buildEpisodeIndex, findEpisode } = require('../src/episodes');
+const { parseEpisode, buildEpisodeIndex, findEpisode, scopeOfName, nameExcludes } = require('../src/episodes');
 const { describeEntry } = require('../src/library');
 
 const GB = 1024 ** 3;
@@ -153,4 +153,31 @@ test('describeEntry: pack sem SxxExx continua série pela heurística antiga', (
 
 test('describeEntry: sem vídeo devolve null', () => {
   assert.equal(describeEntry(entryOf(files(['disco.iso', 20 * GB, false]))), null);
+});
+
+test('scopeOfName: episódio, temporada e formas em português', () => {
+  assert.deepEqual(scopeOfName('Dexter Resurrection S02E03 1080p'), { season: 2, episode: 3 });
+  assert.deepEqual(scopeOfName('Breaking.Bad.S01.1080p.BluRay'), { season: 1, episode: null });
+  assert.deepEqual(scopeOfName('The Bear - Temporada 2 - 1080p'), { season: 2, episode: null });
+  assert.deepEqual(scopeOfName('Stranger Things 3ª Temporada'), { season: 3, episode: null });
+  assert.deepEqual(scopeOfName('Show Season 4 WEB-DL'), { season: 4, episode: null });
+});
+
+test('scopeOfName: sem escopo, intervalo ou ambíguo devolve null (não afirma nada)', () => {
+  assert.equal(scopeOfName('Breaking Bad Completo 1080p'), null);
+  assert.equal(scopeOfName('Show S01-S05 Complete'), null);
+  assert.equal(scopeOfName('Show Temporadas 1 a 5'), null);
+  assert.equal(scopeOfName('Show S01 S02'), null);
+  assert.deepEqual(scopeOfName('Show Temporada 2 - 1080p'), { season: 2, episode: null }, 'resolução não é fim de intervalo');
+  assert.equal(scopeOfName('Show S01E01 S02E05'), null);
+  assert.equal(scopeOfName(undefined), null);
+});
+
+test('nameExcludes: só descarta o que o nome contradiz com clareza', () => {
+  assert.equal(nameExcludes('Show S02 1080p', 1, 3), true, 'outra temporada');
+  assert.equal(nameExcludes('Show S01E05', 1, 3), true, 'outro episódio');
+  assert.equal(nameExcludes('Show S01', 1, 3), false, 'a temporada pode ter o episódio');
+  assert.equal(nameExcludes('Show S01E01E03', 1, 3), false, 'episódio duplo declarado E01E03 cobre o intervalo 1 a 3');
+  assert.equal(nameExcludes('Show Completo', 1, 3), false, 'sem escopo: candidato');
+  assert.equal(nameExcludes('Show S01-S05', 4, 1), false, 'intervalo: candidato');
 });
