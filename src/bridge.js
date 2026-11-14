@@ -9,7 +9,8 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 
-const { loadLibrary, mainVideo } = require('./library');
+const { loadLibrary, mainVideo, isPackEntry } = require('./library');
+const { buildEpisodeIndex, findEpisode } = require('./episodes');
 const { announceWithPasskey } = require('./passkey');
 const { SeedVault } = require('./seedvault');
 const { isLoopbackRequest, inContainer, hostAllowed } = require('./safety');
@@ -28,6 +29,9 @@ const { monitorEventLoopDelay, performance } = require('perf_hooks');
 const log = logger.child('ponte');
 const tlog = logger.child('torrent');
 const short = (hash) => `${String(hash).slice(0, 8)}…`;
+// Folga ao reservar disco para UM arquivo de um pack: as peças (até 8 MiB nos torrents do ASC)
+// atravessam os limites dos arquivos, então baixar um episódio traz até uma peça de cada vizinho.
+const PACK_EDGE_BYTES = 16 * 1024 * 1024;
 
 let webTorrentModule;
 function loadWebTorrent() {
@@ -110,6 +114,8 @@ class Bridge {
     streamMetrics = {}, // ajustes da medição de stalls/seeks (stallMs, seekBytes; injetável nos testes)
     ascResolver = null,
     ascSizeHint = null, // (ascId) => bytes da listagem, para reservar espaço antes de baixar o .torrent
+    ascEpisodeResolver = null, // async (ascId, season, episode) => { infoHash, fileIdx }  (/e/<id>/<T>/<E>)
+    ascEpisodeSizeHint = null, // (ascId, season, episode) => bytes do episódio na listagem (0 = desconhecido)
   }) {
     this.torrentDir = torrentDir;
     this.storeDir = storeDir;
@@ -155,6 +161,12 @@ class Bridge {
     // momento do play (GET em /a/<id>) e o registra na biblioteca. Vem do provedor ASC.
     this.ascResolver = ascResolver;
     this.ascSizeHint = ascSizeHint;
+    this.ascEpisodeResolver = ascEpisodeResolver;
+    this.ascEpisodeSizeHint = ascEpisodeSizeHint;
+    // Pack: infoHash -> Map(índice do arquivo -> bytes prometidos na admissão). Só vale enquanto o
+    // torrent está no motor: se foi destruído (limpeza, seed, retenção) ou nunca abriu, a admissão
+    // é refeita. Só em memória: depois de um reinício nada fica "prometido".
+    this.packFiles = new Map();
     this.streams = new Map(); // infoHash -> streams HTTP abertos agora
     this.lastStreamEnd = new Map(); // infoHash -> ms do último stream encerrado
     this.completing = new Set(); // infoHash com o torrent inteiro selecionado
@@ -528,15 +540,30 @@ class Bridge {
     if (!t) return false;
     if (t.done || (t.progress ?? 0) >= 1) return null;
     if (!(t.length > 0)) return undefined;
+    // Pack aberto para assistir: só falta o que os arquivos admitidos ainda vão gravar, não o pack
+    // inteiro (senão um episódio de 150 GiB "comprometidos" trava todos os outros downloads). Com a
+    // conclusão do torrent pedida, vale o torrent todo.
+    if (isPackEntry(this.entries.get(holder)) && !this.completing.has(holder)) {
+      let rest = 0;
+      for (const idx of this.packFiles.get(holder)?.keys() ?? []) {
+        const f = t.files?.[idx];
+        if (f?.length > 0) rest += Math.max(0, f.length - (f.downloaded ?? 0));
+      }
+      return rest;
+    }
     return Math.max(0, Math.round(t.length * (1 - (t.progress || 0))));
   };
 
   // Bytes que abrir este torrent ainda vai gravar: tamanho total menos o que já ocupa disco
   // (blocos alocados, não o tamanho aparente: o arquivo é esparso). No Windows (sem `blocks`)
   // vale o tamanho do arquivo. Streaming pode andar até o fim, então reserva o restante todo.
-  neededBytes(infoHash) {
+  neededBytes(infoHash, fileIdx = null) {
     const lib = this.entries.get(infoHash);
-    const files = lib?.files ?? [];
+    const all = lib?.files ?? [];
+    // Pack: só o arquivo escolhido, mais uma folga para as bordas das peças (peças de até 8 MiB
+    // atravessam arquivos vizinhos: uma de cada lado). O resto do pack não é baixado sem escolha.
+    const only = fileIdx !== null && isPackEntry(lib) ? all[fileIdx] : null;
+    const files = only ? [only] : all;
     let total = 0;
     let onDisk = 0;
     for (const f of files) {
@@ -546,18 +573,37 @@ class Bridge {
         if (st.isFile()) onDisk += Math.min(f.length || 0, typeof st.blocks === 'number' ? st.blocks * 512 : st.size);
       } catch { /* ainda não existe */ }
     }
-    return Math.max(0, total - onDisk);
+    const rest = Math.max(0, total - onDisk);
+    return only && rest > 0 ? rest + PACK_EDGE_BYTES : rest;
   }
 
   // Admissão de um torrent que ainda NÃO está no motor. Já completo em disco = só semear, sem
   // custo de espaço: não passa pela reserva. Lança DiskRefusal antes de qualquer efeito.
-  admitTorrent(infoHash) {
+  // Em pack a unidade é o ARQUIVO: abrir outro episódio de um pack já aberto paga a reserva desse
+  // episódio (uma vez por arquivo); em torrent comum o torrent é a unidade, como sempre.
+  admitTorrent(infoHash, fileIdx = null) {
+    const perFile = fileIdx !== null && isPackEntry(this.entries.get(infoHash));
     // Já no motor (ou abrindo): a admissão foi feita na abertura; novos Range/seek não pagam de novo.
-    if (this.loading.has(infoHash) || (this.client?.torrents ?? []).some((t) => t.infoHash === infoHash)) return;
+    const open = this.loading.has(infoHash) || (this.client?.torrents ?? []).some((t) => t.infoHash === infoHash);
+    // Fora do motor, o que foi admitido antes não vale mais (torrent destruído ou que falhou ao abrir).
+    if (perFile && !open) this.packFiles.delete(infoHash);
+    if (perFile ? this.packFiles.get(infoHash)?.has(fileIdx) : open) return;
     // Só dispensa quem o cofre registra como CONCLUÍDO (e com os arquivos inteiros): o tamanho aparente
     // sozinho engana, pois um arquivo esparso de streaming que o player levou até o fim parece cheio.
     if (this.vault.get(infoHash)?.completedAt && this.diskState(infoHash) === 'full') return;
-    this.disk.require({ holder: infoHash, need: this.neededBytes(infoHash), live: this.liveRemaining });
+    const own = this.neededBytes(infoHash, perFile ? fileIdx : null);
+    let need = own;
+    const admitted = perFile ? this.packFiles.get(infoHash) : null;
+    if (perFile) {
+      // O DiskGuard não conta o próprio `holder` entre os comprometidos: o que os OUTROS episódios
+      // admitidos deste pack ainda vão gravar entra aqui, senão dois episódios cabem "cada um" e
+      // juntos estouram o disco. Com o torrent ainda abrindo não há progresso (`liveRemaining` é
+      // indefinido): vale o que foi prometido em cada admissão.
+      const live = this.liveRemaining(infoHash);
+      need += Number.isFinite(live) ? live : [...(admitted?.values() ?? [])].reduce((sum, bytes) => sum + bytes, 0);
+    }
+    this.disk.require({ holder: infoHash, need, live: this.liveRemaining });
+    if (perFile) this.packFiles.set(infoHash, (admitted ?? new Map()).set(fileIdx, own));
   }
 
   // Conclusão em segundo plano: depois que o usuário para de assistir, baixa o
@@ -573,6 +619,8 @@ class Bridge {
 
       if (!requested) {
         if (this.backgroundMode !== 'auto') continue;
+        // Pack: ver um episódio não é pedir o pack todo. Só a conclusão pedida pelo usuário completa.
+        if (isPackEntry(this.entries.get(torrent.infoHash))) continue;
         // Fora do freeleech, baixar tudo pesa no ratio (regra 2.7): só manual.
         if (this.isFreeleech(torrent.infoHash) !== true) continue;
         const idleSince = this.lastStreamEnd.get(torrent.infoHash)
@@ -927,6 +975,20 @@ class Bridge {
     return `${base.replace(/\/$/, '')}/a/${ascId}${this.keyQuery()}`;
   }
 
+  // URL de um episódio dentro de um release (pack ou avulso). Só o GET baixa o .torrent.
+  episodeUrl(ascId, season, episode) {
+    const base = this.publicUrl || `http://127.0.0.1:${this.port}`;
+    return `${base.replace(/\/$/, '')}/e/${ascId}/${season}/${episode}${this.keyQuery()}`;
+  }
+
+  // Arquivo que /a/ ou /e/ serve quando o .torrent já está local: o vídeo principal (filme) ou o
+  // episódio pedido, lido do próprio .torrent (índice REAL). Ambíguo ou ausente = null.
+  lazyFile(local, episode) {
+    if (!local) return null;
+    if (!episode) return mainVideo(local.files);
+    return findEpisode(buildEpisodeIndex(local.files), episode.season, episode.episode)?.file ?? null;
+  }
+
   // Entrada da biblioteca de um release do ASC (arquivo asc-<id>.torrent), se já baixado.
   entryByAscId(ascId) {
     const suffix = `asc-${ascId}.torrent`;
@@ -1038,7 +1100,7 @@ class Bridge {
     return send(405, { error: 'método não permitido' });
   }
 
-  async getTorrent(infoHash, { seedResume = false, torrentData = null, beforeOpen = () => {} } = {}) {
+  async getTorrent(infoHash, { seedResume = false, torrentData = null, beforeOpen = () => {}, fileIdx = null } = {}) {
     // Reconfira depois de cada espera anterior à abertura: a manutenção pode começar
     // enquanto um play já aguarda client.get(). Só a própria retomada atravessa a trava.
     const checkMaintenance = () => {
@@ -1051,12 +1113,18 @@ class Bridge {
     };
     const timeoutMs = seedResume ? 5 * 60_000 : 30_000;
     checkMaintenance();
-    if (this.loading.has(infoHash)) return this.loading.get(infoHash);
+    if (this.loading.has(infoHash)) {
+      // Outro episódio de um pack que ainda está abrindo também paga a própria reserva.
+      this.admitTorrent(infoHash, fileIdx);
+      return this.loading.get(infoHash);
+    }
 
     const already = await this.client.get(infoHash);
     checkMaintenance();
     if (this.loading.has(infoHash)) return this.loading.get(infoHash);
     if (already) {
+      // Outro episódio de um pack já aberto: paga a reserva do arquivo (torrent comum: não faz nada).
+      this.admitTorrent(infoHash, fileIdx);
       // O motor registra o infoHash antes de terminar de ler o .torrent: nesse
       // intervalo `files` ainda é null. Esperar o 'ready' evita 500 quando o
       // player dispara HEAD e GET quase juntos.
@@ -1083,7 +1151,7 @@ class Bridge {
     }
 
     // Antes de qualquer efeito (abrir, anunciar, gravar): sem folga ou sem medida, recusa.
-    this.admitTorrent(infoHash);
+    this.admitTorrent(infoHash, fileIdx);
 
     const task = new Promise((resolve, reject) => {
       // Filmes grandes podem levar horas. Na retomada explícita, cada peça
@@ -1404,7 +1472,11 @@ class Bridge {
     }
 
     const m = /^\/s\/([0-9a-fA-F]{40})(?:\/(\d+))?$/.exec(url.pathname);
-    const lazy = /^\/a\/(\d{1,9})$/.exec(url.pathname);
+    // /a/<id> = filme do release; /e/<id>/<temporada>/<episódio> = um episódio dentro do release.
+    // As duas passam pela mesma credencial, quota e reserva de disco.
+    const lazyEp = /^\/e\/(\d{1,9})\/(\d{1,2})\/([1-9]\d{0,3})$/.exec(url.pathname);
+    const lazy = /^\/a\/(\d{1,9})$/.exec(url.pathname) ?? lazyEp;
+    const episode = lazyEp ? { season: Number(lazyEp[2]), episode: Number(lazyEp[3]) } : null;
     // Quem não tem a chave (por exemplo, uma página web que adivinhou /a/<id>) não
     // dispara download nem anúncio no tracker com a sua conta.
     // A verificação é feita a cada GET/HEAD/Range, então URL guardada em cache pelo player
@@ -1441,8 +1513,11 @@ class Bridge {
         key = `s:${infoHash}:${fileIdx}`;
       } else {
         const local = this.entryByAscId(lazy[1]);
-        const main = local ? mainVideo(local.files) : null;
-        key = local && main ? `s:${local.infoHash}:${main.index}` : `a:${lazy[1]}`;
+        const chosen = this.lazyFile(local, episode);
+        // Mesma chave de /s/<hash>/<idx> quando o .torrent já está local: um episódio tocado pelos
+        // dois caminhos conta uma vez só na quota.
+        key = local && chosen ? `s:${local.infoHash}:${chosen.index}`
+          : (episode ? `e:${lazy[1]}:${episode.season}:${episode.episode}` : `a:${lazy[1]}`);
       }
       lease = this.admitPlayback(res, credential, key);
       if (!lease) return;
@@ -1454,7 +1529,8 @@ class Bridge {
     if (lazy) {
       const ascId = lazy[1];
       const local = this.entryByAscId(ascId);
-      const main = local ? mainVideo(local.files) : null;
+      const main = this.lazyFile(local, episode);
+      const resolver = episode ? this.ascEpisodeResolver : this.ascResolver;
       if (local && main) {
         infoHash = local.infoHash;
         fileIdx = main.index;
@@ -1464,7 +1540,7 @@ class Bridge {
         res.end();
         return;
       } else {
-        if (!this.ascResolver) {
+        if (!resolver) {
           res.writeHead(501, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ error: 'download sob demanda indisponível' }));
           return;
@@ -1473,8 +1549,15 @@ class Bridge {
         // sem ele, exige ao menos a reserva livre (o tamanho real é conferido ao abrir o torrent).
         const holder = `asc:${ascId}`;
         try {
-          this.disk.require({ holder, need: this.ascSizeHint?.(ascId) || 0, live: this.liveRemaining });
-          ({ infoHash, fileIdx } = await this.ascResolver(ascId));
+          // Episódio: reserva o arquivo (e a folga das peças), não o pack da listagem; sem o tamanho do
+          // episódio exige ao menos a reserva livre e o tamanho real é conferido ao abrir o torrent.
+          const hint = episode
+            ? (() => { const n = this.ascEpisodeSizeHint?.(ascId, episode.season, episode.episode) || 0; return n > 0 ? n + PACK_EDGE_BYTES : 0; })()
+            : (this.ascSizeHint?.(ascId) || 0);
+          this.disk.require({ holder, need: hint, live: this.liveRemaining });
+          ({ infoHash, fileIdx } = episode
+            ? await resolver(ascId, episode.season, episode.episode)
+            : await resolver(ascId));
         } catch (err) {
           const status = Number.isInteger(err?.status) ? err.status : 502;
           log.warn(`play de #${ascId} recusado (${status}): ${err?.message ?? err}`);
@@ -1488,7 +1571,7 @@ class Bridge {
         if (res.destroyed) return;
         lease?.rekey(`s:${infoHash}:${fileIdx}`);
         // Troca a promessa provisória pela do torrent sem deixar brecha entre as duas.
-        this.admitTorrent(infoHash);
+        this.admitTorrent(infoHash, fileIdx);
       }
     }
 
@@ -1520,7 +1603,7 @@ class Bridge {
       return;
     }
 
-    const torrent = await this.getTorrent(infoHash);
+    const torrent = await this.getTorrent(infoHash, { fileIdx });
     // A resposta pode ter sido encerrada durante a espera (revogação ou cliente que saiu): o 'close'
     // já passou e não limparia o contador de streams abertos, que travaria conclusão e ociosidade.
     if (res.destroyed) return;

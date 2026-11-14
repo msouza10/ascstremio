@@ -153,12 +153,14 @@ function createAddon({ provider = amigosShare, demo = false, library = [], local
       };
 
       // Pack com vários episódios: cada arquivo vira um vídeo selecionável.
-      if (entry.videos.length > 1) {
+      if (entry.kind === 'series' || entry.videos.length > 1) {
+        // Temporada e episódio escritos no nome do arquivo, quando seguros; senão a ordem da lista.
+        const byIndex = new Map((entry.episodes?.episodes ?? []).map((ep) => [ep.index, ep]));
         meta.videos = entry.videos.map((file, i) => ({
           id: `${entry.id}:${file.index}`,
           title: file.path.split('/').pop(),
-          season: 1,
-          episode: i + 1,
+          season: byIndex.get(file.index)?.season ?? 1,
+          episode: byIndex.get(file.index)?.episode ?? i + 1,
         }));
       }
 

@@ -1,9 +1,13 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { readTorrent, mainVideo } = require('./library');
+const { readTorrent, mainVideo, isVideo } = require('./library');
+const { buildEpisodeIndex, findEpisode, nameExcludes, scopeOfName } = require('./episodes');
 const log = require('./logger').logger.child('asc');
 
 const MAX_OPTIONS = 12; // listar é de graça: filmes com muitas versões aparecem inteiros
+const SERIES_FILE_LOOKUPS = 8; // páginas de release lidas por pedido de episódio (o resto fica "não visto")
+const FILES_TTL_MS = 6 * 3600_000; // lista de arquivos completa de um release muda raramente
+const FILES_CACHE_MAX = 200;
 const num = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 
 function fmtBytes(n) {
@@ -205,6 +209,34 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     let task = prepared.get(id);
     if (!task) {
       task = (async () => {
+        const entry = await prepareEntry(id, known);
+        // O filme é o vídeo que domina o torrent (extras pequenos não contam). ISO, pack ou
+        // coleção não têm filme principal: recusa antes de abrir o torrent (sem anunciar).
+        const main = mainVideo(entry.files);
+        if (!main) {
+          unsupported.add(id);
+          const motivo = whyNoMain(entry);
+          log.info(`release #${id} ignorado: ${motivo}`);
+          throw httpError(422, motivo);
+        }
+        bridge.entries.set(entry.infoHash, entry);
+        return { infoHash: entry.infoHash, fileIdx: main.index };
+      })();
+      prepared.set(id, task);
+      // Falha não fica em cache (tenta de novo no próximo play); sucesso fica.
+      task.catch(() => prepared.delete(id));
+    }
+    return task;
+  }
+
+  // Baixa o .torrent do release e o lê, UMA vez por release: filme e episódios compartilham este
+  // preparo (dois episódios do mesmo pack tocados juntos não baixam duas vezes nem criam dois
+  // snatches). Só prepara: quem chama decide se o release serve e o registra na biblioteca.
+  const entryTasks = new Map(); // id -> Promise<entry>
+  function prepareEntry(id, known) {
+    let task = entryTasks.get(id);
+    if (!task) {
+      task = (async () => {
         // Regra 2.7: com o filtro "somente freeleech" ligado, nunca baixa de release que não seja.
         let freeleech = known ? known.freeleech === true : null;
         if (asc.onlyFreeleech) {
@@ -225,25 +257,63 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
         await fs.writeFile(file, bytes, { mode: 0o600 });
         await fs.chmod(file, 0o600);
         const entry = await readTorrentImpl(file);
-        // O filme é o vídeo que domina o torrent (extras pequenos não contam). ISO, pack ou
-        // coleção não têm filme principal: recusa antes de abrir o torrent (sem anunciar).
-        const main = mainVideo(entry.files);
-        if (!main) {
-          unsupported.add(id);
-          const motivo = whyNoMain(entry);
-          log.info(`release #${id} ignorado: ${motivo}`);
-          throw httpError(422, motivo);
-        }
         // Só releases freeleech podem ser concluídos sozinhos em segundo plano (regra 2.7).
         entry.freeleech = freeleech;
-        bridge.entries.set(entry.infoHash, entry);
-        return { infoHash: entry.infoHash, fileIdx: main.index };
+        return entry;
       })();
-      prepared.set(id, task);
+      entryTasks.set(id, task);
       // Falha não fica em cache (tenta de novo no próximo play); sucesso fica.
-      task.catch(() => prepared.delete(id));
+      task.catch(() => entryTasks.delete(id));
     }
     return task;
+  }
+
+  // Episódio de um release já com o .torrent lido: o arquivo vem dos nomes do PRÓPRIO .torrent
+  // (índice real), nunca da ordem da página do site. A lista da página só serve de conferência:
+  // se o arquivo escolhido não tem o nome-base e o tamanho que o site mostrou, recusa.
+  function pickEpisode(entry, season, episode, expected) {
+    const tag = `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+    const found = findEpisode(buildEpisodeIndex(entry.files), season, episode);
+    if (found?.conflict) throw httpError(422, `Este release tem mais de um arquivo para ${tag}; escolha outra fonte.`);
+    if (!found) throw httpError(404, `Este release não traz o episódio ${tag}; escolha outra fonte.`);
+    const { file } = found;
+    if (expected) {
+      const base = (p) => path.posix.basename(String(p).replace(/\\/g, '/')).normalize('NFC');
+      const sizeOk = !Number.isFinite(expected.length) || expected.length === file.length;
+      if (!sizeOk || base(expected.path) !== base(file.path)) {
+        log.warn(`episódio ${tag}: a lista do site não confere com o .torrent; recusado`);
+        throw httpError(409, `O arquivo de ${tag} no .torrent não confere com a lista do site; recusado por segurança.`);
+      }
+    }
+    return { infoHash: entry.infoHash, fileIdx: file.index };
+  }
+
+  // Chamado pela ponte no primeiro GET de /e/<id>/<temporada>/<episódio>. Erros levam `status` HTTP.
+  function resolveEpisode(rawId, rawSeason, rawEpisode) {
+    const id = String(rawId);
+    const season = Number(rawSeason);
+    const episode = Number(rawEpisode);
+    if (!/^\d{1,9}$/.test(id)) return Promise.reject(httpError(400, 'Id de release inválido.'));
+    if (!Number.isInteger(season) || season < 0 || season > 99 || !Number.isInteger(episode) || episode < 1 || episode > 9999) {
+      return Promise.reject(httpError(400, 'Episódio inválido.'));
+    }
+    const record = seriesRows.get(id);
+    const known = record?.row;
+    const expected = record?.expected.get(`${season}:${episode}`) ?? null;
+    const local = bridge.entryByAscId?.(id);
+    // Mesma regra do filme: sem seeders ninguém envia os dados e abrir só criaria um snatch vazio.
+    if (known?.seeders === 0 && !(local && bridge.diskState?.(local.infoHash) === 'full')) {
+      return Promise.reject(httpError(503, 'Este release está sem seeders agora; escolha outra fonte.'));
+    }
+    if (local) {
+      try { return Promise.resolve(pickEpisode(local, season, episode, expected)); } catch (error) { return Promise.reject(error); }
+    }
+    // Falta de episódio num release NÃO o marca como `unsupported`: o pack serve a outros episódios.
+    return prepareEntry(id, known).then((entry) => {
+      const chosen = pickEpisode(entry, season, episode, expected);
+      bridge.entries.set(entry.infoHash, entry);
+      return chosen;
+    });
   }
 
   // ---- Consulta por IMDb com queda para os arquivos locais -------------------------------------
@@ -307,31 +377,180 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return out;
   }
 
+  // Imagens de disco e releases sem seeders vão para o fim da lista (continuam visíveis);
+  // no resto, mais seeders primeiro e, em empate, freeleech antes.
+  function byPreference(rows) {
+    const weak = (row) => (isDisc(row) ? 2 : 0) + (row.seeders === 0 ? 1 : 0);
+    return [...rows].sort((a, b) => weak(a) - weak(b)
+      || (b.seeders ?? 0) - (a.seeders ?? 0)
+      || (b.freeleech === true) - (a.freeleech === true));
+  }
+
+  // ---- Séries: quais releases têm o episódio pedido (SÓ LEITURA) ---------------------------------
+  // Não baixa .torrent, não anuncia e não toca em `records`/`unsupported`/`prepared`: uma temporada
+  // que não traz o episódio pedido não é "incompatível", só não serve a este pedido. Os arquivos
+  // vêm da lista da página do release; a POSIÇÃO ali não é o índice do torrent (o índice real só
+  // sai do .torrent, no play), por isso o candidato leva caminho e tamanho, nunca um fileIdx.
+  const filesCache = new Map(); // id -> { at, result }  (só listas completas)
+  // id -> { row, expected: Map("T:E" -> { path, length }) }: o que a listagem mostrou, para o play
+  // conferir (e para reservar o tamanho do episódio, não o do pack). Limitado: o play é raro.
+  const seriesRows = new Map();
+  const SERIES_ROWS_MAX = 500;
+
+  async function filesOf(id) {
+    const hit = filesCache.get(id);
+    if (hit && now() - hit.at < FILES_TTL_MS) return { result: hit.result, fetched: false };
+    const result = await asc.releaseFiles(id);
+    if (result.complete) {
+      filesCache.delete(id);
+      filesCache.set(id, { at: now(), result });
+      if (filesCache.size > FILES_CACHE_MAX) filesCache.delete(filesCache.keys().next().value);
+    }
+    return { result, fetched: true };
+  }
+
+  // status: 'tem' (o episódio está na lista), 'nao-visto' (lista não lida ou incompleta: segue como
+  // candidato, o play confirma). Fora: nome que contradiz, lista completa sem o episódio, ambíguo.
+  async function seriesCandidates(video) {
+    const { season, episode } = video;
+    const { rows, truncated } = await asc.searchSeries(video.imdbId);
+    const plausible = byPreference(rows.filter((row) => !nameExcludes(row.name, season, episode)));
+    const candidates = [];
+    let lookups = 0;
+    let failures = 0; // seguidas: site instável não deve gastar o orçamento inteiro esperando timeout
+    const fresh = (id) => { const hit = filesCache.get(id); return Boolean(hit) && now() - hit.at < FILES_TTL_MS; };
+    for (const row of plausible) {
+      const id = String(row.id);
+      let status = 'nao-visto';
+      let file = null;
+      const cached = fresh(id);
+      if (cached || (lookups < SERIES_FILE_LOOKUPS && failures < 2)) {
+        // A tentativa conta no orçamento mesmo que falhe: os demais viram "nao-visto" na hora.
+        if (!cached) lookups += 1;
+        try {
+          const { result } = await filesOf(id);
+          failures = 0;
+          const index = buildEpisodeIndex(result.files.map((f, i) => ({ index: i, path: f.path, length: f.size, isVideo: isVideo(f.path) })));
+          const found = findEpisode(index, season, episode);
+          if (found?.conflict) continue; // dois arquivos dizem ser o episódio: não adivinha
+          if (found) {
+            status = 'tem';
+            file = { path: found.file.path, length: found.file.length, confidence: found.file.confidence };
+          } else if (result.complete) {
+            continue; // lista inteira lida e sem o episódio: este release não serve a este pedido
+          }
+        } catch (error) {
+          failures += 1;
+          log.warn(`lista de arquivos do release #${id} não lida: ${error?.message ?? error}`);
+        }
+      }
+      candidates.push({ row, status, file, scope: scopeOfName(row.name) });
+      // Guarda o que a listagem mostrou: o play confere o arquivo escolhido com isto e reserva disco.
+      const record = seriesRows.get(id) ?? { row, expected: new Map() };
+      record.row = row;
+      if (file) record.expected.set(`${season}:${episode}`, { path: file.path, length: file.length });
+      seriesRows.delete(id);
+      seriesRows.set(id, record);
+      if (seriesRows.size > SERIES_ROWS_MAX) seriesRows.delete(seriesRows.keys().next().value);
+    }
+    return { candidates, truncated, total: rows.length };
+  }
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  // O que o release é, para a primeira linha da descrição. Só afirma o que o nome ou a lista de
+  // arquivos sustentam; sem evidência devolve null e o texto diz "Release", não "episódio"/"temporada".
+  const SERIE_COMPLETA = /complet|temporadas|(?<![a-z0-9])s\d{1,2}\s*[-–~]\s*s?\d{1,2}(?![0-9a-z])/i;
+  function kindOf(candidate) {
+    const { row, file, scope } = candidate;
+    if (scope?.episode > 0) return { icon: '📺', title: 'Episódio avulso', pack: false };
+    if (scope?.episode === null) return { icon: '📦', title: `Temporada ${scope.season} completa`, pack: true };
+    if (SERIE_COMPLETA.test(row.name)) return { icon: '📚', title: 'Série completa', pack: true };
+    if (file && Number.isFinite(row.size) && row.size >= 1.5 * file.length) return { icon: '📦', title: 'Pacote de episódios', pack: true };
+    return file ? { icon: '📺', title: 'Episódio avulso', pack: false } : null;
+  }
+
+  // Fonte de um episódio: mesma apresentação do filme, com o tipo do release e os tamanhos primeiro.
+  // O Stremio mostra cada linha da descrição inteira em uma linha só e corta perto de 26 caracteres:
+  // por isso são linhas curtas, uma ideia cada, com o tipo antes do número ("Temporada 1 completa",
+  // "Pacote: 20 GB", "Este episódio: 2 GB"). O tamanho do pacote inteiro é o que existe no tracker,
+  // mas não é o que se baixa só para assistir a um episódio: misturar os dois engana.
+  function streamFromCandidate(candidate, video) {
+    const { row, file, status } = candidate;
+    const id = String(row.id);
+    const local = bridge.entryByAscId?.(id) ?? null;
+    const kind = kindOf(candidate);
+    const total = fmtBytes(row.size);
+    const episodio = file ? fmtBytes(file.length) : null;
+    const linhas = [];
+    if (kind?.pack) {
+      linhas.push(`${kind.icon} ${kind.title}`);
+      if (total) linhas.push(`💾 Pacote: ${total}`);
+      if (episodio) linhas.push(`▶ Este episódio: ${episodio}`);
+    } else if (kind) {
+      linhas.push(`${kind.icon} ${kind.title}`);
+      if (episodio ?? total) linhas.push(`💾 ${episodio ?? total}`);
+    } else if (total) {
+      linhas.push(`💾 Release: ${total}`); // sem evidência do tipo: não chama de episódio nem de temporada
+    }
+    if (status === 'nao-visto') linhas.push('ℹ A confirmar ao tocar');
+    // `describe` mostra o tamanho do release sem rótulo: aqui ele já foi dito, rotulado.
+    const semTamanho = { ...row, size: undefined };
+    return {
+      name: titleOf(row),
+      description: `${linhas.join('\n')}\n${describe(semTamanho, local, originals.get(video.imdbId) ?? null)}`,
+      url: bridge.episodeUrl(id, video.season, video.episode),
+      behaviorHints: {
+        notWebReady: true,
+        bingeGroup: `asc-${id}`,
+        ...(file ? { filename: path.posix.basename(file.path) } : {}),
+      },
+    };
+  }
+
+  // Tamanho do episódio mostrado na listagem (bytes), para reservar disco antes do snatch.
+  function episodeSizeOf(rawId, season, episode) {
+    const n = Number(seriesRows.get(String(rawId))?.expected.get(`${season}:${episode}`)?.length);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
   // Busca por IMDb: online quando possível; senão cai para os arquivos locais completos. Devolve
   // { streams, offline } — `offline` = null (consulta feita) ou { kind, message } com o motivo.
   // Sem resultados na consulta online é ausência real (não cai para o cache). Nunca baixa .torrent.
   async function lookup(video) {
-    if (video.type !== 'movie') return { streams: [], offline: null };
+    const series = video.type === 'series';
+    if (video.type !== 'movie' && !series) return { streams: [], offline: null };
+    // Sem o ASC, filme cai para os arquivos locais completos; episódio ainda não (disponibilidade por
+    // arquivo vem depois): mostra só o aviso de indisponibilidade.
+    const fallback = () => (series ? [] : localStreams(video));
     const blocked = onlineGate();
     if (blocked) {
       if (blocked === 'session' && availability.online) markOffline('session');
-      return { streams: localStreams(video), offline: { kind: availability.kind, message: availability.message } };
+      return { streams: fallback(), offline: { kind: availability.kind, message: availability.message } };
     }
     let rows;
+    let found = null;
     try {
-      rows = await search(video.imdbId);
+      if (series) {
+        found = await seriesCandidates(video);
+        rows = found.candidates.map((candidate) => candidate.row);
+      } else {
+        rows = await search(video.imdbId);
+      }
     } catch (error) {
       markOffline(error?.kind ?? (asc.connected === false && asc.saved === false ? 'session' : 'site'));
-      return { streams: localStreams(video), offline: { kind: availability.kind, message: availability.message } };
+      return { streams: fallback(), offline: { kind: availability.kind, message: availability.message } };
     }
     if (!availability.online) log.info('fontes online voltaram a responder');
     availability = { online: true, kind: null, message: null, since: null };
-    // Imagens de disco e releases sem seeders vão para o fim da lista (continuam visíveis);
-    // no resto, mais seeders primeiro e, em empate, freeleech antes.
-    const weak = (row) => (isDisc(row) ? 2 : 0) + (row.seeders === 0 ? 1 : 0);
-    const ordered = [...rows].sort((a, b) => weak(a) - weak(b)
-      || (b.seeders ?? 0) - (a.seeders ?? 0)
-      || (b.freeleech === true) - (a.freeleech === true));
+    if (series) {
+      await loadOriginal(video.imdbId, rows);
+      // O filtro por episódio já rodou sobre TODOS os releases; só agora corta nas opções.
+      const streams = found.candidates.slice(0, MAX_OPTIONS).map((candidate) => streamFromCandidate(candidate, video));
+      console.log(`[asc] ${video.imdbId} S${pad2(video.season)}E${pad2(video.episode)}: ${found.total} release(s), ${streams.length} fonte(s)${found.truncated ? ', busca truncada' : ''}, nenhum .torrent baixado`);
+      return { streams, offline: null };
+    }
+    const ordered = byPreference(rows);
     await loadOriginal(video.imdbId, rows);
     const top = ordered.slice(0, MAX_OPTIONS);
     const streams = top.map((row) => streamFromRow(row, video.imdbId)).filter(Boolean);
@@ -349,6 +568,8 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
 
   return {
     sizeOf,
+    episodeSizeOf,
+    resolveEpisode,
     async catalog(query) { return (await search(query)).map(meta); },
     // As linhas lembradas descrevem o release (não dependem do filtro) e a query de cada uma
     // permite rebuscar depois de uma troca; por isso não são apagadas. Com o filtro ligado, só a
@@ -361,6 +582,7 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     streamsFor,
     resolve,
     lookup,
+    seriesCandidates,
     availability: () => ({ ...availability }),
     // Compatível com quem só quer a lista: a indisponibilidade fica em `lookup`/`availability`.
     async findStreams(video) { return (await lookup(video)).streams; },

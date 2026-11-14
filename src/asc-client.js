@@ -4,6 +4,10 @@ const { CookieJar } = require('tough-cookie');
 const { inactivityNotice } = require('./safety');
 const log = require('./logger').logger.child('asc');
 
+const FILM_CATEGORY = 4;
+const SERIES_CATEGORIES = [3, 11]; // Series e Anime (com os filhos)
+const SEARCH_PAGE_SIZE = 96;
+
 // `kind` (opcional) classifica a falha para quem consulta o site: 'session' (sessão ausente,
 // expirada ou recusada), 'network' (sem conexão com o site) ou 'site' (o site respondeu com erro).
 class AscError extends Error {
@@ -196,17 +200,84 @@ class AscClient {
     return this.status();
   }); }
 
+  // Uma página de resultados de uma categoria. Só roda dentro de `exclusive` (a fila da sessão):
+  // chamar `search` de dentro de outro método exclusivo travaria esperando a si mesmo.
+  async searchPage(query, category, page) {
+    const params = new URLSearchParams({ q: query.slice(0, 200), category: String(category), per_page: String(SEARCH_PAGE_SIZE), sort: 'seeders', direction: 'desc' });
+    if (page > 1) params.set('page', String(page));
+    if (this.onlyFreeleech) params.set('freeleech', '1');
+    const response = await this.request('/torrents?' + params);
+    const rows = pageProps(await response.text())?.torrents?.data;
+    if (!Array.isArray(rows)) throw new AscError('Formato da busca ASC mudou; é necessário revisar a integração.');
+    this.connected = true; this.message = 'Conta conectada ao ASC.';
+    return {
+      full: rows.length >= SEARCH_PAGE_SIZE, // página cheia: pode haver mais
+      rows: rows.filter(row => Number.isSafeInteger(row.id) && row.id > 0 && typeof row.name === 'string'
+        && (!this.onlyFreeleech || row.freeleech === true)),
+    };
+  }
+
   search(query = '') {
     return this.exclusive(async () => {
-      const params = new URLSearchParams({ q: query.slice(0, 200), category: '4', per_page: '96', sort: 'seeders', direction: 'desc' });
-      if (this.onlyFreeleech) params.set('freeleech', '1');
-      const response = await this.request('/torrents?' + params);
-      const rows = pageProps(await response.text())?.torrents?.data;
-      if (!Array.isArray(rows)) throw new AscError('Formato da busca ASC mudou; é necessário revisar a integração.');
-      this.connected = true; this.message = 'Conta conectada ao ASC.';
+      const { rows } = await this.searchPage(query, FILM_CATEGORY, 1);
       await this.save();
-      return rows.filter(row => Number.isSafeInteger(row.id) && row.id > 0 && typeof row.name === 'string'
-        && (!this.onlyFreeleech || row.freeleech === true));
+      return rows;
+    });
+  }
+
+  // Releases de série de um IMDb: Series (3) e Anime (11, com filhos). Categoria não identifica o
+  // conteúdo (há episódio de anime em outras e live action junto), então junta as duas. Segue as
+  // páginas enquanto vierem cheias, até `maxPages` por categoria, porque parar na primeira pode
+  // esconder o episódio procurado (117 releases de um IMDb de anime = 2 páginas de 96).
+  // `truncated`: havia mais páginas além do limite; quem chama não pode tratar a lista como completa.
+  searchSeries(imdbId, { maxPages = 3 } = {}) {
+    return this.exclusive(async () => {
+      if (!/^tt\d{1,10}$/.test(String(imdbId))) throw new AscError('IMDb inválido.');
+      const seen = new Map();
+      let truncated = false;
+      for (const category of SERIES_CATEGORIES) {
+        for (let page = 1; page <= maxPages; page += 1) {
+          const result = await this.searchPage(imdbId, category, page);
+          for (const row of result.rows) if (!seen.has(row.id)) seen.set(row.id, row);
+          if (!result.full) break;
+          if (page === maxPages) truncated = true;
+        }
+      }
+      await this.save();
+      return { rows: [...seen.values()], truncated };
+    });
+  }
+
+  // Lista de arquivos da página do release, SEM baixar o .torrent (listar não cria snatch).
+  // Os caminhos vêm relativos à raiz do release (`filesRoot` é à parte). `complete: false` quando a
+  // lista não pôde ser lida inteira (página paginada que o site não devolveu): quem chama não pode
+  // concluir que um episódio NÃO está no release, só que não foi visto.
+  releaseFiles(id, { maxPages = 5 } = {}) {
+    return this.exclusive(async () => {
+      if (!/^\d+$/.test(String(id))) throw new AscError('Torrent inválido.');
+      const files = [];
+      let total = null;
+      let complete = false;
+      for (let page = 1; page <= maxPages; page += 1) {
+        const response = await this.request(`/torrents/${id}${page > 1 ? `?filesPage=${page}` : ''}`);
+        const props = pageProps(await response.text());
+        if (!props || typeof props !== 'object' || !('torrent' in props)) {
+          throw new AscError('Formato da página do torrent mudou; é necessário revisar a integração.');
+        }
+        const data = props.files?.data;
+        if (!Array.isArray(data)) break; // sem lista de arquivos na página: não dá para afirmar nada
+        const pageFiles = data
+          .filter((item) => item && typeof item.path === 'string' && Number.isFinite(item.size))
+          .map((item) => ({ path: item.path, size: item.size }));
+        // O site ignorou o número da página e repetiu a primeira: não é conteúdo novo.
+        if (page > 1 && pageFiles[0]?.path === files[0]?.path) break;
+        files.push(...pageFiles);
+        total = Number.isFinite(props.filesTotal) ? props.filesTotal : (Number.isFinite(props.torrent?.numFiles) ? props.torrent.numFiles : null);
+        if (total !== null && files.length >= total) { complete = true; break; }
+        if (total === null && pageFiles.length === 0) break;
+      }
+      this.connected = true;
+      return { files, total, complete };
     });
   }
 
