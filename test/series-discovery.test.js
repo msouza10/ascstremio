@@ -185,9 +185,3 @@ test('seriesCandidates: repassa o aviso de truncamento da busca', async () => {
   assert.equal(result.truncated, true);
   assert.equal(result.total, 1);
 });
-
-test('lookup de série continua sem oferecer fontes até o play por episódio existir', async () => {
-  const { provider, calls } = providerWith({ rows: [row(1, 'Show S01')], files: { 1: lista('Show.S01E01.mkv') } });
-  assert.deepEqual(await provider.lookup(video(1, 1)), { streams: [], offline: null });
-  assert.equal(calls.searches, 0);
-});

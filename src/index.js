@@ -239,6 +239,8 @@ async function main() {
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).
   bridge.ascResolver = (ascId) => remote.resolve(ascId);
   bridge.ascSizeHint = (ascId) => remote.sizeOf(ascId);
+  bridge.ascEpisodeResolver = (ascId, season, episode) => remote.resolveEpisode(ascId, season, episode);
+  bridge.ascEpisodeSizeHint = (ascId, season, episode) => remote.episodeSizeOf(ascId, season, episode);
   // Catálogo "ASC — status" dentro do Stremio (STATUS_CATALOG=off desliga).
   const addonBase = net.urls.addon ?? `http://127.0.0.1:${addonPort}`;
   const status = v.STATUS_CATALOG === 'off' ? null : {

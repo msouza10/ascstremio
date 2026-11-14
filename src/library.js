@@ -39,6 +39,20 @@ function mainVideo(files) {
   return first.length >= 0.7 * total && first.length >= 4 * second.length ? first : null;
 }
 
+// Pack = vários vídeos sem um que domine (temporada, série completa, coleção), ou vários episódios
+// identificados. Filme com extras pequenos NÃO é pack. Quem decide o que reservar de disco e se o
+// torrent pode ser completado sozinho: num pack o usuário assiste a um episódio, não ao torrent todo.
+const packCache = new WeakMap(); // files -> boolean (a lista de um entry não muda)
+function isPackEntry(entry) {
+  const files = entry?.files;
+  if (!Array.isArray(files)) return false;
+  if (!packCache.has(files)) {
+    const videos = files.filter((f) => f.isVideo);
+    packCache.set(files, videos.length > 1 && (!mainVideo(files) || buildEpisodeIndex(files).episodes.length > 1));
+  }
+  return packCache.get(files);
+}
+
 // Nome legível para a lista do Stremio, a partir do nome do release.
 function displayName(entry) {
   const base = (mainVideo(entry.files) ?? entry.files.find((f) => f.isVideo))?.path ?? entry.name;
@@ -130,4 +144,4 @@ async function loadLibrary(dir) {
   return entries;
 }
 
-module.exports = { loadLibrary, describeEntry, readTorrent, isVideo, mainVideo };
+module.exports = { loadLibrary, describeEntry, readTorrent, isVideo, mainVideo, isPackEntry };
