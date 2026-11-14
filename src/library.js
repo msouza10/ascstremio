@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { announceBaseOf } = require('./passkey');
+const { buildEpisodeIndex } = require('./episodes');
 
 const VIDEO_EXT = new Set([
   '.mkv', '.mp4', '.m4v', '.avi', '.mov', '.ts', '.m2ts', '.webm', '.wmv', '.mpg', '.mpeg',
@@ -86,12 +87,17 @@ function describeEntry(entry) {
   const allVideos = (entry?.files ?? []).filter((f) => f.isVideo);
   if (allVideos.length === 0) return null;
   const main = mainVideo(entry.files);
+  const episodes = buildEpisodeIndex(entry.files);
+  // Série = algum vídeo com SxxExx seguro, mesmo que seja um só (episódio avulso não vira filme
+  // por ter um único vídeo). Sem identificação, vale a heurística antiga: sem filme principal, pack.
+  const kind = episodes.episodes.length > 0 || !main ? 'series' : 'movie';
   return {
     ...entry,
     id: `asc:${entry.infoHash}`,
     title: displayName(entry),
-    videos: main ? [main] : allVideos,
-    kind: main ? 'movie' : 'series',
+    videos: kind === 'series' ? allVideos : [main],
+    kind,
+    episodes,
   };
 }
 
