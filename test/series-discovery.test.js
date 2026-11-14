@@ -99,7 +99,7 @@ function providerWith({ rows, files = {}, truncated = false, fail = [] }) {
     async searchSeries() { calls.searches += 1; return { rows, truncated }; },
     async releaseFiles(id) {
       calls.files.push(String(id));
-      if (fail.includes(id)) throw new Error('site fora');
+      if (fail.map(String).includes(String(id))) throw new Error('site fora');
       return files[id] ?? { files: [], total: null, complete: false };
     },
     async download() { calls.downloads += 1; throw new Error('listar não baixa .torrent'); },
@@ -184,4 +184,22 @@ test('seriesCandidates: repassa o aviso de truncamento da busca', async () => {
   const result = await provider.seriesCandidates(video(1, 1));
   assert.equal(result.truncated, true);
   assert.equal(result.total, 1);
+});
+
+test('seriesCandidates: leituras que falham contam no orçamento e o site instável não é insistido', async () => {
+  const rows = Array.from({ length: 12 }, (_, i) => row(i + 1, 'Show S01', 100 - i));
+  const { provider, calls } = providerWith({ rows, files: {}, fail: rows.map((r) => r.id) });
+  const { candidates } = await provider.seriesCandidates(video(1, 1));
+  assert.equal(calls.files.length, 2, 'depois de 2 falhas seguidas para de ler');
+  assert.equal(candidates.length, 12, 'todos seguem como candidatos a confirmar');
+  assert.ok(candidates.every((c) => c.status === 'nao-visto'));
+});
+
+test('seriesCandidates: falhas alternadas ainda respeitam o limite de 8 tentativas', async () => {
+  const rows = Array.from({ length: 12 }, (_, i) => row(i + 1, 'Show S01', 100 - i));
+  const files = Object.fromEntries(rows.map((r) => [r.id, lista('Show.S01E09.mkv')]));
+  const { provider, calls } = providerWith({ rows, files, fail: [1, 3, 5, 7, 9, 11] });
+  const { candidates } = await provider.seriesCandidates(video(1, 1));
+  assert.equal(calls.files.length, 8, 'as que falham gastam o orçamento como as que funcionam');
+  assert.equal(candidates.length, 12 - 4, 'os 4 lidos sem o episódio saíram; as falhas e os não lidos ficam por confirmar');
 });

@@ -163,8 +163,9 @@ class Bridge {
     this.ascSizeHint = ascSizeHint;
     this.ascEpisodeResolver = ascEpisodeResolver;
     this.ascEpisodeSizeHint = ascEpisodeSizeHint;
-    // Pack: infoHash -> índices dos arquivos que o play já admitiu no orçamento de disco. Só em
-    // memória: depois de um reinício nada fica "prometido" até o usuário tocar de novo.
+    // Pack: infoHash -> Map(índice do arquivo -> bytes prometidos na admissão). Só vale enquanto o
+    // torrent está no motor: se foi destruído (limpeza, seed, retenção) ou nunca abriu, a admissão
+    // é refeita. Só em memória: depois de um reinício nada fica "prometido".
     this.packFiles = new Map();
     this.streams = new Map(); // infoHash -> streams HTTP abertos agora
     this.lastStreamEnd = new Map(); // infoHash -> ms do último stream encerrado
@@ -544,7 +545,7 @@ class Bridge {
     // conclusão do torrent pedida, vale o torrent todo.
     if (isPackEntry(this.entries.get(holder)) && !this.completing.has(holder)) {
       let rest = 0;
-      for (const idx of this.packFiles.get(holder) ?? []) {
+      for (const idx of this.packFiles.get(holder)?.keys() ?? []) {
         const f = t.files?.[idx];
         if (f?.length > 0) rest += Math.max(0, f.length - (f.downloaded ?? 0));
       }
@@ -584,20 +585,25 @@ class Bridge {
     const perFile = fileIdx !== null && isPackEntry(this.entries.get(infoHash));
     // Já no motor (ou abrindo): a admissão foi feita na abertura; novos Range/seek não pagam de novo.
     const open = this.loading.has(infoHash) || (this.client?.torrents ?? []).some((t) => t.infoHash === infoHash);
+    // Fora do motor, o que foi admitido antes não vale mais (torrent destruído ou que falhou ao abrir).
+    if (perFile && !open) this.packFiles.delete(infoHash);
     if (perFile ? this.packFiles.get(infoHash)?.has(fileIdx) : open) return;
     // Só dispensa quem o cofre registra como CONCLUÍDO (e com os arquivos inteiros): o tamanho aparente
     // sozinho engana, pois um arquivo esparso de streaming que o player levou até o fim parece cheio.
     if (this.vault.get(infoHash)?.completedAt && this.diskState(infoHash) === 'full') return;
-    let need = this.neededBytes(infoHash, perFile ? fileIdx : null);
+    const own = this.neededBytes(infoHash, perFile ? fileIdx : null);
+    let need = own;
+    const admitted = perFile ? this.packFiles.get(infoHash) : null;
     if (perFile) {
       // O DiskGuard não conta o próprio `holder` entre os comprometidos: o que os OUTROS episódios
       // admitidos deste pack ainda vão gravar entra aqui, senão dois episódios cabem "cada um" e
-      // juntos estouram o disco.
-      const pending = this.liveRemaining(infoHash);
-      if (Number.isFinite(pending)) need += pending;
+      // juntos estouram o disco. Com o torrent ainda abrindo não há progresso (`liveRemaining` é
+      // indefinido): vale o que foi prometido em cada admissão.
+      const live = this.liveRemaining(infoHash);
+      need += Number.isFinite(live) ? live : [...(admitted?.values() ?? [])].reduce((sum, bytes) => sum + bytes, 0);
     }
     this.disk.require({ holder: infoHash, need, live: this.liveRemaining });
-    if (perFile) this.packFiles.set(infoHash, (this.packFiles.get(infoHash) ?? new Set()).add(fileIdx));
+    if (perFile) this.packFiles.set(infoHash, (admitted ?? new Map()).set(fileIdx, own));
   }
 
   // Conclusão em segundo plano: depois que o usuário para de assistir, baixa o
@@ -1107,7 +1113,11 @@ class Bridge {
     };
     const timeoutMs = seedResume ? 5 * 60_000 : 30_000;
     checkMaintenance();
-    if (this.loading.has(infoHash)) return this.loading.get(infoHash);
+    if (this.loading.has(infoHash)) {
+      // Outro episódio de um pack que ainda está abrindo também paga a própria reserva.
+      this.admitTorrent(infoHash, fileIdx);
+      return this.loading.get(infoHash);
+    }
 
     const already = await this.client.get(infoHash);
     checkMaintenance();

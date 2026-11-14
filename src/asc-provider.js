@@ -417,14 +417,19 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     const plausible = byPreference(rows.filter((row) => !nameExcludes(row.name, season, episode)));
     const candidates = [];
     let lookups = 0;
+    let failures = 0; // seguidas: site instável não deve gastar o orçamento inteiro esperando timeout
+    const fresh = (id) => { const hit = filesCache.get(id); return Boolean(hit) && now() - hit.at < FILES_TTL_MS; };
     for (const row of plausible) {
       const id = String(row.id);
       let status = 'nao-visto';
       let file = null;
-      if (filesCache.has(id) || lookups < SERIES_FILE_LOOKUPS) {
+      const cached = fresh(id);
+      if (cached || (lookups < SERIES_FILE_LOOKUPS && failures < 2)) {
+        // A tentativa conta no orçamento mesmo que falhe: os demais viram "nao-visto" na hora.
+        if (!cached) lookups += 1;
         try {
-          const { result, fetched } = await filesOf(id);
-          if (fetched) lookups += 1;
+          const { result } = await filesOf(id);
+          failures = 0;
           const index = buildEpisodeIndex(result.files.map((f, i) => ({ index: i, path: f.path, length: f.size, isVideo: isVideo(f.path) })));
           const found = findEpisode(index, season, episode);
           if (found?.conflict) continue; // dois arquivos dizem ser o episódio: não adivinha
@@ -435,6 +440,7 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
             continue; // lista inteira lida e sem o episódio: este release não serve a este pedido
           }
         } catch (error) {
+          failures += 1;
           log.warn(`lista de arquivos do release #${id} não lida: ${error?.message ?? error}`);
         }
       }

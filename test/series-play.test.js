@@ -336,6 +336,35 @@ test('pack já aberto: outro episódio paga a própria reserva; o mesmo arquivo 
   assert.equal(b.packFiles.get(HASH).has(1), false, 'recusado não fica registrado');
 });
 
+test('pack: a admissão não sobra depois que o torrent sai do motor (limpeza, seed, retenção)', () => {
+  const b = ponte({ freeSpace: () => 20 * GB });
+  b.entries.set(HASH, PACK);
+  b.admitTorrent(HASH, 1); // cabe e fica registrado
+  assert.ok(b.packFiles.get(HASH).has(1));
+  // o torrent nunca ficou (ou foi destruído) e o disco encheu: tocar de novo tem que rechecar
+  b.disk.measureFn = () => 1 * GB;
+  assert.throws(() => b.admitTorrent(HASH, 1), (e) => e instanceof DiskRefusal && e.status === 507);
+  assert.equal(b.packFiles.has(HASH), false, 'a admissão velha foi descartada');
+});
+
+test('pack ainda abrindo: o segundo episódio soma o que o primeiro prometeu', () => {
+  const b = ponte({ freeSpace: () => 12 * GB });
+  b.entries.set(HASH, PACK);
+  b.admitTorrent(HASH, 0); // 10 GB + folga: cabe nos 12 GB
+  b.loading.set(HASH, Promise.resolve()); // abrindo: sem progresso, liveRemaining é indefinido
+  assert.equal(b.liveRemaining(HASH), undefined);
+  assert.throws(() => b.admitTorrent(HASH, 1), (e) => e instanceof DiskRefusal && e.status === 507, '20 GB prometidos não cabem em 12 GB');
+  assert.equal(b.packFiles.get(HASH).has(1), false, 'recusado não fica registrado');
+});
+
+test('getTorrent com o pack abrindo também admite o outro episódio', async () => {
+  const b = ponte({ freeSpace: () => 12 * GB });
+  b.entries.set(HASH, PACK);
+  b.admitTorrent(HASH, 0);
+  b.loading.set(HASH, Promise.resolve({}));
+  await assert.rejects(b.getTorrent(HASH, { fileIdx: 1 }), (e) => e instanceof DiskRefusal);
+});
+
 test('pack: liveRemaining conta só o que os arquivos admitidos ainda vão gravar', () => {
   const b = ponte();
   b.entries.set(HASH, PACK);
@@ -343,7 +372,7 @@ test('pack: liveRemaining conta só o que os arquivos admitidos ainda vão grava
   files[1].downloaded = 4 * GB;
   b.client.torrents.push({ infoHash: HASH, ready: true, length: 30 * GB, progress: 0.13, files });
   assert.equal(b.liveRemaining(HASH), 0, 'nada admitido ainda: nada prometido');
-  b.packFiles.set(HASH, new Set([1]));
+  b.packFiles.set(HASH, new Map([[1, 0]]));
   assert.equal(b.liveRemaining(HASH), 6 * GB);
   b.completing.add(HASH);
   assert.equal(b.liveRemaining(HASH), Math.round(30 * GB * (1 - 0.13)), 'conclusão pedida: vale o torrent todo');
