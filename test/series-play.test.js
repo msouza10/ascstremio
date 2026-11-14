@@ -67,8 +67,26 @@ test('lookup de série oferece /e/<id>/<T>/<E> com o tamanho do episódio e o gr
   assert.equal(streams[0].url, 'http://x/e/5/1/2');
   assert.equal(streams[0].behaviorHints.bingeGroup, 'asc-5');
   assert.equal(streams[0].behaviorHints.filename, 'Show.S01E02.mkv');
-  assert.match(streams[0].description, /S01E02 · 💾 2 GB o episódio/);
+  assert.match(streams[0].description, /S01E02 · 💾 este episódio: 2 GB/);
+  assert.match(streams[0].description, /📦 Temporada 1 completa: 10 GB \(tamanho do pacote inteiro, não só deste episódio\)/);
+  assert.equal(streams[0].description.match(/💾/g).length, 1, 'o tamanho do release não aparece de novo, sem rótulo');
   assert.equal(calls.downloads.length, 0, 'listar não baixa .torrent');
+});
+
+test('lookup de série: episódio avulso não ganha rótulo de pacote; pack sem escopo no nome ganha', async (t) => {
+  const { provider } = await provedor(t, {
+    rows: [{ ...row(1, 'Show S02E03 1080p'), size: 1.5 * GB }, row(2, 'Show Completo 1080p')],
+    pages: {
+      1: { files: [{ path: 'Show.S02E03.mkv', size: 1.5 * GB }], total: 1, complete: true },
+      2: { files: [{ path: 'T1/Show.S02E03.mkv', size: GB }, { path: 'T1/Show.S02E04.mkv', size: GB }], total: 2, complete: true },
+    },
+  });
+  const { streams } = await provider.lookup(video(2, 3));
+  const por = (id) => streams.find((s) => s.url.includes(`/e/${id}/`)).description;
+  assert.doesNotMatch(por(1), /📦/);
+  assert.match(por(1), /💾 1,5 GB/);
+  assert.match(por(2), /📦 Pacote completo: 10 GB \(tamanho do pacote inteiro, não só deste episódio\)/);
+  assert.match(por(2), /este episódio: 1 GB/);
 });
 
 test('lookup de série: quem não tem o episódio não ocupa vaga das 12 opções', async (t) => {

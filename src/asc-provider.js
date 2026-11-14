@@ -452,19 +452,34 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
 
   const pad2 = (n) => String(n).padStart(2, '0');
 
-  // Fonte de um episódio: mesma apresentação do filme, com o episódio e o tamanho DELE na descrição
-  // (o tamanho do release, de um pack, não diz o que vai ser baixado).
+  // O release é um pacote (temporada ou pack) e não o episódio avulso? Pelo nome ("S01" sem episódio)
+  // ou, com a lista de arquivos lida, pelo release ser bem maior que o episódio.
+  function packLabel(candidate) {
+    const { row, file, scope } = candidate;
+    if (scope?.episode === null) return `Temporada ${scope.season} completa`;
+    if (scope?.episode > 0) return null; // o nome diz que é um episódio só
+    return file && Number.isFinite(row.size) && row.size >= 1.5 * file.length ? 'Pacote completo' : null;
+  }
+
+  // Fonte de um episódio: mesma apresentação do filme. O tamanho do EPISÓDIO e o do PACOTE aparecem
+  // separados e rotulados: o do release inteiro (temporada/pack) é o que existe no tracker, mas não
+  // é o que se baixa só para assistir a um episódio, e misturar os dois engana.
   function streamFromCandidate(candidate, video) {
     const { row, file, status } = candidate;
     const id = String(row.id);
     const local = bridge.entryByAscId?.(id) ?? null;
+    const pack = packLabel(candidate);
+    const total = fmtBytes(row.size);
     const episodio = [
-      `📺 S${pad2(video.season)}E${pad2(video.episode)}${file ? ` · 💾 ${fmtBytes(file.length)} o episódio` : ''}`,
+      `📺 S${pad2(video.season)}E${pad2(video.episode)}${file ? ` · 💾 este episódio: ${fmtBytes(file.length)}` : ''}`,
+      pack && total ? `📦 ${pack}: ${total} (tamanho do pacote inteiro, não só deste episódio)` : null,
       status === 'nao-visto' ? 'ℹ Episódio não confirmado na lista do site; conferido ao tocar' : null,
     ].filter(Boolean).join('\n');
+    // `describe` mostra o tamanho do release sem rótulo: aqui ele já foi dito acima, rotulado.
+    const semTamanho = { ...row, size: undefined };
     return {
       name: titleOf(row),
-      description: `${episodio}\n${describe(row, local, originals.get(video.imdbId) ?? null)}`,
+      description: `${episodio}\n${describe(total && !pack ? row : semTamanho, local, originals.get(video.imdbId) ?? null)}`,
       url: bridge.episodeUrl(id, video.season, video.episode),
       behaviorHints: {
         notWebReady: true,
