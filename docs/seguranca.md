@@ -134,7 +134,7 @@ O logger redige segredos conhecidos e padrões sensíveis antes de gravar, mas r
 
 A licença do código ([MIT](../LICENSE)) não dá acesso ao ASC nem direitos sobre conteúdo de terceiros.
 
-`scripts/check-no-secrets.sh` verifica arquivos proibidos e padrões de credenciais na árvore/pacote. Ele não comprova ausência de segredos em todo o histórico; essa auditoria ainda não foi feita. A documentação pública usa uma lista explícita de arquivos e mantém notas privadas fora dos pacotes.
+`scripts/check-no-secrets.sh` verifica arquivos proibidos e padrões de credenciais na árvore/pacote; ele não percorre o histórico completo. As auditorias anteriores de histórico e artefatos, incluindo a imagem publicada no GHCR da versão 0.2.0, estão registradas na [issue #11](https://github.com/msouza10/ascstremio/issues/11). Seus resultados valem para o escopo registrado, sem garantia absoluta para versões posteriores. Use também `scripts/audit-secrets.sh` conforme o artefato e preserve as verificações da esteira. A documentação pública usa uma lista explícita de arquivos e mantém notas privadas fora dos pacotes.
 
 ## Relatar um problema
 

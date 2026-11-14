@@ -33,6 +33,7 @@ docs/*
 tools/
 *.md
 !README.md
+!LEGAL.md
 !CHANGELOG.md
 !AGENTS.md
 !.github/*.md
@@ -46,6 +47,7 @@ tools/
 !docs/manutencao.md
 !docs/arquitetura.md
 !docs/desenvolvimento.md
+!docs/conformidade-juridica.md
 *.png
 *.jpg
 *.jpeg

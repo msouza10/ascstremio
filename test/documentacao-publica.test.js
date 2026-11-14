@@ -16,6 +16,8 @@ test('publicação aceita guias explícitos e barra notas privadas inclusive no 
   const app = path.join(temp, 'pacote');
   fs.mkdirSync(path.join(app, 'docs'), { recursive: true });
   fs.writeFileSync(path.join(app, 'README.md'), '# Exemplo público\n');
+  fs.writeFileSync(path.join(app, 'LEGAL.md'), '# Avisos legais\n');
+  fs.writeFileSync(path.join(app, 'docs', 'conformidade-juridica.md'), '# Matriz pública\n');
   fs.writeFileSync(path.join(app, 'docs', 'uso.md'), '# Uso\n');
   const scan = (target = app) => spawnSync('bash', [barrier, target], { encoding: 'utf8' });
   const publicResult = scan();
@@ -54,4 +56,21 @@ test('a licença MIT está versionada e entra no pacote, no instalador e na imag
   for (const arquivo of [['scripts', 'build-release.sh'], ['windows', 'build.sh'], ['Dockerfile']]) {
     assert.match(ler(...arquivo), /\bLICENSE\b/, `${arquivo.join('/')} não copia o LICENSE`);
   }
+});
+
+test('avisos legais acompanham os caminhos de distribuição e ficam acessíveis na documentação', () => {
+  const raiz = path.resolve(__dirname, '..');
+  const ler = (...partes) => fs.readFileSync(path.join(raiz, ...partes), 'utf8');
+  const documentos = ler('scripts', 'documentation-files.txt').trim().split(/\r?\n/);
+  assert.ok(documentos.includes('LEGAL.md'));
+  assert.ok(documentos.includes('docs/conformidade-juridica.md'));
+  for (const documento of documentos) assert.ok(fs.statSync(path.join(raiz, documento)).isFile(), documento);
+  for (const arquivo of [['scripts', 'build-release.sh'], ['windows', 'build.sh']]) {
+    assert.match(ler(...arquivo), /done < scripts\/documentation-files\.txt/, `${arquivo.join('/')} não usa a lista pública`);
+  }
+  assert.match(ler('Dockerfile'), /^COPY .*\bLEGAL\.md\b.*\.\/$/m);
+  assert.match(ler('README.md'), /\]\(LEGAL\.md\)/);
+  assert.match(ler('docs', 'README.md'), /\]\(\.\.\/LEGAL\.md\)/);
+  assert.match(ler('.gitignore'), /^!LEGAL\.md$/m);
+  assert.match(ler('.gitignore'), /^!docs\/conformidade-juridica\.md$/m);
 });
