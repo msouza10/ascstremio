@@ -8,8 +8,9 @@ const { SeedVault } = require('../src/seedvault');
 const { tmpdir } = require('./tmp-helper');
 
 const HASH = 'a'.repeat(40);
-const PL = 8;
-const DADOS = [Buffer.alloc(16, 1), Buffer.alloc(16, 2), Buffer.alloc(16, 3)]; // peças alinhadas: sem borda
+// Arquivos de 16 KiB: no NTFS, arquivo minúsculo é gravado na MFT e não aloca blocos (estado seria 'ausente').
+const PL = 8192;
+const DADOS = [Buffer.alloc(16384, 1), Buffer.alloc(16384, 2), Buffer.alloc(16384, 3)]; // peças alinhadas: sem borda
 const tudo = Buffer.concat(DADOS);
 const pieces = [];
 for (let o = 0; o < tudo.length; o += PL) pieces.push(createHash('sha1').update(tudo.subarray(o, o + PL)).digest('hex'));
@@ -37,7 +38,7 @@ test('sem verificar, um arquivo cheio em disco é só "provável"', () => {
 });
 
 test('verificar por peças promove a "completo" só o que confere, e o esparso continua sem prova', async () => {
-  const s = cenario({ conteudos: [DADOS[0], Buffer.alloc(16, 0), DADOS[2]] });
+  const s = cenario({ conteudos: [DADOS[0], Buffer.alloc(16384, 0), DADOS[2]] });
   const r = await s.b.verifyEpisodes(HASH);
   assert.deepEqual(s.eps().map((e) => [e.state, e.verified, e.pieceCheck]), [['completo', true, 'ok'], ['provavel', false, 'falhou'], ['completo', true, 'ok']]);
   assert.deepEqual({ ok: r.ok, failed: r.failed }, { ok: 2, failed: 1 });
@@ -49,7 +50,7 @@ test('a prova vale só para o arquivo como estava: mudou depois, volta a "prová
   await s.b.verifyEpisodes(HASH);
   assert.equal(s.eps()[0].state, 'completo');
   const f = path.join(s.store, s.lib.files[0].path);
-  fs.writeFileSync(f, Buffer.alloc(16, 9));
+  fs.writeFileSync(f, Buffer.alloc(16384, 9));
   const depois = new Date(Date.now() + 5000);
   fs.utimesSync(f, depois, depois);
   assert.deepEqual(s.eps().map((e) => e.state), ['provavel', 'completo', 'completo']);
@@ -87,4 +88,13 @@ test('episódio excluído ou ausente não é lido', async () => {
   const r = await s.b.verifyEpisodes(HASH);
   assert.deepEqual({ ok: r.ok, failed: r.failed }, { ok: 2, failed: 0 }, 'ausente não é falha: não há o que verificar');
   assert.equal(s.eps()[1].state, 'ausente');
+});
+
+test('falta de descritores na verificação vira erro claro (503), sem marcar episódios como sem prova', async (t) => {
+  const s = cenario();
+  const emfile = Object.assign(new Error('too many open files'), { code: 'EMFILE' });
+  t.mock.method(fs.promises, 'open', async () => { throw emfile; });
+  await assert.rejects(s.b.verifyEpisodes(HASH), (e) => e.status === 503 && e.expose === true);
+  t.mock.restoreAll();
+  assert.deepEqual(s.eps().map((e) => e.pieceCheck), [null, null, null], 'nada foi gravado como falha');
 });

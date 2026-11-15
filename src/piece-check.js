@@ -21,7 +21,9 @@ function coherent(meta) {
 }
 
 // Devolve Map(índice -> true|false) para cada índice pedido. `onRead({ piece })` é só para teste/medida.
-async function verifyFilesByPieces({ meta, storeDir, fileIdxs, onRead = null }) {
+// `maxOpen`: teto de descritores abertos ao mesmo tempo (pack com centenas de arquivos não pode
+// esgotar o processo). `openFn` é injetável para teste.
+async function verifyFilesByPieces({ meta, storeDir, fileIdxs, onRead = null, maxOpen = 16, openFn = fs.promises.open }) {
   const result = new Map();
   const wanted = [...new Set(fileIdxs ?? [])];
   if (!coherent(meta)) { for (const i of wanted) result.set(i, false); return result; }
@@ -34,22 +36,42 @@ async function verifyFilesByPieces({ meta, storeDir, fileIdxs, onRead = null }) 
   let total = 0;
   for (const f of meta.files) { starts.push(total); total += f.length; }
 
-  const handles = new Map(); // índice -> FileHandle | null (indisponível)
+  const handles = new Map(); // índice -> FileHandle | null (indisponível); ordem = uso mais antigo primeiro
   const pieceOk = new Map(); // peça -> boolean (cada peça é lida uma vez)
 
+  // Fecha o descritor menos recente quando o teto é atingido. Cada leitura é aguardada antes da
+  // próxima abertura, então nunca fecha um descritor em uso.
+  async function makeRoom() {
+    let abertos = [...handles].filter(([, h]) => h);
+    while (abertos.length >= maxOpen) {
+      const [oldest, h] = abertos.shift();
+      handles.delete(oldest);
+      await h.close().catch(() => {});
+    }
+  }
+
   async function handleOf(i) {
-    if (handles.has(i)) return handles.get(i);
+    if (handles.has(i)) {
+      const cached = handles.get(i);
+      if (cached) { handles.delete(i); handles.set(i, cached); } // mais recente
+      return cached;
+    }
     let handle = null;
     try {
       const info = files.inspectFile(root, meta.files[i].path);
       if (info.ok && info.exists) {
+        await makeRoom();
         const full = path.join(root, files.safeRelative(meta.files[i].path));
-        const opened = await fs.promises.open(full, READ_FLAGS);
+        const opened = await openFn(full, READ_FLAGS);
         // O descritor aberto também precisa ser um arquivo comum do tamanho esperado ou maior.
         const st = await opened.stat();
         if (st.isFile() && st.size >= meta.files[i].length) handle = opened; else await opened.close();
       }
-    } catch { handle = null; }
+    } catch (err) {
+      // Falta de descritores não é "arquivo sem prova": propaga, senão packs íntegros viram falsos negativos.
+      if (err?.code === 'EMFILE' || err?.code === 'ENFILE') throw err;
+      handle = null;
+    }
     handles.set(i, handle);
     return handle;
   }
@@ -136,7 +158,11 @@ async function verifyPack(bridge, infoHash) {
       .filter((s) => s.isVideo && s.state === 'provavel').map((s) => s.index);
     // O carimbo é tirado ANTES da leitura: mudança durante a verificação invalida a prova.
     const stamps = new Map(alvo.map((i) => [i, stampOf(bridge.storeDir, lib.files[i].path)]));
-    const result = await verifyFilesByPieces({ meta, storeDir: bridge.storeDir, fileIdxs: alvo });
+    let result;
+    try { result = await verifyFilesByPieces({ meta, storeDir: bridge.storeDir, fileIdxs: alvo }); } catch (err) {
+      if (err?.code === 'EMFILE' || err?.code === 'ENFILE') throw fail(503, 'Arquivos abertos demais no sistema para verificar agora. Nada foi gravado; tente de novo.');
+      throw err;
+    }
     const proof = bridge.pieceProof.get(infoHash) ?? new Map();
     let ok = 0; let failed = 0;
     for (const [i, good] of result) {
