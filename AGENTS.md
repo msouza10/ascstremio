@@ -35,6 +35,7 @@ commits em português do Brasil, com acentuação.
 | `src/logger.js` | logs com redação de segredos, buffer, arquivos NDJSON, `/logs` |
 | `src/keepawake.js` | bloqueia a suspensão enquanto há seed pendente (Linux, macOS, Windows) |
 | `src/stremio-status.js` | catálogo "ASC — status" dentro do Stremio |
+| `scripts/tdd-lembrete.js`, `.claude/settings.json` | hook do Claude Code que lembra do TDD ao editar `src/` sem teste (veja a seção TDD) |
 | `test/` | testes unitários (`node:test`), sem rede e sem dados reais |
 | `scripts/` | instalação, release, fumaça, barreira de segredos, auditoria, checagem de commits |
 | `windows/` | instalador NSIS e launcher do Windows |
@@ -73,8 +74,9 @@ tem de ser igual à de dentro (ele confere `Host: 127.0.0.1:<CONFIG_PORT>`).
 ## Padrões de desenvolvimento
 
 - **Sem dependências novas sem necessidade.** Cada uma entra no `npm audit` e no instalador do Windows.
-- **Teste junto com a mudança.** Testes em `test/*.test.js` com `node:test` e `assert/strict`;
-  nada de rede real, de `private/` ou de caminhos absolutos. Torrents e ASC são simulados.
+- **Teste primeiro (TDD), junto com a mudança.** Veja a seção [TDD](#tdd-teste-primeiro). Testes em
+  `test/*.test.js` com `node:test` e `assert/strict`; nada de rede real, de `private/` ou de caminhos
+  absolutos. Torrents e ASC são simulados.
 - **Portável.** O código roda em Linux, Windows e contêiner (CI testa Ubuntu e Windows, Node 22 e 24).
   Use `path`, não concatene `/`; não assuma `chmod` (no Windows o modo de arquivo é ignorado: os
   testes de permissão `0600` só valem fora do Windows).
@@ -89,6 +91,72 @@ tem de ser igual à de dentro (ele confere `Host: 127.0.0.1:<CONFIG_PORT>`).
 - **Nomes:** o projeto é `ascstremio` (serviço `ascstremio.service`, imagem `ghcr.io/<dono>/ascstremio`,
   variáveis `ASCSTREMIO_*`, `AscStremio` no Windows). `brazuka-asc` é o nome antigo e só aparece na
   migração do serviço em `scripts/install.sh` e no prefixo de logs antigos em `src/logger.js`.
+
+## TDD (teste primeiro)
+
+**Regra para agentes e para quem contribui:** comportamento novo e correção de bug começam por um teste
+que **falha**, e o teste vem antes de qualquer edição em `src/`. Escrever o teste depois do código já
+deixou passar um erro aqui: o botão de excluir episódio do painel respondeu 404 porque a
+rota nova não estava na lista de rotas permitidas, e só havia teste da lógica interna.
+
+1. **Vermelho.** Escreva o teste pela **porta de entrada real** e rode só ele
+   (`node --test test/arquivo.test.js`). Confira que falha pelo motivo certo (comportamento ausente,
+   não erro de digitação ou de import).
+2. **Verde.** O código mínimo para passar.
+3. **Refatorar** com os testes verdes. `npm run check` antes de commitar.
+
+**Porta de entrada real** é o que o usuário ou o Stremio alcança: a rota do painel (`/api/...`, testes
+em `test/monitor.test.js`), a rota da ponte (`/s/…`, `/e/…`, `/a/…`) ou a função pública do módulo.
+Teste só da função interna não basta quando há rota ou botão novo.
+
+- **Rota nova do painel:** entra na lista `routes` de `src/config-server.js` (fora dela, 404) e ganha
+  teste de token CSRF ausente, `Origin` externo, entrada inválida, sessão caída e o caminho feliz até
+  a ponte.
+- **Bug:** reproduza primeiro como teste vermelho; a regressão fica no repositório.
+- **Fail-closed também se testa:** dado ausente, tracker fora do ar e recusa por disco ou por
+  obrigação aberta têm teste próprio.
+- **UI (`src/ui/`) não tem teste de DOM.** Extraia a lógica para função pura quando der; senão diga
+  no PR que aquela parte **não está coberta** e valide no painel. Não dê como pronto sem isso.
+- Não há meta numérica de cobertura: o critério é comportamento, erro e limite cobertos. Para conferir
+  que um teste pega a falha, remova a trava de propósito e veja ele quebrar.
+
+**Lembrete automático.** O Claude Code roda `scripts/tdd-lembrete.js` (configurado em
+`.claude/settings.json`, hook `PreToolUse` de `Edit`, `Write` e `MultiEdit`) antes de cada edição em
+`src/*.js`. Se nenhum arquivo de `test/` foi criado ou alterado desde o último commit, ele avisa o
+agente uma vez por arquivo e por sessão. É só um aviso: não bloqueia e, na dúvida (fora de um
+repositório git, entrada quebrada), fica em silêncio. Mudar o comportamento dele começa por
+`test/tdd-lembrete.test.js`. Preferências locais vão em `.claude/settings.local.json`, que o git ignora.
+
+### Primeiro passo de toda tarefa: qual ferramenta do ECC usar
+
+**Regra para agentes:** antes de editar `src/` ou `test/` (exceto ajuste trivial de texto, comentário
+ou documentação), invoque `ecc:ecc-recipes <descrição da tarefa>` e siga a ordem e a condição de
+parada que ele indicar. Se a tarefa mudar de natureza no meio (um bug que vira funcionalidade), chame
+de novo. Quem não usa o ECC segue o ciclo da seção acima do mesmo jeito; só este primeiro passo muda.
+
+Não decore nem copie listas: elas mudam com a versão do ECC instalada. Peça a indicação à ferramenta
+certa, que lê os arquivos do ECC que você tem:
+
+1. **"Que comandos eu rodo para este trabalho, em que ordem e quando paro?"**
+   `ecc:ecc-recipes <descrição da tarefa>` (skill). Ele mapeia o trabalho (funcionalidade nova, bug,
+   refatoração, acabamento de tela, revisão de PR, release) para o grupo de comandos, a ordem e a
+   condição de parada. Só aconselha, não executa nada.
+2. **"Existe uma skill ou agente específico para isso?"**
+   `/ecc:ecc-guide find: <assunto>` (por exemplo `find: tdd`, `find: acessibilidade`). Agrupa o que
+   achou em skills, comandos, agentes e hooks. Sem argumento, `/ecc:ecc-guide` mostra o menu.
+
+Ajustes que valem para este projeto, qualquer que seja a indicação:
+
+- O executor de testes é o `node:test` e o comando é `npm run check`. Ignore Jest, Vitest e
+  Playwright dos exemplos das skills, e não adicione Playwright, Agent Browser nem outra dependência
+  de teste por causa de uma skill: dependência nova entra no `npm audit` e no instalador (veja
+  "Padrões de desenvolvimento").
+- Não há cobertura mínima em porcentagem.
+- Commit e push só quando o usuário pedir, mesmo que a skill ofereça um commit com portão.
+- Skills para React e Next.js não servem: a interface do painel (`src/ui/`) é JS puro.
+- Teste de tela sempre numa **instância isolada**, nunca no serviço nem na conta de quem instalou:
+  `DATA_DIR=/tmp/x PORT=18000 BRIDGE_PORT=18010 CONFIG_PORT=18020 npm start`, com dados de mentira.
+- Nenhum dado da conta nos testes.
 
 ## Invariantes de segurança (não quebre)
 
