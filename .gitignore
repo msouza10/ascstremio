@@ -61,7 +61,8 @@ coverage/
 __pycache__/
 *.pyc
 .cache/
-.claude/
+.claude/*
+!.claude/settings.json
 .codex/
 .vscode/
 .idea/
