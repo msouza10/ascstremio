@@ -23,6 +23,7 @@ const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { Retention } = require('./retention-service');
 const { manageSeed } = require('./seed-actions');
+const { excludeFile } = require('./file-actions');
 const { logger } = require('./logger');
 const { rankPending, runLimited } = require('./resume-policy');
 const { StreamMetrics } = require('./stream-metrics');
@@ -313,7 +314,7 @@ class Bridge {
   // para semear, e anunciar assim viraria um download novo.
   // Episódios de um pack com o que há em disco de cada um (só packs). Com o motor aberto o número
   // vem das peças verificadas; sem ele, do espaço alocado, e então `verified` é false.
-  episodeStates(lib, torrent) {
+  episodeStates(lib, torrent, excluded = []) {
     const states = new Map(fileStates({ files: lib.files, torrent, storeDir: this.storeDir }).map((s) => [s.index, s]));
     const index = lib.episodes ?? buildEpisodeIndex(lib.files);
     return index.episodes.map((e) => {
@@ -321,6 +322,7 @@ class Bridge {
       return {
         index: e.index, season: e.season, episode: e.episode, episodeEnd: e.episodeEnd ?? null,
         length: e.length, onDisk: s?.onDisk ?? 0, state: s?.state ?? 'ausente', verified: Boolean(s?.verified),
+        excluded: excluded.includes(e.index),
       };
     });
   }
@@ -658,6 +660,9 @@ class Bridge {
       const pack = isPackEntry(this.entries.get(torrent.infoHash));
       if (!requested) {
         if (this.backgroundMode !== 'auto') continue;
+        // O usuário excluiu um episódio: não baixar o pack por conta própria (o pedido explícito de
+        // concluir limpa a exclusão).
+        if (entry?.excluded?.length) continue;
         // Pack com o episódio aberto já inteiro: começa já, mesmo com o player aberto. Nos demais
         // casos espera o torrent ficar parado.
         if (!(pack && this.chosenFilesDone(torrent))) {
@@ -699,6 +704,10 @@ class Bridge {
   // Cumpriu o limite? Então não há motivo para ocupar disco nem rede. Só age
   // quando o TRACKER confirma (nunca pela estimativa local) e sem ninguém
   // assistindo. Devolve o que foi liberado.
+  excludeFile(infoHash, fileIdx) {
+    return excludeFile(this, infoHash, fileIdx);
+  }
+
   manageSeed(infoHash, action) {
     return manageSeed(this, infoHash, action);
   }
@@ -744,6 +753,8 @@ class Bridge {
       err.status = 404;
       throw err;
     }
+    // Pedido explícito do usuário: o que ele excluiu antes volta a ser baixado.
+    this.vault.clearExcluded(infoHash);
     const torrent = await this.getTorrent(infoHash);
     this.vault.setBackground(infoHash, true);
     this.completionTick();
@@ -844,7 +855,7 @@ class Bridge {
         active: Boolean(torrent),
         onDisk: this.diskState(infoHash),
         backgroundComplete: Boolean(entry?.backgroundComplete),
-        ...(isPackEntry(lib) ? { episodes: this.episodeStates(lib, torrent) } : {}),
+        ...(isPackEntry(lib) ? { episodes: this.episodeStates(lib, torrent, entry?.excluded), excluded: entry?.excluded ?? [] } : {}),
         released: entry?.releasedAs ?? null,
         seedChoice: entry?.seedChoice ?? null,
         progress: torrent ? Number((torrent.progress || 0).toFixed(4)) : (completed ? 1 : 0),
@@ -1656,6 +1667,8 @@ class Bridge {
     }
 
     const torrent = await this.getTorrent(infoHash, { fileIdx });
+    // Tocar um episódio excluído é pedir de novo: só esse arquivo deixa de estar excluído.
+    if (fileIdx !== null) this.vault.setExcluded(infoHash, fileIdx, false);
     // A resposta pode ter sido encerrada durante a espera (revogação ou cliente que saiu): o 'close'
     // já passou e não limparia o contador de streams abertos, que travaria conclusão e ociosidade.
     if (res.destroyed) return;

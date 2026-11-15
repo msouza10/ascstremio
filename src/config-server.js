@@ -335,6 +335,19 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
           throw err;
         }
       }
+      if (url.pathname === '/api/exclude') {
+        if (!monitor?.excludeFile) return send(404, { error: 'Exclusão de episódios indisponível.' });
+        if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
+        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash) || !Number.isInteger(body.file) || body.file < 0) return send(400, { error: 'Conteúdo ou episódio inválido.' });
+        try {
+          const result = await monitor.excludeFile(body.infoHash, body.file);
+          log.info('episódio excluído pelo painel');
+          return send(200, result);
+        } catch (err) {
+          if (err.expose) return send(err.status, { error: err.message });
+          throw err;
+        }
+      }
       if (url.pathname === '/api/complete') {
         if (!monitor) return send(404, { error: 'Painel indisponível.' });
         if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
