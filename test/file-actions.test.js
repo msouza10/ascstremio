@@ -355,3 +355,49 @@ test('concluir parte do pack paga a reserva de disco de cada arquivo e recusa se
   await assert.rejects(s.b.requestFilesCompletion(HASH, { season: 1 }), DiskRefusal);
   assert.deepEqual(sel, [], 'sem espaço nada é selecionado');
 });
+
+// ---- Conclusão parcial: o escopo escolhido vale contra a conclusão automática e segura a suspensão ----
+function motorEmAndamento(s, { baixados = [0, 1, 2] } = {}) {
+  const inteiro = [];
+  const selecionados = [];
+  const torrent = { infoHash: HASH, name: 'Pack', ready: true, done: false, length: 44, progress: 0.5, downloaded: 30, pieces: [1, 2],
+    select: (...a) => inteiro.push(a),
+    files: s.lib.files.map((f, i) => ({ length: f.length, downloaded: baixados.includes(i) ? f.length : 0, select: (p) => selecionados.push([i, p]) })) };
+  s.b.client.torrents.push(torrent);
+  s.b.getTorrent = async () => torrent;
+  return { torrent, inteiro, selecionados };
+}
+
+test('concluir só a temporada 1 não deixa a conclusão automática baixar o resto do pack', async () => {
+  const s = cenario({ concluido: false, aberto: false });
+  s.vault.setBackground(HASH, false);
+  const m = motorEmAndamento(s);
+  await s.b.requestFilesCompletion(HASH, { season: 1 });
+  m.selecionados.length = 0;
+  s.b.completionTick(Date.now() + 1e9); // ocioso há muito tempo e com o episódio aberto inteiro
+  assert.deepEqual(m.selecionados, [], 'nenhum outro arquivo foi selecionado');
+  assert.deepEqual(m.inteiro, [], 'o torrent inteiro não foi selecionado');
+  assert.equal(s.b.completing.has(HASH), false);
+  assert.ok(!s.vault.get(HASH).backgroundComplete);
+});
+
+test('o pedido explícito de concluir o pack inteiro desfaz o escopo parcial', async () => {
+  const s = cenario({ concluido: false, aberto: false });
+  const m = motorEmAndamento(s);
+  await s.b.requestFilesCompletion(HASH, { file: 0 });
+  await s.b.requestCompletion(HASH);
+  assert.equal(s.b.completing.has(HASH), true, 'agora o pack inteiro baixa');
+  assert.ok(m.selecionados.length > 1);
+});
+
+test('download parcial em andamento mantém o computador acordado até os arquivos escolhidos terminarem', async () => {
+  const s = cenario({ concluido: false, aberto: false });
+  const m = motorEmAndamento(s, { baixados: [] });
+  assert.equal(s.b.needsAwake(), false, 'sem pedido parcial e sem conclusão, nada a proteger');
+  await s.b.requestFilesCompletion(HASH, { file: 1 });
+  assert.equal(s.b.needsAwake(), true, 'o episódio escolhido ainda baixa');
+  m.torrent.files[1].downloaded = m.torrent.files[1].length;
+  assert.equal(s.b.needsAwake(), false, 'terminou o que foi pedido');
+  m.torrent.done = true;
+  assert.equal(s.b.needsAwake(), false);
+});
