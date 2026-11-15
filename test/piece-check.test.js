@@ -82,3 +82,32 @@ test('metadados incoerentes (peças a menos) não verificam nada', async () => {
   const r = await verifyFilesByPieces({ meta: { ...meta, pieces: pieces.slice(1) }, storeDir: disco(), fileIdxs: [0, 2] });
   assert.deepEqual([...r.values()], [false, false]);
 });
+
+test('nunca mantém abertos mais descritores que o limite, mesmo com muitos arquivos (EMFILE)', async () => {
+  const N = 60;
+  const dados = Array.from({ length: N }, (_, i) => Buffer.alloc(PL * 2, (i % 250) + 1));
+  const todos = Buffer.concat(dados);
+  const pecas = [];
+  for (let o = 0; o < todos.length; o += PL) pecas.push(createHash('sha1').update(todos.subarray(o, o + PL)).digest('hex'));
+  const dir = tmpdir('piece-emfile-');
+  const fm = dados.map((d, i) => ({ path: `e${i}.mkv`, length: d.length }));
+  fm.forEach((f, i) => fs.writeFileSync(path.join(dir, f.path), dados[i]));
+  let abertos = 0; let pico = 0;
+  const openFn = async (...args) => {
+    const h = await fs.promises.open(...args);
+    abertos += 1; pico = Math.max(pico, abertos);
+    const close = h.close.bind(h);
+    h.close = async () => { abertos -= 1; return close(); };
+    return h;
+  };
+  const r = await verifyFilesByPieces({ meta: { pieceLength: PL, pieces: pecas, files: fm, length: todos.length }, storeDir: dir, fileIdxs: fm.map((_, i) => i), maxOpen: 4, openFn });
+  assert.ok([...r.values()].every(Boolean), 'todos íntegros continuam provados');
+  assert.ok(pico <= 4, `pico de descritores abertos: ${pico}`);
+  assert.equal(abertos, 0, 'tudo fechado no fim');
+});
+
+test('falha de abertura por falta de descritores não vira "sem prova" calada: a verificação para com erro', async () => {
+  const dir = disco();
+  const emfile = Object.assign(new Error('too many open files'), { code: 'EMFILE' });
+  await assert.rejects(verifyFilesByPieces({ meta, storeDir: dir, fileIdxs: [0], openFn: async () => { throw emfile; } }), (e) => e.code === 'EMFILE');
+});
