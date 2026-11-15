@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/msouza10/ascstremio/compare/v0.3.1...v0.4.0) (2026-11-15)
+
+
+### Novidades
+
+* **painel:** disponibilize avisos legais offline antes do login ([82bb0ae](https://github.com/msouza10/ascstremio/commit/82bb0aef4338fef6891896239f813fd60144c750))
+* **painel:** disponibilize avisos legais offline antes do login ([7fcf4bd](https://github.com/msouza10/ascstremio/commit/7fcf4bdc09a5cac62cf038e07ca484a67d778c7d))
+* **painel:** disponibilize avisos legais offline antes do login ([#111](https://github.com/msouza10/ascstremio/issues/111)) ([82bb0ae](https://github.com/msouza10/ascstremio/commit/82bb0aef4338fef6891896239f813fd60144c750))
+* **series:** identifica episódios, descobre fontes, toca por arquivo e completa o pack em segundo plano ([#91](https://github.com/msouza10/ascstremio/issues/91)) ([8caa97e](https://github.com/msouza10/ascstremio/commit/8caa97e27e13a1526ac66f1e95b8a1d0674d6486))
+* **series:** mostra o estado de cada episódio de um pack e permite excluir e baixar de novo ([#113](https://github.com/msouza10/ascstremio/issues/113)) ([c853a38](https://github.com/msouza10/ascstremio/commit/c853a384dc8aea3dfcf53a86758a592d780125a2))
+
+
+### Documentação
+
+* **agentes:** exige TDD, indica a ferramenta do ECC e lembra do teste ao editar src ([#112](https://github.com/msouza10/ascstremio/issues/112)) ([26cb670](https://github.com/msouza10/ascstremio/commit/26cb67079d84f3d6d27ffb036fa609729f05b5bd))
+* **legal:** documente avisos e pendências de conformidade ([b7ecb27](https://github.com/msouza10/ascstremio/commit/b7ecb271f6fb34633f9d8c1cea5d87339619ef6e))
+* **legal:** documente avisos e pendências de conformidade ([c398f2a](https://github.com/msouza10/ascstremio/commit/c398f2a115c4411229d20ef9c062c840385ef91c))
+* **legal:** publique avisos e matriz de conformidade ([#105](https://github.com/msouza10/ascstremio/issues/105)) ([b7ecb27](https://github.com/msouza10/ascstremio/commit/b7ecb271f6fb34633f9d8c1cea5d87339619ef6e))
+
 ## [0.3.1](https://github.com/msouza10/ascstremio/compare/v0.3.0...v0.3.1) (2026-11-13)
 
 
