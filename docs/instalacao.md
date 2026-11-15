@@ -134,7 +134,7 @@ services:
       - ascstremio-data:/data
     environment:
       AFTER_SEED: delete
-      BACKGROUND_COMPLETE: "off"
+      BACKGROUND_COMPLETE: "auto"
 volumes:
   ascstremio-data:
     name: ascstremio-data

@@ -290,3 +290,46 @@ test('alteração enquanto client.get aguarda é recusada antes de abrir/anuncia
   assert.equal(s.opened(), 0);
   assert.equal(s.vault.get(s.hash).seedChoice, 'stop');
 });
+
+test('abrir para tocar: peças verificadas renovam o prazo de 30 s e sem progresso aborta', async (t) => {
+  const s = await setup();
+  s.b.disk.measureFn = () => 1e12;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let entered, ready, pending;
+  const started = new Promise((r) => { entered = r; });
+  const add = s.b.client.add;
+  s.b.client.add = (source, options, callback) => {
+    pending = add(source, options, () => {});
+    pending.ready = false;
+    ready = () => { pending.ready = true; callback(pending); };
+    entered(); return pending;
+  };
+  const run = s.b.getTorrent(s.hash);
+  await started;
+  t.mock.timers.tick(25_000);
+  pending.emit('verified', 0);
+  t.mock.timers.tick(25_000); // 50 s no total, mas só 25 s desde a última peça
+  ready();
+  assert.equal((await run).infoHash, s.hash);
+
+  const outro = await setup();
+  outro.b.disk.measureFn = () => 1e12;
+  let entrou;
+  const comecou = new Promise((r) => { entrou = r; });
+  const add2 = outro.b.client.add;
+  outro.b.client.add = (source, options) => { const p = add2(source, options, () => {}); p.ready = false; entrou(); return p; };
+  const parado = outro.b.getTorrent(outro.hash);
+  const falha = assert.rejects(parado, /timeout ao abrir/);
+  await comecou;
+  t.mock.timers.tick(31_000);
+  await falha;
+});
+
+test('abrir o torrent não apaga o freeleech que o tracker informou ao cofre', async () => {
+  const s = await setup();
+  s.b.disk.measureFn = () => 1e12;
+  s.vault.setFreeleech(s.hash, true);
+  await s.b.getTorrent(s.hash);
+  assert.equal(s.vault.get(s.hash).freeleech, true, 'entrada sem freeleech não zera o cofre');
+  assert.equal(s.b.isFreeleech(s.hash), true);
+});

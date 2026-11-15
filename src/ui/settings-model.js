@@ -147,7 +147,7 @@
     },
     BACKGROUND_COMPLETE: {
       title: 'Conclusão automática em segundo plano',
-      values: { off: 'Desligada (padrão)', auto: 'Concluir sozinho os freeleech elegíveis parados' },
+      values: { off: 'Desligada: só quando você pede', auto: 'Concluir o torrent inteiro sozinho, em prioridade baixa (padrão)' },
     },
     SEED_REQUIRED_HOURS: { title: 'Meta local de seed', hint: 'Não altera a obrigação imposta pelo tracker.' },
     KEEP_AWAKE: {
