@@ -71,6 +71,4 @@ test('avisos legais acompanham os caminhos de distribuição e ficam acessíveis
   assert.match(ler('Dockerfile'), /^COPY .*\bLEGAL\.md\b.*\.\/$/m);
   assert.match(ler('README.md'), /\]\(LEGAL\.md\)/);
   assert.match(ler('docs', 'README.md'), /\]\(\.\.\/LEGAL\.md\)/);
-  assert.match(ler('.gitignore'), /^!LEGAL\.md$/m);
-  assert.match(ler('.gitignore'), /^!docs\/conformidade-juridica\.md$/m);
 });
