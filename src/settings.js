@@ -240,7 +240,7 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'ALERTS_ENABLED', type: 'bool', default: false, group: 'alertas', access: 'editable', restart: false,
-    description: 'Liga os alertas operacionais por webhook (desligado por padrão). Exige ALERT_WEBHOOK_ALLOWED_HOSTS e um destino configurado (painel, npm run alertas ou ambiente).',
+    description: 'Liga o envio de mensagens operacionais para o destino escolhido (desligado por padrão). Podem incluir contagens e horários; não incluem títulos nem credenciais. Confira os campos no cartão de destino antes de habilitar. Exige ALERT_WEBHOOK_ALLOWED_HOSTS e um destino configurado (painel, npm run alertas ou ambiente).',
   },
   {
     key: 'ALERT_WEBHOOK_URL', type: 'string', default: null, group: 'alertas', access: 'readonly', envOnly: true, secret: true, restart: true,
