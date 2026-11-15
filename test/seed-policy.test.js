@@ -368,7 +368,7 @@ test('auto: freeleech parado há mais que o limite é concluído, com prioridade
   assert.equal(selecoes.length, 1);
 });
 
-test('auto: não conclui com player assistindo, antes do limite, fora do freeleech ou com modo off', () => {
+test('auto: não conclui com player assistindo, antes do limite ou com modo off', () => {
   const novo = (over, ajuste) => {
     const vault = new SeedVault({ file: tmpFile() });
     vault.markSeen(HASH, {});
@@ -379,10 +379,25 @@ test('auto: não conclui com player assistindo, antes do limite, fora do freelee
   };
   assert.equal(novo({}, ({ b }) => b.streams.set(HASH, 1)), 0, 'stream aberto');
   assert.equal(novo({}, ({ b }) => b.lastStreamEnd.set(HASH, 5 * MIN)), 0, 'parou há 6 min');
-  assert.equal(novo({}, ({ b }) => b.entries.set(HASH, { infoHash: HASH, freeleech: false })), 0, 'não freeleech');
-  assert.equal(novo({}, ({ b }) => b.entries.set(HASH, { infoHash: HASH })), 0, 'freeleech desconhecido');
   assert.equal(novo({ backgroundMode: 'off' }), 0, 'modo off');
   assert.equal(novo({}, ({ b }) => b.lastStreamEnd.set(HASH, 0)), 1, 'controle: parado há 11 min');
+});
+
+test('auto: o custo de ratio é do usuário: não freeleech ou desconhecido também conclui, com aviso', () => {
+  const novo = (entrada) => {
+    const vault = new SeedVault({ file: tmpFile() });
+    vault.markSeen(HASH, {});
+    const r = bridgeBg(vault);
+    r.b.entries.set(HASH, entrada);
+    const avisos = [];
+    const warn = console.warn; console.warn = (m) => avisos.push(String(m));
+    try { r.b.completionTick(11 * MIN); } finally { console.warn = warn; }
+    return { feitos: r.selecoes.length, avisos };
+  };
+  assert.equal(novo({ infoHash: HASH, freeleech: false }).feitos, 1);
+  assert.match(novo({ infoHash: HASH, freeleech: false }).avisos.join('\n'), /ratio/);
+  assert.equal(novo({ infoHash: HASH }).feitos, 1, 'freeleech desconhecido');
+  assert.equal(novo({ infoHash: HASH, freeleech: true }).avisos.length, 0, 'freeleech não avisa');
 });
 
 test('espaço em disco insuficiente impede começar a conclusão', () => {

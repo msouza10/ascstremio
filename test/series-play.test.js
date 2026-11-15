@@ -378,18 +378,59 @@ test('pack: liveRemaining conta só o que os arquivos admitidos ainda vão grava
   assert.equal(b.liveRemaining(HASH), Math.round(30 * GB * (1 - 0.13)), 'conclusão pedida: vale o torrent todo');
 });
 
-test('pack: a conclusão automática não completa o pack depois de um episódio', () => {
+// Pack de 3 episódios (10 GB cada); `baixado` = bytes já gravados por arquivo.
+function packAberto({ baixado = [0, 0, 0], abertos = [1], streams = 1, ...over } = {}) {
   const vault = new SeedVault({ file: path.join(tmpdir('series-bg-'), 'v.json') });
   vault.markSeen(HASH, {});
-  const b = ponte({ vault, backgroundMode: 'auto', idleMs: 1000 });
+  const b = ponte({ vault, backgroundMode: 'auto', idleMs: 1000, ...over });
   b.entries.set(HASH, PACK);
   const selecoes = [];
-  b.client.torrents.push({ infoHash: HASH, name: 'Pack', ready: true, done: false, length: 30 * GB, downloaded: GB, pieces: new Array(10), progress: 0.03, select: (...a) => selecoes.push(a) });
+  const files = PACK.files.map((f, i) => ({ length: f.length, downloaded: baixado[i] ?? 0, select: (p) => selecoes.push(['arquivo', i, p]) }));
+  b.client.torrents.push({ infoHash: HASH, name: 'Pack', ready: true, done: false, length: 30 * GB, downloaded: GB,
+    pieces: new Array(10), progress: 0.03, files, select: (...a) => selecoes.push(['torrent', ...a]) });
   b.startedAt.set(HASH, 0);
+  b.packFiles.set(HASH, new Map(abertos.map((i) => [i, 10 * GB])));
+  if (streams) b.streams.set(HASH, streams);
+  return { b, vault, selecoes };
+}
+
+test('pack: com o episódio aberto ainda baixando e o player aberto, não completa o pack', () => {
+  const { b, selecoes } = packAberto({ baixado: [0, 4 * GB, 0] });
   b.completionTick(1e6);
-  assert.deepEqual(selecoes, [], 'pack freeleech parado não é completado sozinho');
-  // o usuário pedindo a conclusão do torrent continua valendo
+  assert.deepEqual(selecoes, []);
+});
+
+test('pack: episódio aberto inteiro em disco começa o resto do pack mesmo com o player aberto', () => {
+  const { b, vault, selecoes } = packAberto({ baixado: [0, 10 * GB, 0] });
+  b.completionTick(1e6);
+  // aberto = 1: os seguintes primeiro (2 e o banner 3), depois os anteriores (0), tudo em prioridade baixa
+  assert.deepEqual(selecoes, [['arquivo', 2, 0], ['arquivo', 3, 0], ['arquivo', 0, 0]]);
+  assert.equal(vault.get(HASH).backgroundComplete, true);
+  b.completionTick(2e6);
+  assert.equal(selecoes.length, 3, 'não repete');
+});
+
+test('pack: abrir um episódio adiante completa os anteriores depois do atual', () => {
+  const { b, selecoes } = packAberto({ baixado: [0, 0, 10 * GB], abertos: [2] });
+  b.completionTick(1e6);
+  assert.deepEqual(selecoes.map(([, i]) => i), [3, 0, 1], 'depois do atual (só o banner), depois os anteriores em ordem');
+});
+
+test('pack: sem episódio pronto e parado, a conclusão automática completa pela ociosidade', () => {
+  const { b, selecoes } = packAberto({ baixado: [0, 4 * GB, 0], streams: 0 });
+  b.completionTick(1e6);
+  assert.equal(selecoes.length > 0, true);
+});
+
+test('pack: modo off não completa nem com o episódio pronto', () => {
+  const { b, selecoes } = packAberto({ baixado: [0, 10 * GB, 0], backgroundMode: 'off' });
+  b.completionTick(1e6);
+  assert.deepEqual(selecoes, []);
+});
+
+test('pack: o usuário pedindo a conclusão do torrent continua valendo', () => {
+  const { b, vault, selecoes } = packAberto({ baixado: [0, 4 * GB, 0], backgroundMode: 'off' });
   vault.setBackground(HASH, true);
   b.completionTick(1e6);
-  assert.equal(selecoes.length, 1);
+  assert.equal(selecoes.length > 0, true);
 });

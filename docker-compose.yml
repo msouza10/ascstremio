@@ -24,6 +24,6 @@ services:
     environment:
       # AFTER_SEED: delete | stop | keep    LOG_LEVEL: debug | info | warn | error
       AFTER_SEED: delete
-      BACKGROUND_COMPLETE: "off"
+      BACKGROUND_COMPLETE: "auto"
 volumes:
   ascstremio-data:

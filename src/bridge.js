@@ -606,10 +606,33 @@ class Bridge {
     if (perFile) this.packFiles.set(infoHash, (admitted ?? new Map()).set(fileIdx, own));
   }
 
-  // Conclusão em segundo plano: depois que o usuário para de assistir, baixa o
-  // resto do arquivo (prioridade baixa, nunca disputa com o player) para que a
-  // obrigação de 72 h da regra 13.1 possa de fato ser paga. NÃO é um modo de
-  // "nunca concluir": o único efeito é terminar o download.
+  // Pack: o(s) episódio(s) que o usuário abriu já estão inteiros em disco? Aí o resto do pack pode
+  // começar a baixar sem esperar o player parar: o episódio que ele assiste não perde banda, porque
+  // o que falta entra em prioridade baixa. Sem episódio aberto ou com lacuna (seek para o fim) vale
+  // a regra de ociosidade.
+  chosenFilesDone(torrent) {
+    const chosen = [...(this.packFiles.get(torrent.infoHash)?.keys() ?? [])];
+    return chosen.length > 0 && chosen.every((idx) => {
+      const f = torrent.files?.[idx];
+      return f?.length > 0 && (f.downloaded ?? 0) >= f.length;
+    });
+  }
+
+  // Ordem do que falta num pack, para o binge: primeiro os arquivos depois do episódio aberto mais
+  // recentemente, depois os anteriores que ficaram para trás. O aberto agora já está pronto ou
+  // vem pelo streaming (prioridade crítica).
+  packCompletionOrder(torrent) {
+    const files = torrent.files ?? [];
+    const current = [...(this.packFiles.get(torrent.infoHash)?.keys() ?? [])].pop() ?? -1;
+    const idx = files.map((_, i) => i);
+    return [...idx.filter((i) => i > current), ...idx.filter((i) => i < current)];
+  }
+
+  // Conclusão em segundo plano: baixa o resto do torrent (prioridade baixa, nunca disputa com o
+  // player) para que a obrigação de 72 h da regra 13.1 possa de fato ser paga. Torrent baixado
+  // em parte fica no tracker como `downloading` e a meta de seed só conta depois da conclusão.
+  // NÃO é um modo de "nunca concluir": o único efeito é terminar o download. O custo no ratio de
+  // um release que não é freeleech é do usuário (aviso no log e no painel), não uma trava.
   completionTick(now = Date.now()) {
     for (const torrent of this.client?.torrents ?? []) {
       // progress >= 1 cobre o instante em que o motor já verificou tudo mas ainda não emitiu `done`.
@@ -617,15 +640,16 @@ class Bridge {
       const entry = this.vault.get(torrent.infoHash);
       const requested = Boolean(entry?.backgroundComplete);
 
+      const pack = isPackEntry(this.entries.get(torrent.infoHash));
       if (!requested) {
         if (this.backgroundMode !== 'auto') continue;
-        // Pack: ver um episódio não é pedir o pack todo. Só a conclusão pedida pelo usuário completa.
-        if (isPackEntry(this.entries.get(torrent.infoHash))) continue;
-        // Fora do freeleech, baixar tudo pesa no ratio (regra 2.7): só manual.
-        if (this.isFreeleech(torrent.infoHash) !== true) continue;
-        const idleSince = this.lastStreamEnd.get(torrent.infoHash)
-          ?? this.startedAt.get(torrent.infoHash) ?? now;
-        if ((this.streams.get(torrent.infoHash) ?? 0) > 0 || now - idleSince < this.idleMs) continue;
+        // Pack com o episódio aberto já inteiro: começa já, mesmo com o player aberto. Nos demais
+        // casos espera o torrent ficar parado.
+        if (!(pack && this.chosenFilesDone(torrent))) {
+          const idleSince = this.lastStreamEnd.get(torrent.infoHash)
+            ?? this.startedAt.get(torrent.infoHash) ?? now;
+          if ((this.streams.get(torrent.infoHash) ?? 0) > 0 || now - idleSince < this.idleMs) continue;
+        }
       }
 
       // Mesma política de disco do streaming e da retomada; sem medida confiável não começa
@@ -641,11 +665,19 @@ class Bridge {
       }
       if (entry?.noSpaceWarned) entry.noSpaceWarned = false;
 
-      // Prioridade 0: o streaming (prioridade crítica) sempre passa na frente.
-      torrent.select(0, torrent.pieces.length - 1, 0);
+      // Prioridade 0: o streaming (prioridade crítica) sempre passa na frente. Em pack, os arquivos
+      // entram na ordem do binge (seguintes, depois anteriores); empate de prioridade respeita a
+      // ordem de inserção.
+      const order = pack ? this.packCompletionOrder(torrent) : [];
+      const selectable = order.filter((i) => typeof torrent.files?.[i]?.select === 'function');
+      if (selectable.length > 0) for (const i of selectable) torrent.files[i].select(0);
+      else torrent.select(0, torrent.pieces.length - 1, 0);
       this.completing.add(torrent.infoHash);
       this.vault.setBackground(torrent.infoHash, true);
       console.log(`[conclusão] baixando o restante em segundo plano: ${String(torrent.name).slice(0, 50)}`);
+      if (this.isFreeleech(torrent.infoHash) !== true) {
+        console.warn('[conclusão] release não confirmado como freeleech: o download inteiro conta no seu ratio (regra 2.7)');
+      }
     }
   }
 

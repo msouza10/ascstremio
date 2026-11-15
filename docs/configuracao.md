@@ -174,7 +174,7 @@ A senha fica só como verificador scrypt com sal em `DATA_DIR/panel-admin.json` 
 | Variável | Padrão | Comportamento |
 |---|---|---|
 | `AFTER_SEED` | `delete` | Depois da confirmação do tracker: `delete` encerra e apaga arquivos; `stop` encerra e preserva; `keep` continua semeando; `manual` mantém até sua decisão por conteúdo no painel |
-| `BACKGROUND_COMPLETE` | `off` | `auto` conclui automaticamente apenas freeleech elegíveis parados |
+| `BACKGROUND_COMPLETE` | `auto` | `auto` baixa o que falta do torrent inteiro em prioridade baixa (série: assim que o episódio aberto terminar de baixar; demais: depois de parado); em release que não é freeleech, o download conta no seu ratio. `off` só conclui quando você pede |
 | `BACKGROUND_IDLE_MINUTES` | `10` | Inatividade antes da conclusão automática; número ≥ 1 |
 | `SEED_REQUIRED_HOURS` | `72` | Meta local; não altera a obrigação imposta pelo tracker |
 | `KEEP_AWAKE` | `auto` | `off` desliga o bloqueio de suspensão; no contêiner o bloqueio não é usado |

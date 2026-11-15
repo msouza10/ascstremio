@@ -209,8 +209,8 @@ if [ ! -f "$ENV_FILE" ] && [ "$MODE" != check ]; then
 # Variáveis do serviço (lidas por systemd; uma por linha, sem aspas nem "export").
 # Depois de editar:  systemctl --user restart ascstremio
 
-# Conclui sozinho, em segundo plano, os freeleech parados há alguns minutos (off|auto)
-#BACKGROUND_COMPLETE=off
+# Conclui sozinho, em segundo plano, o torrent inteiro (off|auto). Padrão: auto
+#BACKGROUND_COMPLETE=auto
 #BACKGROUND_IDLE_MINUTES=10
 
 # Ao cumprir o limite (72 h ou ratio 1.0) e o tracker confirmar:
