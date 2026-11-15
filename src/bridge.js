@@ -23,7 +23,7 @@ const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { Retention } = require('./retention-service');
 const { manageSeed } = require('./seed-actions');
-const { excludeFile } = require('./file-actions');
+const { excludeFile, excludeSeason, completeFiles } = require('./file-actions');
 const { logger } = require('./logger');
 const { rankPending, runLimited } = require('./resume-policy');
 const { StreamMetrics } = require('./stream-metrics');
@@ -715,6 +715,14 @@ class Bridge {
   // assistindo. Devolve o que foi liberado.
   excludeFile(infoHash, fileIdx) {
     return excludeFile(this, infoHash, fileIdx);
+  }
+
+  requestFilesCompletion(infoHash, scope) {
+    return completeFiles(this, infoHash, scope);
+  }
+
+  excludeSeason(infoHash, season) {
+    return excludeSeason(this, infoHash, season);
   }
 
   manageSeed(infoHash, action) {

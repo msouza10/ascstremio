@@ -339,13 +339,25 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
           throw err;
         }
       }
+      // Escopo opcional de exclusão/conclusão em pack: `file` (índice) ou `season`, nunca os dois.
+      // Só números chegam à ponte; quem escolhe os arquivos da temporada é o servidor.
+      const scopeOf = (b) => {
+        const hasFile = b.file !== undefined; const hasSeason = b.season !== undefined;
+        if (hasFile && hasSeason) return null;
+        if (hasFile) return Number.isInteger(b.file) && b.file >= 0 ? { file: b.file } : null;
+        if (hasSeason) return Number.isInteger(b.season) && b.season >= 0 && b.season <= 99 ? { season: b.season } : null;
+        return {};
+      };
       if (url.pathname === '/api/exclude') {
         if (!monitor?.excludeFile) return send(404, { error: 'Exclusão de episódios indisponível.' });
         if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
-        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash) || !Number.isInteger(body.file) || body.file < 0) return send(400, { error: 'Conteúdo ou episódio inválido.' });
+        const scope = scopeOf(body);
+        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash) || !scope || (scope.file === undefined && scope.season === undefined)) return send(400, { error: 'Conteúdo, episódio ou temporada inválido.' });
         try {
-          const result = await monitor.excludeFile(body.infoHash, body.file);
-          log.info('episódio excluído pelo painel');
+          const result = scope.season !== undefined
+            ? await monitor.excludeSeason(body.infoHash, scope.season)
+            : await monitor.excludeFile(body.infoHash, scope.file);
+          log.info(`${scope.season !== undefined ? 'temporada' : 'episódio'} excluído pelo painel`);
           return send(200, result);
         } catch (err) {
           if (err.expose) return send(err.status, { error: err.message });
@@ -355,9 +367,17 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       if (url.pathname === '/api/complete') {
         if (!monitor) return send(404, { error: 'Painel indisponível.' });
         if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
-        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash)) return send(400, { error: 'Filme inválido.' });
+        const scope = scopeOf(body);
+        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash) || !scope) return send(400, { error: 'Filme inválido.' });
         log.info(`concluir download pedido pelo painel: ${body.infoHash}`);
-        return send(202, await monitor.complete(body.infoHash));
+        if (scope.file === undefined && scope.season === undefined) return send(202, await monitor.complete(body.infoHash));
+        if (!monitor.completeFiles) return send(404, { error: 'Conclusão parcial indisponível.' });
+        try {
+          return send(202, await monitor.completeFiles(body.infoHash, scope));
+        } catch (err) {
+          if (err.expose) return send(err.status, { error: err.message });
+          throw err;
+        }
       }
       if (url.pathname === '/api/login') {
         if (typeof body.username !== 'string' || !body.username.trim() || body.username.length > 100 || typeof body.password !== 'string' || !body.password || body.password.length > 512) return send(400, { error: 'Preencha usuário e senha.' });
