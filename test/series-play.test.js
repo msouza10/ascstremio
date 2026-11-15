@@ -458,3 +458,87 @@ test('snapshot: pack fora do motor mostra o disco como não verificado', () => {
   assert.equal(item.episodes.length, 3);
   assert.equal(item.episodes.every((e) => e.verified === false && e.state === 'ausente'), true);
 });
+
+// --- Obrigação de seed é do TORRENT: concluir só o arquivo de um episódio nunca a abre nem a quita ---
+// (#88: "Nenhum contador de 72 h por episódio"; regra 13.1 vale depois de concluir o download inteiro.)
+
+// Torrent de pack simulado no motor. `baixado` = bytes gravados por arquivo.
+function packNoMotor({ baixado }) {
+  const vault = new SeedVault({ file: path.join(tmpdir('series-obr-'), 'v.json') });
+  vault.markSeen(HASH, { name: 'Pack' });
+  const b = ponte({ vault, backgroundMode: 'auto', idleMs: 1000 });
+  b.entries.set(HASH, { ...PACK, name: 'Pack', title: 'Pack' });
+  const torrent = Object.assign(new EventEmitter(), {
+    infoHash: HASH, name: 'Pack', ready: true, done: false, length: 30 * GB, downloaded: baixado.reduce((a, n) => a + n, 0), progress: 0.34,
+    pieces: new Array(10), select() {},
+    files: PACK.files.map((f, i) => ({ length: f.length, downloaded: baixado[i] ?? 0, select() {} })),
+  });
+  b.client.torrents.push(torrent);
+  b.startedAt.set(HASH, 0);
+  b.packFiles.set(HASH, new Map([[0, 10 * GB]]));
+  return { b, vault, torrent };
+}
+
+test('episódio inteiro em disco com o torrent incompleto: sem conclusão, sem obrigação e sem horas de seed', () => {
+  const { b, vault, torrent } = packNoMotor({ baixado: [10 * GB, 0, 0, 0] });
+  const s = b.seedState(torrent);
+  assert.equal(s.concluded, false);
+  assert.equal(s.obligation, false);
+  assert.equal(s.met, true, 'nada a cumprir enquanto o torrent não conclui');
+  assert.equal(s.hoursSeeding, 0);
+  // a contagem de seed (a mesma do relógio de 1 min) ignora um torrent sem conclusão
+  vault.addSeedingTime(HASH, 5 * 3_600_000);
+  assert.equal(vault.get(HASH).seedMs, 0, 'nenhum contador de 72 h por episódio');
+  assert.equal(vault.get(HASH).satisfiedAt ?? null, null);
+});
+
+test('a conclusão automática do pack, mesmo começando com o episódio pronto, não marca o torrent como concluído', () => {
+  const { b, vault } = packNoMotor({ baixado: [10 * GB, 0, 0, 0] });
+  b.completionTick(1e6);
+  assert.equal(vault.get(HASH).backgroundComplete, true, 'o resto do pack começou a baixar');
+  assert.equal(vault.get(HASH).completedAt ?? null, null, 'baixar o resto não é concluir');
+  assert.equal(vault.get(HASH).satisfiedAt ?? null, null);
+  assert.equal(b.seedState({ infoHash: HASH, done: false, downloaded: 10 * GB, progress: 0.34 }).obligation, false);
+});
+
+test('abrir o torrent para tocar um episódio já inteiro não abre a obrigação; só o torrent concluir abre', async () => {
+  const { b, vault, torrent } = packNoMotor({ baixado: [10 * GB, 0, 0, 0] });
+  b.client.torrents.splice(0); // não está no motor: getTorrent abre de verdade
+  b.client.get = async () => null;
+  b.client.add = (source, options, ready) => {
+    b.client.torrents.push(torrent);
+    queueMicrotask(() => ready(torrent));
+    return torrent;
+  };
+  await b.getTorrent(HASH, { fileIdx: 0 });
+  assert.equal(vault.get(HASH).completedAt ?? null, null, 'episódio pronto não conclui o torrent');
+  assert.equal(b.seedState(torrent).obligation, false);
+  // controle positivo: o torrent inteiro concluindo abre a obrigação do torrent (uma só)
+  torrent.done = true; torrent.progress = 1;
+  for (const f of torrent.files) f.downloaded = f.length;
+  torrent.emit('done');
+  assert.ok(vault.get(HASH).completedAt, 'a obrigação nasce na conclusão do torrent');
+  assert.equal(b.seedState(torrent).obligation, true);
+  vault.addSeedingTime(HASH, 3_600_000);
+  assert.equal(vault.get(HASH).seedMs, 3_600_000, 'agora o seed conta, para o torrent inteiro');
+});
+
+test('o painel não mostra obrigação nem horas por episódio, só a do torrent', () => {
+  const { b } = packNoMotor({ baixado: [10 * GB, 10 * GB, 0, 0] });
+  const item = b.snapshot().titles.find((t) => t.infoHash === HASH);
+  assert.equal(item.episodes.length, 3);
+  for (const e of item.episodes) {
+    assert.deepEqual(Object.keys(e).filter((k) => /seed|hora|hour|obrig|deadline|prazo|tracker/i.test(k)), [], `episódio ${e.episode} sem campo de obrigação`);
+  }
+  assert.equal(item.state === 'done' || item.state === 'seeding', false, 'torrent incompleto não aparece como semeando nem cumprido');
+  assert.equal(item.seededHours, 0);
+});
+
+test('o tracker dizendo "baixando" (parcial) nunca vira obrigação cumprida por ter um episódio completo', () => {
+  const { b, vault, torrent } = packNoMotor({ baixado: [10 * GB, 10 * GB, 10 * GB, 0] });
+  vault.setTracker(HASH, { status: 'downloading', satisfied: false, hitAndRun: false, completedAtMs: null, remainingMs: 72 * 3_600_000, deadlineMs: Date.now() + 86_400_000 });
+  const s = b.seedState(torrent);
+  assert.equal(s.concluded, false, 'todos os episódios prontos, mas o torrent não concluiu (falta o banner)');
+  assert.equal(s.tracker.satisfied, false);
+  assert.equal(vault.get(HASH).satisfiedAt ?? null, null);
+});
