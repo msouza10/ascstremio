@@ -14,8 +14,9 @@ const { tmpdir } = require('./tmp-helper');
 
 const HASH = 'a'.repeat(40);
 const IMDB = 'tt0903747';
-const PL = 8;
-const DADOS = [Buffer.alloc(16, 1), Buffer.alloc(16, 2), Buffer.alloc(16, 3)];
+// Arquivos de 16 KiB: no NTFS, arquivo minúsculo é gravado na MFT e não aloca blocos (estado seria 'ausente').
+const PL = 8192;
+const DADOS = [Buffer.alloc(16384, 1), Buffer.alloc(16384, 2), Buffer.alloc(16384, 3)];
 const tudo = Buffer.concat(DADOS);
 const pieces = [];
 for (let o = 0; o < tudo.length; o += PL) pieces.push(createHash('sha1').update(tudo.subarray(o, o + PL)).digest('hex'));
@@ -94,7 +95,7 @@ test('só episódio VERIFICADO por peças, não excluído e do IMDb certo é ofe
   assert.deepEqual(s.b.localEpisodeSources(IMDB, 1, 2), [], 'só provável: sem prova não se oferece');
   await s.b.verifyEpisodes(HASH);
   const [src] = s.b.localEpisodeSources(IMDB, 1, 2);
-  assert.deepEqual({ infoHash: src.infoHash, fileIdx: src.fileIdx, length: src.length, ascId: src.ascId }, { infoHash: HASH, fileIdx: 1, length: 16, ascId: '12' });
+  assert.deepEqual({ infoHash: src.infoHash, fileIdx: src.fileIdx, length: src.length, ascId: src.ascId }, { infoHash: HASH, fileIdx: 1, length: 16384, ascId: '12' });
   assert.equal(s.b.localEpisodeSources('tt0000001', 1, 2).length, 0, 'outra série');
   assert.equal(s.b.localEpisodeSources(IMDB, 2, 1).length, 0, 'outra temporada');
   assert.equal(s.b.localEpisodeSources(IMDB, 1, 9).length, 0, 'episódio que o pack não tem');
@@ -113,7 +114,7 @@ test('a prova caduca: arquivo alterado depois de verificar deixa de ser oferecid
   s.vault.setSeriesLink(HASH, IMDB);
   await s.b.verifyEpisodes(HASH);
   const f = path.join(s.store, s.lib.files[0].path);
-  fs.writeFileSync(f, Buffer.alloc(16, 9));
+  fs.writeFileSync(f, Buffer.alloc(16384, 9));
   const depois = new Date(Date.now() + 5000);
   fs.utimesSync(f, depois, depois);
   assert.equal(s.b.localEpisodeSources(IMDB, 1, 1).length, 0);
