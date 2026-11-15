@@ -82,6 +82,30 @@ class SeedVault {
     return entry;
   }
 
+  // Arquivos (índice real do torrent) que o usuário excluiu de um pack. É uma escolha persistida:
+  // enquanto houver um, nada baixa o pack por conta própria; só um pedido explícito de concluir ou
+  // tocar o episódio de novo desfaz.
+  setExcluded(infoHash, fileIdx, on) {
+    const entry = this.entries.get(infoHash);
+    if (!entry || !Number.isInteger(fileIdx) || fileIdx < 0) return null;
+    const now = new Set(entry.excluded ?? []);
+    if (on === now.has(fileIdx)) return entry;
+    if (on) now.add(fileIdx); else now.delete(fileIdx);
+    entry.excluded = [...now].sort((a, b) => a - b);
+    log.info(`episódio ${on ? 'excluído' : 'liberado'} no cofre para "${label(entry)}"`, { infoHash });
+    this.save();
+    return entry;
+  }
+
+  clearExcluded(infoHash) {
+    const entry = this.entries.get(infoHash);
+    if (!entry || !entry.excluded?.length) return entry ?? null;
+    entry.excluded = [];
+    log.info(`exclusões de episódios removidas para "${label(entry)}"`, { infoHash });
+    this.save();
+    return entry;
+  }
+
   // Título legível dado pelo tracker (o nome do arquivo costuma ser "The.Skin.I.Live.In.2011...").
   setDisplayName(infoHash, name) {
     const entry = this.entries.get(infoHash);
