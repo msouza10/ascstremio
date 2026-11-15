@@ -157,7 +157,7 @@ jobs:
           if ((Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower() -ne $want.ToLower()) { throw 'SHA-256 do instalador não confere' }
           Start-Process $exe.FullName -ArgumentList '/S' -Wait
           $dir = Join-Path $env:LOCALAPPDATA 'Programs\AscStremio'
-          foreach ($f in 'node\node.exe','app\src\index.js','start.cmd','stop.cmd','desinstalar.exe') {
+          foreach ($f in 'node\node.exe','app\src\index.js','app\LEGAL.md','LEGAL.md','start.cmd','stop.cmd','desinstalar.exe') {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "faltou $f na instalação" }
           }
       - name: Sobe o serviço e consulta a ponte
@@ -172,6 +172,9 @@ jobs:
           }
           if (-not $ok) { Get-Content "$env:LOCALAPPDATA\AscStremio\data\service.log" -ErrorAction SilentlyContinue | Select-Object -Last 40; throw 'a ponte não respondeu' }
           (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7020/ -TimeoutSec 10).StatusCode
+          $aviso = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7020/avisos-legais -TimeoutSec 10
+          $esperado = [System.IO.File]::ReadAllText((Join-Path $dir 'app\LEGAL.md'))
+          if ($aviso.Content -cne $esperado) { throw 'aviso legal servido difere do arquivo instalado' }
           # O addon exige credencial: sem ela 403; com a emitida pelo CLI, 200.
           $env:DATA_DIR = Join-Path $env:LOCALAPPDATA 'AscStremio\data'
           try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7000/manifest.json -TimeoutSec 10 | Out-Null; throw 'o addon respondeu sem credencial' } catch { if ($_.Exception.Message -eq 'o addon respondeu sem credencial') { throw }; if ($_.Exception.Response.StatusCode.value__ -ne 403) { throw 'esperava 403 sem credencial' } }

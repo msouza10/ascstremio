@@ -31,6 +31,8 @@ unzip -q "$OUT/cache/$zip" -d "$OUT/cache/node-unz"
 mkdir -p "$STAGE/node"; cp "$OUT/cache/node-unz"/*/node.exe "$STAGE/node/"; rm -rf "$OUT/cache/node-unz"
 
 cp -R src package.json package-lock.json "$STAGE/app/"
+# A aplicação lê a mesma fonte ao lado do package.json, também no layout Windows.
+cp LEGAL.md "$STAGE/app/"
 # Os binários nativos vêm do GitHub Releases, que às vezes responde 504: tenta de novo.
 ( cd "$STAGE/app" && for i in 1 2 3 4; do
     npm_config_platform=win32 npm_config_arch=x64 npm ci --omit=dev --no-audit --no-fund && exit 0

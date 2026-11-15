@@ -7,9 +7,10 @@ const { Logger, logger: defaultLogger, LEVEL_NAMES } = require('./logger');
 const { configHost, isLoopbackRequest } = require('./safety');
 const { AdminCredential, AdminSessions, LoginLimiter, safeEqual } = require('./admin-auth');
 const { PanelError } = require('./panel-settings');
+const { serveLegalNotice } = require('./legal-notice');
 
 // Tela local do addon. O CSP só aceita script/estilo/fonte do próprio servidor,
-// então nada é inline e só arquivos de src/ui/ com extensão conhecida saem daqui.
+// então nada é inline. Estáticos vêm de src/ui/; o aviso tem uma rota fixa separada.
 const UI_DIR = path.join(__dirname, 'ui');
 const TYPES = {
   '.js': 'text/javascript; charset=utf-8',
@@ -161,6 +162,9 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       const url = new URL(req.url, origin);
       pathname = url.pathname;
       const sp = url.searchParams;
+      // Documento público da instalação, como o shell de login: disponível sem
+      // sessão ASC/administrativa, mas somente depois da validação do canal/Host.
+      if (pathname === '/avisos-legais') return serveLegalNotice(req, res);
       let admin = null; // sessão de administração válida desta requisição
       if (guard) {
         const found = sessions.check(readCookie(req.headers.cookie, cookieName), channel.host);

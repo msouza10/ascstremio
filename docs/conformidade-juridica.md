@@ -13,8 +13,9 @@ comportamento identificado, mas não comprova autorização de integração ou d
 Código, documentação e postura do mantenedor precisam permanecer coerentes. Aceite de
 aviso, autenticação e tracker privado não legalizam uma transferência não autorizada.
 
-Nesta mudança foram escritos os avisos, incluídos nos caminhos de empacotamento e
-ligados ao README/índice. As funcionalidades abaixo permanecem propostas, salvo quando
+Os avisos foram incluídos nos caminhos de empacotamento e ligados ao README/índice.
+A implementação da #96 acrescenta acesso offline por rota fixa no painel, disponível
+sem login e com links no cabeçalho e assistente. As funcionalidades abaixo permanecem propostas, salvo quando
 explicitamente descritas como existentes. Não há novo bloqueio de reprodução ou aceite
 obrigatório implementado. As alterações concorrentes de séries não integram esta entrega;
 seus testes e fluxos deverão ser incorporados à comparação quando forem publicados.
@@ -64,7 +65,7 @@ completa. “Pendente externo” exige evidência ou decisão fora do código.
 | J09 / P1 | [credentials.js](../src/credentials.js), [addon-auth.js](../src/addon-auth.js), [safety.js](../src/safety.js), [admin-auth.js](../src/admin-auth.js): controles de credencial, Host, origem e administração; LAN opcional | L2, L4 | §§ 3–5 | Preservar testes de falha fechada e revogação; a correção administrativa da #10 já foi entregue, sem confiança em RFC1918 como identidade. Não apresentar IP privado, token ou LAN como autorização jurídica de compartilhamento | Controles existentes; validação contínua |
 | J10 / P1 | [bridge.js](../src/bridge.js), `releaseSatisfied`; [seed-actions.js](../src/seed-actions.js); [retention-service.js](../src/retention-service.js): exclusão e encerramento têm caminhos distintos | L2, L3; C2 | §§ 3, 6 | Tornar exclusão padrão ostensiva; verificar confirmação recente em cada caminho destrutivo. `releaseSatisfied` usa estado confirmado em cofre; não afirmar releitura imediata em todos os casos. Manter proteções de caminhos e concorrência | Parcial; avaliar atualidade da confirmação automática |
 | J11 / P1 | [install.sh](../scripts/install.sh), desinstalação; [installer.nsi](../windows/installer.nsi): mantêm dados; revogar credencial não remove sessão/cofre/backups | L4; C2 | §§ 4–5 | Documentar inventário, localização, finalidade e prazo por arquivo; desenhar prévia de remoção/revogação sem apagar seed pendente silenciosamente. Definir resposta a incidentes e solicitações para dados recebidos pelo mantenedor | Parcial; política completa pendente |
-| J12 / P1 | [config-server.js](../src/config-server.js), rotas estáticas limitadas a `src/ui`; [index.html](../src/ui/index.html): sem acesso local ao aviso novo | L3; C1 | § 9 | Servir aviso offline por rota fixa e incluir link no painel/assistente. Preservar Host/CSP e não criar leitor de arquivos arbitrários. Aviso acompanha os pacotes nesta entrega | Distribuição coberta; painel pendente |
+| J12 / P1 | [config-server.js](../src/config-server.js) valida Host/canal antes da rota fixa `/avisos-legais`; [legal-notice.js](../src/legal-notice.js) lê somente `LEGAL.md` junto ao aplicativo; cabeçalho e assistente oferecem links | L3; C1 | § 9 | GET/HEAD entregam o texto sem interpretar HTML ou depender de login/internet. Métodos de alteração são recusados. Pacote Windows copia a mesma fonte para a pasta do aplicativo; fumaça dos três formatos compara o conteúdo servido ao instalado | Implementado na #96; aguarda validação dos artefatos no CI |
 | J13 / P1 | [SECURITY.md](../.github/SECURITY.md): canal privado para vulnerabilidade; issues são públicas; nenhum canal jurídico privado específico documentado | L2, L4, L5 conforme enquadramento | § 8 | Mantenedor deve escolher canal privado real, publicar instruções e adotar procedimento de recebimento, análise, evidências mínimas e resposta. Não prometer apagar instalações alheias | Pendente operacional |
 | J14 / P2 | [package.json](../package.json), lockfile, empacotadores e imagens incluem componentes de terceiros; Cinemeta fornece metadados e imagens | C1, L1 | §§ 1–2, 5, 7 | Complementar a entrega da #13 com inventário de licenças/avisos por artefato e permissões de metadados, artes, logos e amostras. A MIT e avisos em dependências já são distribuídos | Inventário completo pendente |
 | J15 / P2 | README e [LEGAL.md](../LEGAL.md): sem prova de aceite contratual; distribuição sob MIT | L2, L3; C1 | §§ 1, 7, 9 | Revisar alegações de proteção/conformidade na UI e publicidade. Analisar monetização, hospedagem, jurisdições e obrigações antes de mudar modelo; manter histórico dos avisos por release | Aviso compatível; revisão jurídica pendente |
@@ -197,6 +198,16 @@ Verificação da branch de publicação, baseada na `main` em `1476397`:
 - Barreira de segredos aplicada ao tarball Linux; `git diff --check` aprovado.
 - Builds completos de Docker e do instalador Windows não foram executados nesta entrega;
   os testes conferem os caminhos declarados de inclusão, e o CI valida os demais formatos.
+
+Verificação adicional da implementação offline (#96), em 15/11/2026:
+
+- 512 testes aprovados, incluindo rota sem sessão, conteúdo exato, arquivo ausente,
+  métodos, Host inválido, manutenção do bloqueio administrativo e texto sem execução de HTML.
+- ShellCheck e actionlint aprovados; pacote Linux e barreiras de segredos aprovados.
+- Instalação real em diretório temporário, sem serviço e sem conta ASC: suíte aprovada
+  dentro do pacote instalado e conteúdo de `/avisos-legais` idêntico ao `LEGAL.md` instalado.
+- Testes de fumaça de Docker e Windows passam a conferir o documento servido; sua execução
+  nos artefatos dessas plataformas fica registrada no CI do PR da implementação.
 
 ## Risco residual e próxima decisão
 

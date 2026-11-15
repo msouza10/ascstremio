@@ -763,6 +763,9 @@
     const head = el('div', 'page-head');
     const hl = el('div');
     hl.append(el('h1', '', 'Assistente de configuração'), el('p', 'page-sub', 'Poucos passos: como você vai usar, seed e disco, e a instalação no Stremio. Dá para mudar tudo depois em Configurações.'));
+    const legal = el('a', '', 'Ler os avisos legais (nova aba)');
+    legal.href = '/avisos-legais'; legal.target = '_blank'; legal.rel = 'noopener noreferrer';
+    hl.append(legal);
     head.append(hl);
     const stepper = el('ol', 'stepper');
     stepper.setAttribute('aria-label', 'Etapas do assistente');
