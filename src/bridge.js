@@ -280,15 +280,7 @@ class Bridge {
     // Contabilidade da regra 13.1: a cada minuto soma tempo de seed dos
     // torrents concluídos. Persistido, sobrevive a reinícios.
     this.seedTimer = setInterval(() => {
-      const agora = Date.now();
-      for (const torrent of this.client.torrents) {
-        const entry = this.vault.get(torrent.infoHash);
-        const anterior = this.lastTick.get(torrent.infoHash) ?? agora;
-        this.lastTick.set(torrent.infoHash, agora);
-        if (!entry?.completedAt || entry.satisfiedAt) continue;
-        const delta = agora - anterior;
-        if (delta > 0) this.vault.addSeedingTime(torrent.infoHash, delta);
-      }
+      this.seedTick();
       this.keepAwake?.update(this.needsAwake());
     }, 60000);
     this.seedTimer.unref?.();
@@ -621,6 +613,23 @@ class Bridge {
     }
     this.disk.require({ holder: infoHash, need, live: this.liveRemaining });
     if (perFile) this.packFiles.set(infoHash, (admitted ?? new Map()).set(fileIdx, own));
+  }
+
+  // Um passo do relógio de seed (regra 13.1). Só conta com o torrent INTEIRO no motor: `completedAt`
+  // fica preservado depois de excluir um episódio ou apagar arquivos, e um torrent reaberto
+  // incompleto está baixando, não semeando (o tracker não credita e o tempo local não pode fechar a
+  // obrigação nesse intervalo). O marco `lastTick` avança sempre, para só o intervalo seguinte contar.
+  seedTick(agora = Date.now()) {
+    for (const torrent of this.client?.torrents ?? []) {
+      const entry = this.vault.get(torrent.infoHash);
+      const anterior = this.lastTick.get(torrent.infoHash) ?? agora;
+      this.lastTick.set(torrent.infoHash, agora);
+      if (!entry?.completedAt || entry.satisfiedAt) continue;
+      // progress >= 1 cobre o instante em que o motor já verificou tudo mas ainda não emitiu `done`.
+      if (!torrent.done && (torrent.progress ?? 0) < 1) continue;
+      const delta = agora - anterior;
+      if (delta > 0) this.vault.addSeedingTime(torrent.infoHash, delta);
+    }
   }
 
   // Pack: o(s) episódio(s) que o usuário abriu já estão inteiros em disco? Aí o resto do pack pode

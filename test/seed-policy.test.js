@@ -574,3 +574,49 @@ test('conclusão em segundo plano não dispara em torrent já completo (progress
   b.completionTick(11 * MIN);
   assert.equal(selecoes.length, 1, 'controle: incompleto continua seguindo');
 });
+
+// --- Relógio de seed: só conta com o torrent inteiro no motor (achado do Codex no #113) ---
+// `completedAt` preservado + torrent reaberto incompleto (pack depois de excluir um episódio, ou
+// arquivos apagados) é download, não seed: o tracker não credita e a obrigação não pode fechar aí.
+
+test('relógio de seed: torrent concluído antes mas incompleto agora não soma seed', () => {
+  const vault = new SeedVault({ file: tmpFile() });
+  const b = bridgeCom(vault);
+  vault.markSeen(HASH, { name: 'pack' });
+  vault.markCompleted(HASH);
+  const torrent = { infoHash: HASH, done: false, progress: 0.8 };
+  b.client = { torrents: [torrent] };
+  const T0 = 1_000_000;
+  b.lastTick.set(HASH, T0);
+  b.seedTick(T0 + 60_000);
+  assert.equal(vault.get(HASH).seedMs, 0, 'baixando não credita seed');
+  // o marco de tempo avançou: ao completar, só o intervalo seguinte conta
+  torrent.done = true; torrent.progress = 1;
+  b.seedTick(T0 + 120_000);
+  assert.equal(vault.get(HASH).seedMs, 60_000);
+});
+
+test('relógio de seed: durante o novo download a obrigação não fecha por estimativa local', () => {
+  const vault = new SeedVault({ file: tmpFile() });
+  const b = bridgeCom(vault);
+  vault.markSeen(HASH, { name: 'pack' });
+  vault.markCompleted(HASH);
+  vault.addSeedingTime(HASH, vault.requiredMs - 60_000); // falta 1 minuto
+  const torrent = { infoHash: HASH, done: false, progress: 0.9 };
+  b.client = { torrents: [torrent] };
+  b.lastTick.set(HASH, 0);
+  b.seedTick(10 * 60_000); // 10 min "semeando" um torrent incompleto, sem tracker lido
+  assert.equal(vault.get(HASH).satisfiedAt ?? null, null, 'não cumpriu enquanto baixava');
+  assert.equal(vault.get(HASH).seedMs, vault.requiredMs - 60_000);
+});
+
+test('relógio de seed: torrent no fim da verificação (progresso 1, done ainda não emitido) já conta', () => {
+  const vault = new SeedVault({ file: tmpFile() });
+  const b = bridgeCom(vault);
+  vault.markSeen(HASH, { name: 'filme' });
+  vault.markCompleted(HASH);
+  b.client = { torrents: [{ infoHash: HASH, done: false, progress: 1 }] };
+  b.lastTick.set(HASH, 0);
+  b.seedTick(60_000);
+  assert.equal(vault.get(HASH).seedMs, 60_000);
+});
