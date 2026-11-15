@@ -1,10 +1,10 @@
-// Exclusão de UM episódio de um pack, por decisão do usuário. Diferente de `seed-actions` (que age no
-// torrent inteiro depois de o tracker confirmar o seed), aqui o usuário pode excluir mesmo com a
-// obrigação de 72 h aberta: o painel avisa que ela continua no tracker e que, sem baixar de novo
-// antes do prazo, há risco de hit-and-run (13.3). O que este módulo garante é que o estado não fique
-// divergente: o motor é parado antes de apagar, a decisão é gravada ANTES do unlink e nada volta a
-// baixar sozinho enquanto houver exclusão.
+// Exclusão de UM episódio de um pack, por decisão do usuário. Segue a mesma invariante de
+// `seed-actions`: não se para o seed nem se apaga arquivo antes de o TRACKER confirmar o cumprimento
+// (13.1), lido de novo agora; sem resposta, recusa. Pack que nunca concluiu não tem obrigação de seed,
+// então não há o que confirmar. O estado não pode ficar divergente: o motor é parado antes de apagar, a
+// decisão é gravada ANTES do unlink e nada volta a baixar sozinho enquanto houver exclusão.
 const files = require('./retention');
+const hnr = require('./hnr-guard');
 const { isPackEntry } = require('./library');
 
 const fail = (status, error) => Object.assign(new Error(error), { status, expose: true });
@@ -32,6 +32,16 @@ async function excludeFile(bridge, infoHash, fileIdx) {
         throw fail(409, 'O arquivo é compartilhado com outro conteúdo e não pode ser excluído.');
       }
     }
+    // Com conclusão registrada há obrigação de seed: o tracker precisa confirmar o cumprimento agora.
+    const exigeTracker = Boolean(entry.completedAt);
+    const desde = bridge.vault.now();
+    const confirmado = () => hnr.trackerConfirmed(entry) && !entry.tracker.hitAndRun && entry.tracker.checkedAt >= desde;
+    if (exigeTracker) {
+      let consulta;
+      try { consulta = await bridge.trackerCheck?.([infoHash], { force: true }); } catch { /* falha fechada abaixo */ }
+      if (!consulta || consulta.failed || consulta.semRegistro || !consulta.checked) throw fail(503, 'Não foi possível confirmar o seed no tracker. Nada foi removido.');
+      if (!confirmado()) throw fail(409, 'O tracker ainda não confirmou o cumprimento do seed. Excluir um episódio agora pararia o seed deste pack com a obrigação de 72 h aberta; tente depois da confirmação.');
+    }
     const torrent = bridge.client?.torrents.find((t) => t.infoHash === infoHash);
     if (torrent && !torrent.ready) throw fail(409, 'Aguarde o torrent terminar de abrir.');
     if (torrent) {
@@ -42,7 +52,8 @@ async function excludeFile(bridge, infoHash, fileIdx) {
       bridge.lastTick.delete(infoHash);
       bridge.packFiles.delete(infoHash);
     }
-    if (busy()) throw fail(409, 'O estado mudou. O arquivo foi preservado.');
+    // O destroy é assíncrono: reconfere o estado antes de tocar no arquivo.
+    if (busy() || (exigeTracker && !confirmado())) throw fail(409, 'O estado mudou. O arquivo foi preservado.');
     // Grava a decisão antes do primeiro unlink: uma queda ou falha não pode fazer a conclusão em
     // segundo plano baixar o episódio de volta sozinha.
     bridge.vault.setExcluded(infoHash, fileIdx, true);
@@ -52,7 +63,7 @@ async function excludeFile(bridge, infoHash, fileIdx) {
     if (result.failed.length) throw fail(409, 'A exclusão foi registrada, mas o arquivo não pôde ser removido (em uso?). Tente de novo.');
     return {
       infoHash, file: fileIdx, bytes: result.bytes,
-      message: 'Episódio excluído. A obrigação de seed continua no tracker; o seed deste pack fica parado até você baixar o que falta.',
+      message: 'Episódio excluído. O seed deste pack fica parado até você baixar o que falta.',
     };
   } finally {
     bridge.retention.retiring.delete(infoHash);

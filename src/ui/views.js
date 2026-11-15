@@ -519,13 +519,13 @@
     cEps.append(cardHead('Episódios em disco'), epsList, epsNote, epsBar, epsPanel);
     // Ação em andamento no card: excluir um episódio ou baixar o que falta (sempre com confirmação).
     let epAction = null; let epBusy = false; let epResult = ''; let epSig = ''; let epCurrent = null;
-    const epTag = (e) => `S${String(e.season).padStart(2, '0')}E${String(e.episode).padStart(2, '0')}${e.episodeEnd ? `-E${String(e.episodeEnd).padStart(2, '0')}` : ''}`;
+    const epTag = (e) => window.EpisodesModel.tag(e);
     function renderEps(t) {
       epCurrent = t;
       const eps = Array.isArray(t.episodes) ? t.episodes : [];
       cEps.hidden = eps.length === 0;
       if (cEps.hidden) return;
-      const sig = JSON.stringify([eps, t.state, t.deadline, epAction, epBusy, epResult]);
+      const sig = JSON.stringify([eps, t.state, t.deadline, t.completedAt, t.tracker?.satisfied, t.tracker?.hitAndRun, epAction, epBusy, epResult]);
       if (sig === epSig) return;
       epSig = sig;
       // "completo" vem das peças verificadas (motor aberto); "provável" é só o espaço alocado em disco.
@@ -536,9 +536,13 @@
         const detail = e.state === 'parcial' ? ` · ${fmtBytes(e.onDisk)} de ${fmtBytes(e.length)}` : ` · ${fmtBytes(e.length)}`;
         const dd = el('dd', '', e.excluded ? `excluído por você${detail}` : `${label[e.state] ?? e.state}${detail}`);
         if (e.state !== 'ausente' && !e.excluded) {
+          // A regra é a mesma do servidor (src/file-actions.js): só depois de o tracker confirmar o seed.
+          // Desabilitado, o botão fica visível com o motivo, em vez de sumir sem explicar.
+          const acao = window.EpisodesModel.acaoExcluir(t);
           const b = el('button', 'btn btn-ghost btn-sm btn-icon');
-          b.type = 'button'; b.disabled = epBusy; b.title = `Excluir o arquivo de ${epTag(e)}`;
-          b.append(icon('trash-2'), document.createTextNode('Excluir'));
+          b.type = 'button'; b.disabled = epBusy || !acao.permitida;
+          b.title = acao.permitida ? `Excluir o arquivo de ${epTag(e)}` : acao.motivo;
+          b.append(icon(acao.permitida ? 'trash-2' : 'clock'), document.createTextNode('Excluir'));
           b.addEventListener('click', () => { epAction = { kind: 'exclude', file: e.index, tag: epTag(e) }; epResult = ''; renderEps(epCurrent); });
           dd.append(document.createTextNode(' '), b);
         }
@@ -555,15 +559,11 @@
         epsBar.append(b);
       }
       if (epAction) {
-        const open = ['seeding', 'paused', 'missing', 'awaiting'].includes(t.state);
-        const prazo = t.deadline ? ` (prazo ${fmtDate(t.deadline)})` : '';
         const exclude = epAction.kind === 'exclude';
         epsPanel.append(alertBox(exclude ? 'leech' : 'complete',
           exclude ? `Excluir ${epAction.tag}` : 'Baixar o que falta',
           exclude
-            ? (open
-              ? `A obrigação de 72 h continua no tracker e o seed deste pack para até você baixar o que falta. Se não completar o pack de novo antes do prazo${prazo}, há risco de hit-and-run. Nada será baixado de volta sozinho.`
-              : 'O arquivo deste episódio será apagado e nada será baixado de volta sozinho. Você pode baixar o que falta depois.')
+            ? 'O arquivo deste episódio será apagado, o seed deste pack para até você baixar o que falta e nada será baixado de volta sozinho.'
             : (t.freeleech === true
               ? 'O restante baixa em segundo plano e o seed volta a contar para o pack inteiro.'
               : 'Este release não é freeleech: o que falta conta no seu ratio. O seed volta a contar para o pack inteiro.')));
