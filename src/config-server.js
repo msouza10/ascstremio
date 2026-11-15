@@ -286,7 +286,7 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         if (!asc.connected) return send(401, { error: 'Conecte e confirme a sessão do ASC para abrir as configurações.' });
         return send(200, alerts.status());
       }
-      const routes = [...ALERT_POSTS, '/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/seed', '/api/logs/level', ...PANEL_POSTS];
+      const routes = [...ALERT_POSTS, '/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/seed', '/api/exclude', '/api/logs/level', ...PANEL_POSTS];
       if (req.method !== 'POST' || !routes.includes(url.pathname)) return send(404, { error: 'Página inexistente.' });
       const csrfOk = guard ? safeEqual(req.headers['x-csrf-token'], admin.csrf) : req.headers['x-csrf-token'] === token;
       if (req.headers.origin !== channel.origin || !csrfOk || req.headers['content-type'] !== 'application/json') {

@@ -21,6 +21,7 @@ test('servidor: estáticos, painel só com sessão confirmada, ação protegida 
     snapshot: () => ({ titles: [] }),
     complete: async (hash) => { chamadas.push(hash); return { infoHash: hash }; },
     manageSeed: async (hash, action) => { chamadas.push(action); return { action }; },
+    excludeFile: async (hash, file) => { chamadas.push(`excluir:${file}`); return { infoHash: hash, file, message: 'ok' }; },
   });
   try {
     // páginas: todas devolvem o mesmo shell; o roteador do cliente escolhe a view
@@ -75,7 +76,19 @@ test('servidor: estáticos, painel só com sessão confirmada, ação protegida 
     assert.equal((await seed({ ...bom, 'Content-Type': 'text/plain' }, resume)).status, 403);
     assert.equal((await seed(bom, resume)).status, 200);
     assert.deepEqual(chamadas, [H('a'), 'delete', 'resume']);
+    // excluir um episódio: mesma proteção das outras rotas, e a rota precisa existir no painel
+    const exclude = (headers, body) => fetch(`${BASE}/api/exclude`, { method: 'POST', headers, body: JSON.stringify(body) });
+    const ep = { infoHash: H('a'), file: 1 };
+    assert.equal((await exclude({ 'Content-Type': 'application/json' }, ep)).status, 403, 'sem token');
+    assert.equal((await exclude({ ...bom, Origin: 'https://externo.invalid' }, ep)).status, 403, 'origem externa');
+    assert.equal((await exclude(bom, { ...ep, infoHash: '../arquivo' })).status, 400);
+    assert.equal((await exclude(bom, { ...ep, file: -1 })).status, 400);
+    assert.equal((await exclude(bom, { ...ep, file: '1' })).status, 400, 'o índice é número');
+    assert.deepEqual(chamadas, [H('a'), 'delete', 'resume'], 'pedidos inválidos não chegam à ponte');
+    assert.equal((await exclude(bom, ep)).status, 200);
+    assert.deepEqual(chamadas, [H('a'), 'delete', 'resume', 'excluir:1']);
     asc.connected = false;
+    assert.equal((await exclude(bom, ep)).status, 401, 'sessão caída');
     assert.equal((await seed(bom, resume)).status, 401);
     assert.equal((await seed(bom, choice)).status, 401);
     assert.equal((await post(bom, { infoHash: H('a') })).status, 401, 'sessão caiu');
