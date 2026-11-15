@@ -13,7 +13,7 @@ ENV NODE_ENV=production \
     PORT=7000 BRIDGE_PORT=7010 CONFIG_PORT=7020 TORRENT_PORT=7030
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json LICENSE ./
+COPY package.json LICENSE LEGAL.md ./
 COPY src ./src
 RUN mkdir /data && chown node:node /data
 USER node

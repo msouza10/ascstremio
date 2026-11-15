@@ -43,6 +43,11 @@ Use `npm start`, que inclui a opção de cabeçalhos HTTP exigida pela integraç
 
 ## Antes de assistir
 
+Leia os [avisos legais](LEGAL.md): o uso da integração exige verificar as permissões aplicáveis,
+e a máquina baixa e compartilha arquivos por BitTorrent. O texto não garante autorização das obras
+nem regularidade da conta. A [matriz de conformidade](docs/conformidade-juridica.md) compara os avisos,
+o código e as pendências técnicas e jurídicas identificadas.
+
 O padrão `AFTER_SEED=delete` **apaga os arquivos de vídeo depois que o tracker confirma o cumprimento do seed**. Use `stop` para manter os arquivos ou `keep` para continuar semeando. Reproduzir um filme removido pode baixar tudo novamente e gerar nova obrigação.
 
 Freeleech não dispensa seed. O aplicativo acompanha a meta de 72 horas ou ratio 1,0 por torrent, o prazo de hit-and-run e a inatividade da conta; isso não garante que sua conta esteja regular. Leia [seed e regras operacionais](docs/seed.md) e confira as regras atuais no ASC.
@@ -66,6 +71,6 @@ O [índice dos guias](docs/README.md) organiza a leitura por tarefa. O [changelo
 
 Os serviços HTTP ficam no loopback do host por padrão. O modo LAN é opcional e tem limitações; a administração da ponte exige um token próprio (`admin-key`), separado das credenciais de reprodução, que são individuais e revogáveis. A porta de peers BitTorrent tem exposição diferente dos serviços HTTP. Portas, modos e variáveis estão na [tabela de rede](docs/seguranca.md#portas-e-interfaces); TV e celular só precisam do streaming, nunca do painel. A `?k=` e a URL do addon são credenciais reutilizáveis: não as compartilhe em capturas, chats ou diagnósticos. Consulte [segurança e rede](docs/seguranca.md) antes de alterar a instalação.
 
-A auditoria completa do histórico Git e a validação das regras do ASC para distribuição pública ainda não foram feitas; a barreira de segredos cobre a árvore e os pacotes. O código é distribuído sob a [licença MIT](LICENSE). O uso de conta individual não equivale a autorização do tracker nem concede direitos sobre conteúdo de terceiros.
+As auditorias de segredos anteriores do histórico e dos artefatos, incluindo a imagem GHCR da versão 0.2.0, estão registradas na [issue #11](https://github.com/msouza10/ascstremio/issues/11). Elas se limitam às revisões e aos artefatos examinados; a barreira e as auditorias devem continuar nas novas distribuições. A validação das permissões da integração é acompanhada na [issue #94](https://github.com/msouza10/ascstremio/issues/94). O código é distribuído sob a [licença MIT](LICENSE). O uso de conta individual não equivale a autorização do tracker nem concede direitos sobre conteúdo de terceiros.
 
 Para contribuir, leia o [guia de contribuição](.github/CONTRIBUTING.md) e o [código de conduta](.github/CODE_OF_CONDUCT.md). Vulnerabilidades devem seguir a [política de segurança](.github/SECURITY.md).
