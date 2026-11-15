@@ -1143,6 +1143,8 @@ class Bridge {
         throw err;
       }
     };
+    // Prazo SEM PROGRESSO: cada peça verificada renova. Abrir um torrent grande já em disco (um pack
+    // com dezenas de GB) verifica tudo antes do 'ready' e passa fácil de 30 s; só travar de verdade aborta.
     const timeoutMs = seedResume ? 5 * 60_000 : 30_000;
     checkMaintenance();
     if (this.loading.has(infoHash)) {
@@ -1168,7 +1170,7 @@ class Bridge {
           timer = setTimeout(() => { finish(); reject(new Error('timeout ao abrir o torrent')); }, timeoutMs);
         };
         const finish = () => { clearTimeout(timer); already.removeListener('verified', progress); };
-        if (seedResume) already.on('verified', progress);
+        already.on('verified', progress);
         already.once('ready', () => { finish(); resolve(); });
         already.once('error', () => { finish(); reject(new Error('falha ao abrir o torrent')); });
       });
@@ -1233,7 +1235,9 @@ class Bridge {
             torrentPath: entry.torrentPath,
             announceBase: base ?? null,
             name: torrent.name ?? entry.name,
-            freeleech: entry.freeleech ?? null,
+            // O que o tracker informou (cofre) vale mais: a entrada vinda do disco não traz freeleech
+            // depois de um reinício e não pode apagá-lo.
+            ...(typeof entry.freeleech === 'boolean' ? { freeleech: entry.freeleech } : {}),
           });
           // Conclusão em segundo plano pedida antes de um reinício: retoma.
           if (!seedResume && this.vault.get(torrent.infoHash)?.backgroundComplete) this.completionTick();
@@ -1245,7 +1249,7 @@ class Bridge {
 
           resolve(torrent);
         });
-        if (seedResume && !pending.ready) pending.on('verified', progress);
+        if (!pending.ready) pending.on('verified', progress);
         pending.on('warning', (err) => tlog.warn(`aviso de conectividade em ${short(infoHash)}: ${err?.message ?? err}`));
         pending.once('error', (err) => {
           tlog.error(`falha ao abrir ${short(infoHash)}: ${err?.message ?? err}`);
