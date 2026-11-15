@@ -434,3 +434,27 @@ test('pack: o usuário pedindo a conclusão do torrent continua valendo', () => 
   b.completionTick(1e6);
   assert.equal(selecoes.length > 0, true);
 });
+
+test('snapshot: pack mostra os episódios com o que há em disco; filme não ganha o campo', async () => {
+  const b = ponte();
+  b.entries.set(HASH, { ...PACK, name: 'Pack', title: 'Pack' });
+  b.client.torrents.push({ infoHash: HASH, name: 'Pack', ready: true, done: false, length: 30 * GB, downloaded: 13 * GB, progress: 0.43,
+    files: PACK.files.map((f, i) => ({ length: f.length, downloaded: [10 * GB, 3 * GB, 0, 0][i] })) });
+  const item = b.snapshot().titles.find((t) => t.infoHash === HASH);
+  assert.deepEqual(item.episodes.map((e) => [e.season, e.episode, e.state, e.verified]),
+    [[1, 1, 'completo', true], [1, 2, 'parcial', true], [1, 3, 'ausente', true]]);
+  assert.equal(item.episodes[1].onDisk, 3 * GB);
+  assert.equal(item.episodes[0].length, 10 * GB);
+
+  const filme = '1'.repeat(40);
+  b.entries.set(filme, { infoHash: filme, name: 'Filme', title: 'Filme', files: [{ index: 0, path: 'F/F.mkv', length: 5 * GB, isVideo: true }] });
+  assert.equal('episodes' in b.snapshot().titles.find((t) => t.infoHash === filme), false);
+});
+
+test('snapshot: pack fora do motor mostra o disco como não verificado', () => {
+  const b = ponte();
+  b.entries.set(HASH, { ...PACK, name: 'Pack', title: 'Pack' });
+  const item = b.snapshot().titles.find((t) => t.infoHash === HASH);
+  assert.equal(item.episodes.length, 3);
+  assert.equal(item.episodes.every((e) => e.verified === false && e.state === 'ausente'), true);
+});

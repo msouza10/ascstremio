@@ -509,7 +509,13 @@
     const cTr = card();
     const trRows = el('dl', 'rows');
     cTr.append(cardHead('Tracker'), trRows);
-    main.append(cSeed, cDue, cState, cTr);
+    // episódios de um pack: só aparece quando o título é pack
+    const cEps = card();
+    cEps.hidden = true;
+    const epsList = el('dl', 'rows');
+    const epsNote = el('p', 'foot');
+    cEps.append(cardHead('Episódios em disco'), epsList, epsNote);
+    main.append(cSeed, cDue, cState, cEps, cTr);
 
     // aside
     const cAct = card();
@@ -553,6 +559,24 @@
 
         clear(alerts);
         for (const w of t.warnings) alerts.append(alertBox(t.risk === 'crit' ? 'leech' : 'complete', t.risk === 'crit' ? 'Aja agora' : 'Atenção', w));
+
+        // Episódios do pack. "completo" vem das peças verificadas (motor aberto); "provável" é só o
+        // espaço alocado em disco, sem conferência.
+        cEps.hidden = !Array.isArray(t.episodes) || t.episodes.length === 0;
+        if (!cEps.hidden) {
+          const label = { completo: 'completo', provavel: 'provável (não verificado)', parcial: 'em parte', ausente: 'não baixado' };
+          const tag = (e) => `S${String(e.season).padStart(2, '0')}E${String(e.episode).padStart(2, '0')}${e.episodeEnd ? `-E${String(e.episodeEnd).padStart(2, '0')}` : ''}`;
+          clear(epsList);
+          for (const e of t.episodes) {
+            const row = el('div', 'row');
+            const detail = e.state === 'parcial' ? ` · ${fmtBytes(e.onDisk)} de ${fmtBytes(e.length)}` : ` · ${fmtBytes(e.length)}`;
+            row.append(el('dt', '', tag(e)), el('dd', '', `${label[e.state] ?? e.state}${detail}`));
+            epsList.append(row);
+          }
+          setText(epsNote, t.episodes.some((e) => e.verified)
+            ? 'A seed é do torrent inteiro: a meta de 72 h vale para o pack, não por episódio.'
+            : 'Torrent fora do motor: os tamanhos vêm do espaço em disco e não foram conferidos peça a peça. A meta de 72 h vale para o pack inteiro, não por episódio.');
+        }
 
         const ob = ['seeding', 'paused', 'missing', 'awaiting', 'hnr', 'done'].includes(t.state);
         const tone = t.risk === 'crit' ? 'leech' : t.risk === 'warn' ? 'complete' : 'seed';

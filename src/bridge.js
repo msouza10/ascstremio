@@ -11,6 +11,7 @@ const path = require('path');
 
 const { loadLibrary, mainVideo, isPackEntry } = require('./library');
 const { buildEpisodeIndex, findEpisode } = require('./episodes');
+const { fileStates } = require('./file-state');
 const { announceWithPasskey } = require('./passkey');
 const { SeedVault } = require('./seedvault');
 const { isLoopbackRequest, inContainer, hostAllowed } = require('./safety');
@@ -310,6 +311,20 @@ class Bridge {
   // O arquivo está completo em disco? (tamanho de cada arquivo do torrent.) Só
   // vale para torrents que o tracker já deu como concluídos; sem os dados não dá
   // para semear, e anunciar assim viraria um download novo.
+  // Episódios de um pack com o que há em disco de cada um (só packs). Com o motor aberto o número
+  // vem das peças verificadas; sem ele, do espaço alocado, e então `verified` é false.
+  episodeStates(lib, torrent) {
+    const states = new Map(fileStates({ files: lib.files, torrent, storeDir: this.storeDir }).map((s) => [s.index, s]));
+    const index = lib.episodes ?? buildEpisodeIndex(lib.files);
+    return index.episodes.map((e) => {
+      const s = states.get(e.index);
+      return {
+        index: e.index, season: e.season, episode: e.episode, episodeEnd: e.episodeEnd ?? null,
+        length: e.length, onDisk: s?.onDisk ?? 0, state: s?.state ?? 'ausente', verified: Boolean(s?.verified),
+      };
+    });
+  }
+
   diskState(infoHash) {
     const lib = this.entries.get(infoHash);
     if (!lib?.files?.length) return null;
@@ -829,6 +844,7 @@ class Bridge {
         active: Boolean(torrent),
         onDisk: this.diskState(infoHash),
         backgroundComplete: Boolean(entry?.backgroundComplete),
+        ...(isPackEntry(lib) ? { episodes: this.episodeStates(lib, torrent) } : {}),
         released: entry?.releasedAs ?? null,
         seedChoice: entry?.seedChoice ?? null,
         progress: torrent ? Number((torrent.progress || 0).toFixed(4)) : (completed ? 1 : 0),
