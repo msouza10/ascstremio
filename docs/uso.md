@@ -50,6 +50,7 @@ Os caminhos abaixo são relativos a `http://127.0.0.1:7020`. São páginas locai
 
 | Página | Conteúdo |
 |---|---|
+| `/avisos-legais` | Aviso integral em texto, com versão, disponível offline e antes do login; também há links no cabeçalho e no assistente |
 | `/` | Avisos, indicadores, obrigações, downloads, tráfego e conta |
 | `/filmes` | Biblioteca por situação, busca e andamento |
 | `/filmes/<infoHash>` | Seed, prazo, dados do tracker e ação de concluir download |

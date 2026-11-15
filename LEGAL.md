@@ -137,6 +137,10 @@ nas instalações pessoais ou remover conteúdo de serviços de terceiros.
 
 ## 9. Alcance deste aviso
 
+O texto desta versão fica disponível offline pelo link **Avisos legais** do painel e do
+assistente, no caminho `/avisos-legais`, inclusive antes do login. Ele é exibido como texto
+para leitura, sem depender de serviços externos.
+
 Este aviso explica o funcionamento e os limites conhecidos da distribuição. Sua leitura ou uma
 eventual confirmação de ciência não comprova autorização sobre conteúdo nem afasta direitos de
 terceiros. Ele não modifica a MIT, não impõe foro exclusivo e não pretende substituir leis

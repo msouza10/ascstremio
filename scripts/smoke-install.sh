@@ -15,5 +15,14 @@ cd "$APPDIR/app"
 DATA_DIR="$APPDIR/data" PORT=17000 BRIDGE_PORT=17010 CONFIG_PORT=17020 \
   node --max-http-header-size=65536 src/index.js >"$FAKE_HOME/app.log" 2>&1 &
 APP_PID=$!
-for _ in $(seq 1 60); do curl -fs http://127.0.0.1:17010/health >/dev/null && { echo "ok   ponte respondeu"; exit 0; }; sleep 1; done
+for _ in $(seq 1 60); do
+  if curl -fs http://127.0.0.1:17010/health >/dev/null; then
+    echo "ok   ponte respondeu"
+    curl --retry 5 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:17020/avisos-legais > "$FAKE_HOME/aviso-servido.md"
+    cmp LEGAL.md "$FAKE_HOME/aviso-servido.md"
+    echo "ok   aviso legal disponível sem login, igual ao arquivo instalado"
+    exit 0
+  fi
+  sleep 1
+done
 echo "FALHA: a ponte não respondeu"; tail -n 30 "$FAKE_HOME/app.log"; exit 1

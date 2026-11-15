@@ -69,6 +69,7 @@ test('avisos legais acompanham os caminhos de distribuição e ficam acessíveis
     assert.match(ler(...arquivo), /done < scripts\/documentation-files\.txt/, `${arquivo.join('/')} não usa a lista pública`);
   }
   assert.match(ler('Dockerfile'), /^COPY .*\bLEGAL\.md\b.*\.\/$/m);
+  assert.match(ler('windows', 'build.sh'), /^cp LEGAL\.md "\$STAGE\/app\/"$/m);
   assert.match(ler('README.md'), /\]\(LEGAL\.md\)/);
   assert.match(ler('docs', 'README.md'), /\]\(\.\.\/LEGAL\.md\)/);
 });

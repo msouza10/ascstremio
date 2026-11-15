@@ -19,10 +19,13 @@ code() { curl -s -o /dev/null -w '%{http_code}' "$1" || true; }
 for _ in $(seq 1 60); do [ "$(code http://127.0.0.1:$P_BRIDGE/health)" = 200 ] && break; sleep 1; done
 
 fail=0
-for url in "$P_BRIDGE/health" "$P_PANEL/"; do
+for url in "$P_BRIDGE/health" "$P_PANEL/" "$P_PANEL/avisos-legais"; do
   c="$(code "http://127.0.0.1:$url")"
   if [ "$c" = 200 ]; then echo "ok   $url"; else echo "FALHA $url -> $c"; fail=1; fi
 done
+if [ "$(curl -fsS "http://127.0.0.1:$P_PANEL/avisos-legais")" != "$("$ENGINE" exec "$NAME" cat /app/LEGAL.md)" ]; then
+  echo "FALHA aviso legal servido difere do arquivo na imagem"; fail=1
+fi
 # Rotas administrativas: sem o token dão 403, com ele (lido de dentro do contêiner) 200.
 admin_key="$("$ENGINE" exec "$NAME" cat /data/admin-key)"
 c="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$P_BRIDGE/status" || true)"

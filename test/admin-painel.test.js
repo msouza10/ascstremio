@@ -12,6 +12,19 @@ const { startConfig, resolveChannel } = require('../src/config-server');
 const { Logger } = require('../src/logger');
 const { tmpdir } = require('./tmp-helper');
 
+test('aviso legal no canal autorizado não exige login nem abre as APIs administrativas', async () => {
+  const t = await setup();
+  try {
+    for (const host of [t.localHost, t.lanHost]) {
+      const res = await t.req('GET', '/avisos-legais', { host });
+      assert.equal(res.status, 200);
+      assert.equal(res.text, fs.readFileSync(path.join(__dirname, '..', 'LEGAL.md'), 'utf8'));
+      assert.equal((await t.req('GET', '/api/status', { host })).status, 401);
+    }
+    assert.equal((await t.req('GET', '/avisos-legais', { host: 'evil.example' })).status, 403);
+  } finally { await t.close(); }
+});
+
 const NET = { eth0: [{ address: '192.168.1.20', family: 'IPv4', internal: false }] };
 const SENHA = 'correto-cavalo-bateria-9';
 const NOVA_SENHA = ['outra', 'senha', 'bem', 'longa', '77'].join('-'); // montada em partes: fixture sintética, não segredo

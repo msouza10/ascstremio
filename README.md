@@ -48,6 +48,9 @@ e a máquina baixa e compartilha arquivos por BitTorrent. O texto não garante a
 nem regularidade da conta. A [matriz de conformidade](docs/conformidade-juridica.md) compara os avisos,
 o código e as pendências técnicas e jurídicas identificadas.
 
+O painel oferece **Avisos legais** no cabeçalho e no assistente, em uma nova aba, mesmo antes do
+login. O caminho `/avisos-legais` mostra o texto da sua versão instalada sem precisar de internet.
+
 O padrão `AFTER_SEED=delete` **apaga os arquivos de vídeo depois que o tracker confirma o cumprimento do seed**. Use `stop` para manter os arquivos ou `keep` para continuar semeando. Reproduzir um filme removido pode baixar tudo novamente e gerar nova obrigação.
 
 Freeleech não dispensa seed. O aplicativo acompanha a meta de 72 horas ou ratio 1,0 por torrent, o prazo de hit-and-run e a inatividade da conta; isso não garante que sua conta esteja regular. Leia [seed e regras operacionais](docs/seed.md) e confira as regras atuais no ASC.
