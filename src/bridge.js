@@ -119,6 +119,7 @@ class Bridge {
     ascSizeHint = null, // (ascId) => bytes da listagem, para reservar espaço antes de baixar o .torrent
     ascEpisodeResolver = null, // async (ascId, season, episode) => { infoHash, fileIdx }  (/e/<id>/<T>/<E>)
     ascEpisodeSizeHint = null, // (ascId, season, episode) => bytes do episódio na listagem (0 = desconhecido)
+    ascImdbHint = null, // (ascId) => IMDb da série que o provedor listou para o release (vínculo gravado no play)
     loadPieceMeta = null, // async (torrentPath) => { pieceLength, pieces, length, files }; injetável nos testes
   }) {
     this.torrentDir = torrentDir;
@@ -166,6 +167,7 @@ class Bridge {
     this.ascResolver = ascResolver;
     this.ascSizeHint = ascSizeHint;
     this.ascEpisodeResolver = ascEpisodeResolver;
+    this.ascImdbHint = ascImdbHint;
     this.ascEpisodeSizeHint = ascEpisodeSizeHint;
     // Pack: infoHash -> Map(índice do arquivo -> bytes prometidos na admissão). Só vale enquanto o
     // torrent está no motor: se foi destruído (limpeza, seed, retenção) ou nunca abriu, a admissão
@@ -733,6 +735,29 @@ class Bridge {
 
   requestFilesCompletion(infoHash, scope) {
     return completeFiles(this, infoHash, scope);
+  }
+
+  // Episódios locais que servem a um pedido de série SEM o ASC: pack vinculado àquela série no play,
+  // episódio não excluído e `completo` com prova (motor aberto ou verificação por peças ainda válida).
+  // Tamanho "provável" nunca basta. Só leitura, sem rede.
+  localEpisodeSources(imdbId, season, episode) {
+    const out = [];
+    for (const entry of this.vault.list()) {
+      if (entry.imdbId !== imdbId) continue;
+      const lib = this.entries.get(entry.infoHash);
+      if (!lib || !isPackEntry(lib)) continue;
+      const found = findEpisode(lib.episodes ?? buildEpisodeIndex(lib.files), season, episode);
+      if (!found?.file) continue; // sem o episódio, ou dois arquivos dizem ser ele: não adivinha
+      const torrent = this.client?.torrents.find((t) => t.infoHash === entry.infoHash) ?? null;
+      const state = this.episodeStates(lib, torrent, entry.excluded ?? []).find((e) => e.index === found.file.index);
+      if (!state || state.excluded || state.state !== 'completo' || !state.verified) continue;
+      out.push({
+        infoHash: entry.infoHash, fileIdx: found.file.index, length: found.file.length, path: found.file.path,
+        name: lib.title ?? lib.name ?? entry.name ?? null,
+        ascId: /asc-(\d+)\.torrent$/.exec(String(lib.torrentPath ?? ''))?.[1] ?? null,
+      });
+    }
+    return out;
   }
 
   verifyEpisodes(infoHash) {
@@ -1624,8 +1649,10 @@ class Bridge {
 
     // /a/<id>: fonte listada pelo Stremio sem .torrent local. Só o GET (o play)
     // baixa o .torrent; HEAD e sondagens nunca baixam nem anunciam.
+    let seriesImdb = null; // série do episódio tocado, para vincular o pack no cofre
     if (lazy) {
       const ascId = lazy[1];
+      if (episode) seriesImdb = this.ascImdbHint?.(ascId) ?? null;
       const local = this.entryByAscId(ascId);
       const main = this.lazyFile(local, episode);
       const resolver = episode ? this.ascEpisodeResolver : this.ascResolver;
@@ -1704,6 +1731,7 @@ class Bridge {
     const torrent = await this.getTorrent(infoHash, { fileIdx });
     // Tocar um episódio excluído é pedir de novo: só esse arquivo deixa de estar excluído.
     if (fileIdx !== null) this.vault.setExcluded(infoHash, fileIdx, false);
+    if (seriesImdb) this.vault.setSeriesLink(infoHash, seriesImdb);
     // A resposta pode ter sido encerrada durante a espera (revogação ou cliente que saiu): o 'close'
     // já passou e não limparia o contador de streams abertos, que travaria conclusão e ociosidade.
     if (res.destroyed) return;
