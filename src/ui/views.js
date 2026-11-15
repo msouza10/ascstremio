@@ -573,6 +573,14 @@
         b.addEventListener('click', () => epSet(EM.escolher(ep, { kind: 'restore' })));
         epsBar.append(b);
       }
+      if (!ep.action && EM.podeVerificar(eps)) {
+        const b = el('button', 'btn btn-outline btn-sm btn-icon');
+        b.type = 'button'; b.disabled = ep.busy;
+        b.title = 'Confere por peças, no disco, os episódios que só parecem completos.';
+        b.append(icon('shield-check'), document.createTextNode('Verificar peças'));
+        b.addEventListener('click', () => epSet(EM.escolher(ep, { kind: 'verify' })));
+        epsBar.append(b);
+      }
       if (ep.action) {
         const d = EM.descricao(ep.action, t);
         epsPanel.append(alertBox(d.perigo ? 'leech' : 'complete', d.titulo, d.texto));
@@ -595,7 +603,7 @@
       if (ep.result) { const m = el('p', 'foot', ep.result); m.setAttribute('role', 'status'); epsPanel.append(m); }
       setText(epsNote, eps.some((e) => e.verified)
         ? 'O seed é do torrent inteiro: a meta de 72 h vale para o pack, não por episódio.'
-        : 'Torrent fora do motor: os tamanhos vêm do espaço em disco e não foram conferidos peça a peça. A meta de 72 h vale para o pack inteiro, não por episódio.');
+        : 'Torrent fora do motor: os tamanhos vêm do espaço em disco; use "Verificar peças" para conferir peça a peça. A meta de 72 h vale para o pack inteiro, não por episódio.');
     }
     main.append(cSeed, cDue, cState, cEps, cTr);
 

@@ -232,6 +232,7 @@ async function main() {
     manageSeed: (infoHash, action) => bridge.manageSeed(infoHash, action),
     excludeFile: (infoHash, fileIdx) => bridge.excludeFile(infoHash, fileIdx),
     excludeSeason: (infoHash, season) => bridge.excludeSeason(infoHash, season),
+    verifyEpisodes: (infoHash) => bridge.verifyEpisodes(infoHash),
     completeFiles: (infoHash, scope) => bridge.requestFilesCompletion(infoHash, scope),
   }, undefined, panel, alerts, { plan: remoteAdmin, credential: adminCredential });
   // Alertas: avaliação a cada minuto sobre o snapshot (leitura pura); a entrega é assíncrona e

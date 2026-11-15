@@ -24,6 +24,7 @@ const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { Retention } = require('./retention-service');
 const { manageSeed } = require('./seed-actions');
 const { excludeFile, excludeSeason, completeFiles } = require('./file-actions');
+const { verifyPack, stampOf, defaultLoadMeta } = require('./piece-check');
 const { logger } = require('./logger');
 const { rankPending, runLimited } = require('./resume-policy');
 const { StreamMetrics } = require('./stream-metrics');
@@ -118,6 +119,7 @@ class Bridge {
     ascSizeHint = null, // (ascId) => bytes da listagem, para reservar espaço antes de baixar o .torrent
     ascEpisodeResolver = null, // async (ascId, season, episode) => { infoHash, fileIdx }  (/e/<id>/<T>/<E>)
     ascEpisodeSizeHint = null, // (ascId, season, episode) => bytes do episódio na listagem (0 = desconhecido)
+    loadPieceMeta = null, // async (torrentPath) => { pieceLength, pieces, length, files }; injetável nos testes
   }) {
     this.torrentDir = torrentDir;
     this.storeDir = storeDir;
@@ -172,6 +174,10 @@ class Bridge {
     this.streams = new Map(); // infoHash -> streams HTTP abertos agora
     this.lastStreamEnd = new Map(); // infoHash -> ms do último stream encerrado
     this.completing = new Set(); // infoHash com o torrent inteiro selecionado
+    // Prova por peças de arquivos fora do motor (infoHash -> Map(índice -> { ok, stamp })). Só em memória.
+    this.pieceProof = new Map();
+    this.verifying = new Set();
+    this.loadPieceMeta = loadPieceMeta ?? defaultLoadMeta;
     this.noPeersWarned = new Set(); // infoHash já avisado de "sem peers" neste período
     // Histórico de tráfego para o painel: uma amostra a cada 15 s, 1 h no total.
     this.traffic = [];
@@ -309,11 +315,19 @@ class Bridge {
   episodeStates(lib, torrent, excluded = []) {
     const states = new Map(fileStates({ files: lib.files, torrent, storeDir: this.storeDir }).map((s) => [s.index, s]));
     const index = lib.episodes ?? buildEpisodeIndex(lib.files);
+    const proof = this.pieceProof.get(lib.infoHash);
     return index.episodes.map((e) => {
       const s = states.get(e.index);
+      let state = s?.state ?? 'ausente'; let verified = Boolean(s?.verified); let pieceCheck = null;
+      // Fora do motor, só a prova por peças (ainda válida para o arquivo como está) vale como "completo".
+      const p = state === 'provavel' ? proof?.get(e.index) : null;
+      if (p && p.stamp === stampOf(this.storeDir, e.path)) {
+        pieceCheck = p.ok ? 'ok' : 'falhou';
+        if (p.ok) { state = 'completo'; verified = true; }
+      }
       return {
         index: e.index, season: e.season, episode: e.episode, episodeEnd: e.episodeEnd ?? null,
-        length: e.length, onDisk: s?.onDisk ?? 0, state: s?.state ?? 'ausente', verified: Boolean(s?.verified),
+        length: e.length, onDisk: s?.onDisk ?? 0, state, verified, pieceCheck,
         excluded: excluded.includes(e.index),
       };
     });
@@ -719,6 +733,10 @@ class Bridge {
 
   requestFilesCompletion(infoHash, scope) {
     return completeFiles(this, infoHash, scope);
+  }
+
+  verifyEpisodes(infoHash) {
+    return verifyPack(this, infoHash);
   }
 
   excludeSeason(infoHash, season) {

@@ -23,6 +23,7 @@ test('servidor: estáticos, painel só com sessão confirmada, ação protegida 
     manageSeed: async (hash, action) => { chamadas.push(action); return { action }; },
     excludeFile: async (hash, file) => { chamadas.push(`excluir:${file}`); return { infoHash: hash, file, message: 'ok' }; },
     excludeSeason: async (hash, season) => { chamadas.push(`excluir-temporada:${season}`); return { infoHash: hash, message: 'ok' }; },
+    verifyEpisodes: async (hash) => { chamadas.push('verificar'); return { infoHash: hash, ok: 1, failed: 0, message: 'ok' }; },
     completeFiles: async (hash, scope) => { chamadas.push(`concluir:${JSON.stringify(scope)}`); return { infoHash: hash, message: 'ok' }; },
   });
   try {
@@ -103,7 +104,15 @@ test('servidor: estáticos, painel só com sessão confirmada, ação protegida 
     assert.equal((await post(bom, { infoHash: H('a'), season: 2 })).status, 202);
     assert.equal((await post(bom, { infoHash: H('a'), file: 4 })).status, 202);
     assert.deepEqual(chamadas.slice(-3), ['excluir-temporada:1', 'concluir:{"season":2}', 'concluir:{"file":4}']);
+    // verificar por peças: mesma proteção; só o infoHash entra
+    const verificar = (headers, body) => fetch(`${BASE}/api/verify-pieces`, { method: 'POST', headers, body: JSON.stringify(body) });
+    assert.equal((await verificar({ 'Content-Type': 'application/json' }, { infoHash: H('a') })).status, 403, 'sem token');
+    assert.equal((await verificar({ ...bom, Origin: 'https://externo.invalid' }, { infoHash: H('a') })).status, 403);
+    assert.equal((await verificar(bom, { infoHash: '../x' })).status, 400);
+    assert.equal((await verificar(bom, { infoHash: H('a') })).status, 200);
+    assert.equal(chamadas.at(-1), 'verificar');
     asc.connected = false;
+    assert.equal((await verificar(bom, { infoHash: H('a') })).status, 401, 'sessão caída');
     assert.equal((await exclude(bom, ep)).status, 401, 'sessão caída');
     assert.equal((await seed(bom, resume)).status, 401);
     assert.equal((await seed(bom, choice)).status, 401);
