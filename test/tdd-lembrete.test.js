@@ -7,6 +7,12 @@ const { spawnSync } = require('node:child_process');
 const { tmpdir } = require('./tmp-helper');
 const { decidir, marcadorPath } = require('../scripts/tdd-lembrete');
 
+// Estes testes também rodam no pacote de instalação (npm run check do instalador), que não tem .git
+// nem .claude, e na máquina de quem pode não ter o git. O que depende disso é pulado.
+const PROJETO = path.resolve(__dirname, '..');
+const TEM_GIT = spawnSync('git', ['--version']).status === 0;
+const EM_REPOSITORIO = TEM_GIT && spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: PROJETO, encoding: 'utf8' }).stdout.trim() === 'true';
+
 const RAIZ = path.resolve('/projeto');
 const base = { raiz: RAIZ, testesAlterados: false, marcadorExiste: false };
 const em = (rel) => path.join(RAIZ, rel);
@@ -75,7 +81,7 @@ const roda = (dir, entrada) => spawnSync(process.execPath, [SCRIPT], { cwd: dir,
 const sessao = () => `teste-${process.pid}-${Math.random().toString(16).slice(2)}`;
 const limpa = (id, dir) => { for (const f of fs.readdirSync(os.tmpdir())) if (f.includes(id)) fs.rmSync(path.join(os.tmpdir(), f), { force: true }); fs.rmSync(dir, { recursive: true, force: true }); };
 
-test('execução: lembra uma vez, no formato do hook PreToolUse, e não repete na mesma sessão', () => {
+test('execução: lembra uma vez, no formato do hook PreToolUse, e não repete na mesma sessão', { skip: !TEM_GIT }, () => {
   const dir = repo(); const id = sessao();
   try {
     const entrada = { session_id: id, cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'src', 'a.js') } };
@@ -93,7 +99,7 @@ test('execução: lembra uma vez, no formato do hook PreToolUse, e não repete n
   } finally { limpa(id, dir); }
 });
 
-test('execução: teste novo ou alterado na árvore de trabalho silencia o lembrete', () => {
+test('execução: teste novo ou alterado na árvore de trabalho silencia o lembrete', { skip: !TEM_GIT }, () => {
   for (const preparar of [
     (dir) => fs.writeFileSync(path.join(dir, 'test', 'novo.test.js'), '1'), // não rastreado
     (dir) => fs.writeFileSync(path.join(dir, 'test', 'a.test.js'), '2'), // alterado
@@ -108,7 +114,7 @@ test('execução: teste novo ou alterado na árvore de trabalho silencia o lembr
   }
 });
 
-test('execução: entrada quebrada, vazia ou fora de um repositório git nunca falha nem fala', () => {
+test('execução: entrada quebrada, vazia ou fora de um repositório git nunca falha nem fala', { skip: !TEM_GIT }, () => {
   const dir = repo(); const id = sessao();
   const semGit = tmpdir('tdd-sem-git-');
   try {
@@ -123,7 +129,7 @@ test('execução: entrada quebrada, vazia ou fora de um repositório git nunca f
   } finally { limpa(id, dir); fs.rmSync(semGit, { recursive: true, force: true }); }
 });
 
-test('o hook versionado em .claude/settings.json aponta para este script e só cobre edições', () => {
+test('o hook versionado em .claude/settings.json aponta para este script e só cobre edições', { skip: !EM_REPOSITORIO }, () => {
   const cfg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '.claude', 'settings.json'), 'utf8'));
   const entradas = cfg.hooks?.PreToolUse ?? [];
   const nosso = entradas.filter((e) => (e.hooks ?? []).some((h) => /scripts[\\/]tdd-lembrete\.js/.test(h.command ?? '')));
@@ -136,7 +142,7 @@ test('o hook versionado em .claude/settings.json aponta para este script e só c
   assert.deepEqual(Object.keys(cfg.hooks), ['PreToolUse'], 'nenhum outro gancho entra por aqui');
 });
 
-test('o .gitignore libera só .claude/settings.json; o resto de .claude/ continua local', () => {
+test('o .gitignore libera só .claude/settings.json; o resto de .claude/ continua local', { skip: !EM_REPOSITORIO }, () => {
   const raiz = path.resolve(__dirname, '..');
   const ignorado = (rel) => spawnSync('git', ['check-ignore', '-q', rel], { cwd: raiz }).status === 0;
   assert.equal(ignorado('.claude/settings.json'), false, 'a configuração do hook precisa ser versionada');
@@ -144,13 +150,13 @@ test('o .gitignore libera só .claude/settings.json; o resto de .claude/ continu
   assert.equal(ignorado('.claude/qualquer-outra-coisa.json'), true);
 });
 
-test('o script é versionado com permissão de execução, como o AGENTS.md exige de script novo', () => {
+test('o script é versionado com permissão de execução, como o AGENTS.md exige de script novo', { skip: !EM_REPOSITORIO }, () => {
   const raiz = path.resolve(__dirname, '..');
   const r = spawnSync('git', ['ls-files', '-s', 'scripts/tdd-lembrete.js'], { cwd: raiz, encoding: 'utf8' });
   assert.match(r.stdout, /^100755 /, 'git update-index --chmod=+x scripts/tdd-lembrete.js');
 });
 
-test('execução: o projeto acessado por um caminho diferente do que o git informa (link simbólico) ainda lembra', { skip: process.platform === 'win32' }, () => {
+test('execução: o projeto acessado por um caminho diferente do que o git informa (link simbólico) ainda lembra', { skip: process.platform === 'win32' || !TEM_GIT }, () => {
   const dir = repo(); const id = sessao();
   const atalho = path.join(tmpdir('tdd-atalho-'), 'projeto');
   fs.symlinkSync(dir, atalho, 'dir');
