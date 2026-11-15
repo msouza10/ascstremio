@@ -143,3 +143,20 @@ test('o .gitignore libera só .claude/settings.json; o resto de .claude/ continu
   assert.equal(ignorado('.claude/settings.local.json'), true, 'preferências locais ficam fora do git');
   assert.equal(ignorado('.claude/qualquer-outra-coisa.json'), true);
 });
+
+test('o script é versionado com permissão de execução, como o AGENTS.md exige de script novo', () => {
+  const raiz = path.resolve(__dirname, '..');
+  const r = spawnSync('git', ['ls-files', '-s', 'scripts/tdd-lembrete.js'], { cwd: raiz, encoding: 'utf8' });
+  assert.match(r.stdout, /^100755 /, 'git update-index --chmod=+x scripts/tdd-lembrete.js');
+});
+
+test('execução: o projeto acessado por um caminho diferente do que o git informa (link simbólico) ainda lembra', { skip: process.platform === 'win32' }, () => {
+  const dir = repo(); const id = sessao();
+  const atalho = path.join(tmpdir('tdd-atalho-'), 'projeto');
+  fs.symlinkSync(dir, atalho, 'dir');
+  try {
+    const r = roda(atalho, { session_id: id, cwd: atalho, tool_name: 'Edit', tool_input: { file_path: path.join(atalho, 'src', 'a.js') } });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /TDD/);
+  } finally { limpa(id, dir); fs.rmSync(path.dirname(atalho), { recursive: true, force: true }); }
+});

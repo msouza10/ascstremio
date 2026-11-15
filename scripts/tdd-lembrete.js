@@ -40,10 +40,12 @@ function marcadorPath(sessao, arquivo) {
   return path.join(os.tmpdir(), `ascstremio-tdd-${id}-${hash}`);
 }
 
-// realpath que aceita arquivo ainda inexistente (Write cria): resolve a pasta e junta o nome.
+// realpath que aceita arquivo ainda inexistente (Write cria): resolve a pasta e junta o nome. Usa o
+// `.native` porque só ele expande os nomes curtos 8.3 do Windows (o TEMP do runner é `RUNNER~1`),
+// enquanto o git devolve o caminho longo: sem isso o arquivo parece estar fora do repositório.
 function real(p) {
-  try { return fs.realpathSync(p); } catch { /* segue */ }
-  try { return path.join(fs.realpathSync(path.dirname(p)), path.basename(p)); } catch { return p; }
+  try { return fs.realpathSync.native(p); } catch { /* segue */ }
+  try { return path.join(fs.realpathSync.native(path.dirname(p)), path.basename(p)); } catch { return p; }
 }
 
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 5000 });
