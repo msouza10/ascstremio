@@ -172,6 +172,10 @@ class Bridge {
     this.streams = new Map(); // infoHash -> streams HTTP abertos agora
     this.lastStreamEnd = new Map(); // infoHash -> ms do último stream encerrado
     this.completing = new Set(); // infoHash com o torrent inteiro selecionado
+    // infoHash -> índices que o usuário pediu para concluir (episódio/temporada). Enquanto existir, a
+    // conclusão automática NÃO baixa o resto do pack; só o pedido explícito do torrent inteiro desfaz.
+    // Não persiste: depois de um reinício vale a política normal.
+    this.partialScope = new Map();
     this.noPeersWarned = new Set(); // infoHash já avisado de "sem peers" neste período
     // Histórico de tráfego para o painel: uma amostra a cada 15 s, 1 h no total.
     this.traffic = [];
@@ -669,6 +673,8 @@ class Bridge {
       const pack = isPackEntry(this.entries.get(torrent.infoHash));
       if (!requested) {
         if (this.backgroundMode !== 'auto') continue;
+        // O usuário escolheu baixar só parte do pack: o resto não baixa por conta própria.
+        if (this.partialScope.has(torrent.infoHash)) continue;
         // O usuário excluiu um episódio: não baixar o pack por conta própria (o pedido explícito de
         // concluir limpa a exclusão).
         if (entry?.excluded?.length) continue;
@@ -770,8 +776,10 @@ class Bridge {
       err.status = 404;
       throw err;
     }
-    // Pedido explícito do usuário: o que ele excluiu antes volta a ser baixado.
+    // Pedido explícito do usuário: o que ele excluiu antes volta a ser baixado, e o pack inteiro
+    // deixa de ser "só parte".
     this.vault.clearExcluded(infoHash);
+    this.partialScope.delete(infoHash);
     const torrent = await this.getTorrent(infoHash);
     this.vault.setBackground(infoHash, true);
     this.completionTick();
@@ -791,8 +799,18 @@ class Bridge {
   needsAwake() {
     return (this.client?.torrents ?? []).some((t) => {
       const entry = this.vault.get(t.infoHash);
-      if (!t.done) return this.completing.has(t.infoHash);
+      if (!t.done) return this.completing.has(t.infoHash) || this.partialPending(t);
       return Boolean(entry?.completedAt && !entry.satisfiedAt);
+    });
+  }
+
+  // Pedido parcial (episódio/temporada) com arquivo escolhido ainda por baixar: conta como download
+  // em andamento para não suspender o computador, sem marcar o pack inteiro como "concluindo".
+  partialPending(torrent) {
+    const scope = this.partialScope.get(torrent.infoHash);
+    return Boolean(scope) && [...scope].some((i) => {
+      const f = torrent.files?.[i];
+      return f && (f.downloaded ?? 0) < f.length;
     });
   }
 

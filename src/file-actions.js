@@ -112,6 +112,7 @@ async function completeFiles(bridge, infoHash, scope) {
   const torrent = await bridge.getTorrent(infoHash, { fileIdx: indices[0] });
   for (const i of indices.slice(1)) bridge.admitTorrent(infoHash, i);
   for (const i of indices) torrent.files?.[i]?.select?.(0);
+  bridge.partialScope.set(infoHash, new Set([...(bridge.partialScope.get(infoHash) ?? []), ...indices]));
   return { infoHash, name: torrent.name, files: indices, count: indices.length, freeleech: bridge.isFreeleech(infoHash),
     message: indices.length === 1 ? 'Baixando o episódio em segundo plano.' : `Baixando ${indices.length} episódios em segundo plano.` };
 }
