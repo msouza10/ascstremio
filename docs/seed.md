@@ -44,7 +44,9 @@ A data de login guardada pelo addon é um lembrete local: acesse o ASC no navega
 
 O player pode baixar apenas as partes que usa. Para concluir o restante, abra o filme no painel e use **Concluir download em segundo plano**. A ação é explícita e pode incluir um release que não seja freeleech, com impacto no ratio.
 
-Por padrão, a conclusão automática está desligada. `BACKGROUND_COMPLETE=auto` considera apenas freeleech elegíveis sem atividade há `BACKGROUND_IDLE_MINUTES` (10 por padrão), com a mesma verificação de espaço em disco (reserva configurável, veja [configuração](configuracao.md#disco)) e prioridade baixa. Completar abre a obrigação de seed; não é uma opção para evitar a conclusão.
+Por padrão, a conclusão automática está ligada (`BACKGROUND_COMPLETE=auto`): baixar só parte do torrent deixa um registro `downloading` no tracker e a meta de seed só conta depois da conclusão, então o addon termina o download em prioridade baixa, sempre atrás do que você está assistindo. Num filme isso acontece depois de `BACKGROUND_IDLE_MINUTES` (10 por padrão) sem reprodução. Numa série, assim que o episódio que você abriu terminar de baixar, mesmo com o player aberto, o resto do pack entra na fila: primeiro os episódios seguintes, depois os anteriores. A verificação de espaço em disco é a mesma de sempre (reserva configurável, veja [configuração](configuracao.md#disco)): se o torrent inteiro não couber, só o que você assiste é baixado.
+
+O custo no ratio é seu: em release que não é freeleech, baixar o torrent inteiro conta no download da conta (regra 2.7), e o addon apenas registra o aviso no log. `BACKGROUND_COMPLETE=off` volta a só concluir quando você pede. Completar abre a obrigação de seed (72 h ou ratio 1.0); não é uma opção para evitar a conclusão.
 
 ## O que acontece depois do cumprimento
 

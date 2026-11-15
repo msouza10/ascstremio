@@ -171,8 +171,8 @@ const SCHEMA = Object.freeze([
     description: 'Depois de o tracker confirmar o seed: delete apaga os arquivos, stop encerra e preserva, keep continua semeando, manual mantém o seed até você decidir no painel.',
   },
   {
-    key: 'BACKGROUND_COMPLETE', type: 'enum', values: ['off', 'auto'], default: 'off', group: 'seed', access: 'editable', restart: true,
-    description: 'auto conclui sozinho apenas freeleech elegíveis que ficaram parados.',
+    key: 'BACKGROUND_COMPLETE', type: 'enum', values: ['off', 'auto'], default: 'auto', group: 'seed', access: 'editable', restart: true,
+    description: 'auto baixa em segundo plano o que falta do torrent (em série, o pack todo, depois que o episódio aberto terminar) para a obrigação de seed poder ser cumprida. Em release que não é freeleech, o download conta no seu ratio.',
   },
   {
     key: 'BACKGROUND_IDLE_MINUTES', type: 'number', min: 1, default: 10, unit: 'min', group: 'seed', access: 'advanced', restart: true,

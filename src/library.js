@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { announceBaseOf } = require('./passkey');
+const { buildEpisodeIndex } = require('./episodes');
 
 const VIDEO_EXT = new Set([
   '.mkv', '.mp4', '.m4v', '.avi', '.mov', '.ts', '.m2ts', '.webm', '.wmv', '.mpg', '.mpeg',
@@ -36,6 +37,20 @@ function mainVideo(files) {
   const total = videos.reduce((sum, f) => sum + f.length, 0);
   const [first, second] = videos;
   return first.length >= 0.7 * total && first.length >= 4 * second.length ? first : null;
+}
+
+// Pack = vários vídeos sem um que domine (temporada, série completa, coleção), ou vários episódios
+// identificados. Filme com extras pequenos NÃO é pack. Quem decide o que reservar de disco e se o
+// torrent pode ser completado sozinho: num pack o usuário assiste a um episódio, não ao torrent todo.
+const packCache = new WeakMap(); // files -> boolean (a lista de um entry não muda)
+function isPackEntry(entry) {
+  const files = entry?.files;
+  if (!Array.isArray(files)) return false;
+  if (!packCache.has(files)) {
+    const videos = files.filter((f) => f.isVideo);
+    packCache.set(files, videos.length > 1 && (!mainVideo(files) || buildEpisodeIndex(files).episodes.length > 1));
+  }
+  return packCache.get(files);
 }
 
 // Nome legível para a lista do Stremio, a partir do nome do release.
@@ -86,12 +101,17 @@ function describeEntry(entry) {
   const allVideos = (entry?.files ?? []).filter((f) => f.isVideo);
   if (allVideos.length === 0) return null;
   const main = mainVideo(entry.files);
+  const episodes = buildEpisodeIndex(entry.files);
+  // Série = algum vídeo com SxxExx seguro, mesmo que seja um só (episódio avulso não vira filme
+  // por ter um único vídeo). Sem identificação, vale a heurística antiga: sem filme principal, pack.
+  const kind = episodes.episodes.length > 0 || !main ? 'series' : 'movie';
   return {
     ...entry,
     id: `asc:${entry.infoHash}`,
     title: displayName(entry),
-    videos: main ? [main] : allVideos,
-    kind: main ? 'movie' : 'series',
+    videos: kind === 'series' ? allVideos : [main],
+    kind,
+    episodes,
   };
 }
 
@@ -124,4 +144,4 @@ async function loadLibrary(dir) {
   return entries;
 }
 
-module.exports = { loadLibrary, describeEntry, readTorrent, isVideo, mainVideo };
+module.exports = { loadLibrary, describeEntry, readTorrent, isVideo, mainVideo, isPackEntry };

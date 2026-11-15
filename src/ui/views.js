@@ -820,7 +820,7 @@
         const c = d.settings;
         kvr(svcRows, [
           ['Seed exigido', `${c.requiredHours} h por torrent`],
-          ['Concluir download em segundo plano', c.backgroundMode === 'auto' ? `automático (parado há ${c.idleMinutes} min)` : 'só quando você pede'],
+          ['Concluir download em segundo plano', c.backgroundMode === 'auto' ? `automático (série: já com o episódio pronto; demais: parado há ${c.idleMinutes} min)` : 'só quando você pede'],
           ['Ao cumprir o limite', { delete: 'encerra e apaga os arquivos', stop: 'encerra e mantém os arquivos', keep: 'continua semeando', manual: 'você decide no painel; mantém semeando até lá' }[c.afterSeed] ?? c.afterSeed],
           ['Suspensão do PC', c.keepAwake ? 'bloqueada agora (há seed pendente)' : 'livre (nada pendente)'],
           ['Ponte escuta em', c.host],
