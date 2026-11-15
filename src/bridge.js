@@ -11,6 +11,7 @@ const path = require('path');
 
 const { loadLibrary, mainVideo, isPackEntry } = require('./library');
 const { buildEpisodeIndex, findEpisode } = require('./episodes');
+const { fileStates } = require('./file-state');
 const { announceWithPasskey } = require('./passkey');
 const { SeedVault } = require('./seedvault');
 const { isLoopbackRequest, inContainer, hostAllowed } = require('./safety');
@@ -22,6 +23,7 @@ const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { Retention } = require('./retention-service');
 const { manageSeed } = require('./seed-actions');
+const { excludeFile } = require('./file-actions');
 const { logger } = require('./logger');
 const { rankPending, runLimited } = require('./resume-policy');
 const { StreamMetrics } = require('./stream-metrics');
@@ -278,15 +280,7 @@ class Bridge {
     // Contabilidade da regra 13.1: a cada minuto soma tempo de seed dos
     // torrents concluídos. Persistido, sobrevive a reinícios.
     this.seedTimer = setInterval(() => {
-      const agora = Date.now();
-      for (const torrent of this.client.torrents) {
-        const entry = this.vault.get(torrent.infoHash);
-        const anterior = this.lastTick.get(torrent.infoHash) ?? agora;
-        this.lastTick.set(torrent.infoHash, agora);
-        if (!entry?.completedAt || entry.satisfiedAt) continue;
-        const delta = agora - anterior;
-        if (delta > 0) this.vault.addSeedingTime(torrent.infoHash, delta);
-      }
+      this.seedTick();
       this.keepAwake?.update(this.needsAwake());
     }, 60000);
     this.seedTimer.unref?.();
@@ -310,6 +304,21 @@ class Bridge {
   // O arquivo está completo em disco? (tamanho de cada arquivo do torrent.) Só
   // vale para torrents que o tracker já deu como concluídos; sem os dados não dá
   // para semear, e anunciar assim viraria um download novo.
+  // Episódios de um pack com o que há em disco de cada um (só packs). Com o motor aberto o número
+  // vem das peças verificadas; sem ele, do espaço alocado, e então `verified` é false.
+  episodeStates(lib, torrent, excluded = []) {
+    const states = new Map(fileStates({ files: lib.files, torrent, storeDir: this.storeDir }).map((s) => [s.index, s]));
+    const index = lib.episodes ?? buildEpisodeIndex(lib.files);
+    return index.episodes.map((e) => {
+      const s = states.get(e.index);
+      return {
+        index: e.index, season: e.season, episode: e.episode, episodeEnd: e.episodeEnd ?? null,
+        length: e.length, onDisk: s?.onDisk ?? 0, state: s?.state ?? 'ausente', verified: Boolean(s?.verified),
+        excluded: excluded.includes(e.index),
+      };
+    });
+  }
+
   diskState(infoHash) {
     const lib = this.entries.get(infoHash);
     if (!lib?.files?.length) return null;
@@ -606,6 +615,23 @@ class Bridge {
     if (perFile) this.packFiles.set(infoHash, (admitted ?? new Map()).set(fileIdx, own));
   }
 
+  // Um passo do relógio de seed (regra 13.1). Só conta com o torrent INTEIRO no motor: `completedAt`
+  // fica preservado depois de excluir um episódio ou apagar arquivos, e um torrent reaberto
+  // incompleto está baixando, não semeando (o tracker não credita e o tempo local não pode fechar a
+  // obrigação nesse intervalo). O marco `lastTick` avança sempre, para só o intervalo seguinte contar.
+  seedTick(agora = Date.now()) {
+    for (const torrent of this.client?.torrents ?? []) {
+      const entry = this.vault.get(torrent.infoHash);
+      const anterior = this.lastTick.get(torrent.infoHash) ?? agora;
+      this.lastTick.set(torrent.infoHash, agora);
+      if (!entry?.completedAt || entry.satisfiedAt) continue;
+      // progress >= 1 cobre o instante em que o motor já verificou tudo mas ainda não emitiu `done`.
+      if (!torrent.done && (torrent.progress ?? 0) < 1) continue;
+      const delta = agora - anterior;
+      if (delta > 0) this.vault.addSeedingTime(torrent.infoHash, delta);
+    }
+  }
+
   // Pack: o(s) episódio(s) que o usuário abriu já estão inteiros em disco? Aí o resto do pack pode
   // começar a baixar sem esperar o player parar: o episódio que ele assiste não perde banda, porque
   // o que falta entra em prioridade baixa. Sem episódio aberto ou com lacuna (seek para o fim) vale
@@ -643,6 +669,9 @@ class Bridge {
       const pack = isPackEntry(this.entries.get(torrent.infoHash));
       if (!requested) {
         if (this.backgroundMode !== 'auto') continue;
+        // O usuário excluiu um episódio: não baixar o pack por conta própria (o pedido explícito de
+        // concluir limpa a exclusão).
+        if (entry?.excluded?.length) continue;
         // Pack com o episódio aberto já inteiro: começa já, mesmo com o player aberto. Nos demais
         // casos espera o torrent ficar parado.
         if (!(pack && this.chosenFilesDone(torrent))) {
@@ -684,6 +713,10 @@ class Bridge {
   // Cumpriu o limite? Então não há motivo para ocupar disco nem rede. Só age
   // quando o TRACKER confirma (nunca pela estimativa local) e sem ninguém
   // assistindo. Devolve o que foi liberado.
+  excludeFile(infoHash, fileIdx) {
+    return excludeFile(this, infoHash, fileIdx);
+  }
+
   manageSeed(infoHash, action) {
     return manageSeed(this, infoHash, action);
   }
@@ -729,6 +762,8 @@ class Bridge {
       err.status = 404;
       throw err;
     }
+    // Pedido explícito do usuário: o que ele excluiu antes volta a ser baixado.
+    this.vault.clearExcluded(infoHash);
     const torrent = await this.getTorrent(infoHash);
     this.vault.setBackground(infoHash, true);
     this.completionTick();
@@ -829,6 +864,7 @@ class Bridge {
         active: Boolean(torrent),
         onDisk: this.diskState(infoHash),
         backgroundComplete: Boolean(entry?.backgroundComplete),
+        ...(isPackEntry(lib) ? { episodes: this.episodeStates(lib, torrent, entry?.excluded), excluded: entry?.excluded ?? [] } : {}),
         released: entry?.releasedAs ?? null,
         seedChoice: entry?.seedChoice ?? null,
         progress: torrent ? Number((torrent.progress || 0).toFixed(4)) : (completed ? 1 : 0),
@@ -1640,6 +1676,8 @@ class Bridge {
     }
 
     const torrent = await this.getTorrent(infoHash, { fileIdx });
+    // Tocar um episódio excluído é pedir de novo: só esse arquivo deixa de estar excluído.
+    if (fileIdx !== null) this.vault.setExcluded(infoHash, fileIdx, false);
     // A resposta pode ter sido encerrada durante a espera (revogação ou cliente que saiu): o 'close'
     // já passou e não limparia o contador de streams abertos, que travaria conclusão e ociosidade.
     if (res.destroyed) return;
