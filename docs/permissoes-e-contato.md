@@ -29,7 +29,7 @@ a #94 concluída somente porque este roteiro ou um aviso foi publicado.
 ## Preparar o canal privado
 
 Ainda não há canal jurídico privado específico confirmado nesta documentação. Não
-encaminhe relatos sensíveis pelas issues públicas nem pelo canal de vulnerabilidades;
+encaminhe reclamações jurídicas sensíveis pelas issues públicas nem pelo canal de vulnerabilidades;
 este último segue exclusivamente a [política de segurança](../.github/SECURITY.md).
 
 Antes de anunciar um canal, o mantenedor precisa confirmar:
