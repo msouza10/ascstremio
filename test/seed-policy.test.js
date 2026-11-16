@@ -368,7 +368,7 @@ test('auto: freeleech parado há mais que o limite é concluído, com prioridade
   assert.equal(selecoes.length, 1);
 });
 
-test('auto: busca concluir durante reprodução e sem esperar ociosidade; off mantém a escolha', () => {
+test('auto: não conclui com player assistindo, antes do limite ou com modo off', () => {
   const novo = (over, ajuste) => {
     const vault = new SeedVault({ file: tmpFile() });
     vault.markSeen(HASH, {});
@@ -377,8 +377,8 @@ test('auto: busca concluir durante reprodução e sem esperar ociosidade; off ma
     r.b.completionTick(11 * MIN);
     return r.selecoes.length;
   };
-  assert.equal(novo({}, ({ b }) => b.streams.set(HASH, 1)), 1, 'stream aberto: seleção de fundo');
-  assert.equal(novo({}, ({ b }) => b.lastStreamEnd.set(HASH, 5 * MIN)), 1, 'sem esperar ociosidade');
+  assert.equal(novo({}, ({ b }) => b.streams.set(HASH, 1)), 0, 'stream aberto');
+  assert.equal(novo({}, ({ b }) => b.lastStreamEnd.set(HASH, 5 * MIN)), 0, 'parou há 6 min');
   assert.equal(novo({ backgroundMode: 'off' }), 0, 'modo off');
   assert.equal(novo({}, ({ b }) => b.lastStreamEnd.set(HASH, 0)), 1, 'controle: parado há 11 min');
 });

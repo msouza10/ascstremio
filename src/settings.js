@@ -176,11 +176,11 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'BACKGROUND_COMPLETE', type: 'enum', values: ['off', 'auto'], default: 'auto', group: 'seed', access: 'editable', restart: true,
-    description: 'auto busca completar o torrent inteiro durante a reprodução, priorizando o trecho atual, os episódios seguintes e depois o que ficou para trás, para permitir cumprir o seed. Em release que não é freeleech, o download conta no seu ratio.',
+    description: 'auto baixa em segundo plano o que falta do torrent (em série, o pack todo, depois que o episódio aberto terminar) para a obrigação de seed poder ser cumprida. Em release que não é freeleech, o download conta no seu ratio.',
   },
   {
     key: 'BACKGROUND_IDLE_MINUTES', type: 'number', min: 1, default: 10, unit: 'min', group: 'seed', access: 'advanced', restart: true,
-    description: 'Compatibilidade com configurações antigas; a conclusão agora começa durante a reprodução, sem esperar inatividade.',
+    description: 'Inatividade antes da conclusão automática.',
   },
   {
     key: 'SEED_REQUIRED_HOURS', type: 'number', min: 0, default: 72, unit: 'h', group: 'seed', access: 'advanced', restart: true,

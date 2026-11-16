@@ -39,7 +39,7 @@ Abra um episódio no Stremio (Descobrir → Séries). As fontes vêm dos release
 
 Em packs a descrição separa o tamanho do pacote inteiro do tamanho do episódio (`💾 Pacote: 20 GB`, `▶ Este episódio: 2 GB`), porque o custo de ratio e de seed é do pacote. `ℹ A confirmar ao tocar` indica um release que ainda não foi lido por completo; a confirmação acontece no play. O play baixa só o episódio escolhido. Com a conclusão automática ligada (`BACKGROUND_COMPLETE=auto`, o padrão), o resto do pack entra na fila em segundo plano quando esse episódio termina de baixar ([seed](seed.md#assistir-só-um-trecho)); com `off`, só quando você pede. O próximo episódio da mesma temporada é encadeado pelo Stremio.
 
-Ao tocar um episódio sem ter escolhido só parte do pack, o addon busca completar o torrent inteiro em segundo plano, sempre atrás do que você assiste (ordem e limites em [séries e prioridades](series-prioridades.md)).
+Quando a conclusão automática do pack começa (regras em [seed](seed.md#assistir-só-um-trecho)), ela baixa na ordem da posição de reprodução, sempre atrás do que você assiste (ordem e limites em [séries e prioridades](series-prioridades.md)).
 
 ### Estado por episódio e ações no painel
 
@@ -144,4 +144,4 @@ Para consultar ou mudar portas, modo local/LAN e políticas sem o painel, use a 
 
 ## Decidir sobre os arquivos depois do seed
 
-Em Configurações, `AFTER_SEED=manual` mantém os arquivos e o seed até sua decisão. Aplique o reinício indicado antes de depender desse modo. Na página de cada filme, depois da confirmação do tracker, use **Continuar semeando**, **Parar seed e manter arquivos** ou **Excluir arquivos e parar seed**, com confirmação. Parar preserva os arquivos para assistir depois; excluir pode exigir outro download e nova obrigação na próxima reprodução. Não há cancelamento antecipado da obrigação de seed. Consulte [seed](seed.md#o-que-acontece-depois-do-cumprimento).
+Em Configurações, `AFTER_SEED=manual` mantém os arquivos e o seed até sua decisão. Aplique o reinício indicado antes de depender desse modo. Na página de cada filme, depois da confirmação do tracker, use **Continuar semeando**, **Parar seed e manter arquivos** ou **Excluir arquivos e parar seed**, com confirmação. Parar preserva os arquivos para assistir depois; excluir pode exigir outro download e nova obrigação na próxima reprodução. Não há cancelamento antecipado da obrigação de seed. Consulte [seed](seed.md#assistir-só-um-trecho).

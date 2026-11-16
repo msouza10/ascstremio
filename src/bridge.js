@@ -138,7 +138,7 @@ class Bridge {
     this.trackerCheck = trackerCheck;
     // Conclusão em segundo plano (§4.5 de docs/conformidade-regras.md):
     //  off  = só conclui quando o usuário pede (POST /complete);
-    //  auto = busca concluir o torrent inteiro, com o streaming sempre à frente.
+    //  auto = conclui sozinho os freeleech que ficaram parados por `idleMs`.
     this.backgroundMode = backgroundMode;
     this.idleMs = idleMs;
     this.minFreeBytes = minFreeBytes;
@@ -665,18 +665,31 @@ class Bridge {
     }
   }
 
+  // Pack: o(s) episódio(s) que o usuário abriu já estão inteiros em disco? Aí o resto do pack pode
+  // começar a baixar sem esperar o player parar: o episódio que ele assiste não perde banda, porque
+  // o que falta entra em prioridade baixa. Sem episódio aberto ou com lacuna (seek para o fim) vale
+  // a regra de ociosidade.
+  chosenFilesDone(torrent) {
+    const chosen = [...(this.packFiles.get(torrent.infoHash)?.keys() ?? [])];
+    return chosen.length > 0 && chosen.every((idx) => {
+      const f = torrent.files?.[idx];
+      return f?.length > 0 && (f.downloaded ?? 0) >= f.length;
+    });
+  }
+
   // Conclusão em segundo plano: baixa o resto do torrent (prioridade baixa, nunca disputa com o
   // player) para que a obrigação de 72 h da regra 13.1 possa de fato ser paga. Torrent baixado
   // em parte fica no tracker como `downloading` e a meta de seed só conta depois da conclusão.
   // NÃO é um modo de "nunca concluir": o único efeito é terminar o download. O custo no ratio de
   // um release que não é freeleech é do usuário (aviso no log e no painel), não uma trava.
-  completionTick() {
+  completionTick(now = Date.now()) {
     for (const torrent of this.client?.torrents ?? []) {
       // progress >= 1 cobre o instante em que o motor já verificou tudo mas ainda não emitiu `done`.
       if (torrent.done || (torrent.progress ?? 0) >= 1 || this.completing.has(torrent.infoHash) || !torrent.ready) continue;
       const entry = this.vault.get(torrent.infoHash);
       const requested = Boolean(entry?.backgroundComplete);
 
+      const pack = isPackEntry(this.entries.get(torrent.infoHash));
       if (!requested) {
         if (this.backgroundMode !== 'auto') continue;
         // O usuário escolheu baixar só parte do pack: o resto não baixa por conta própria.
@@ -684,6 +697,13 @@ class Bridge {
         // O usuário excluiu um episódio: não baixar o pack por conta própria (o pedido explícito de
         // concluir limpa a exclusão).
         if (entry?.excluded?.length) continue;
+        // Pack com o episódio aberto já inteiro: começa já, mesmo com o player aberto. Nos demais
+        // casos espera o torrent ficar parado.
+        if (!(pack && this.chosenFilesDone(torrent))) {
+          const idleSince = this.lastStreamEnd.get(torrent.infoHash)
+            ?? this.startedAt.get(torrent.infoHash) ?? now;
+          if ((this.streams.get(torrent.infoHash) ?? 0) > 0 || now - idleSince < this.idleMs) continue;
+        }
       }
 
       // Mesma política de disco do streaming e da retomada; sem medida confiável não começa
@@ -1882,7 +1902,8 @@ class Bridge {
     // A resposta pode ter sido encerrada durante a espera (revogação ou cliente que saiu): o 'close'
     // já passou e não limparia o contador de streams abertos, que travaria conclusão e ociosidade.
     if (res.destroyed) return;
-    // A seleção do iterador de streaming passa à frente da conclusão em segundo plano.
+    // Conta streams abertos: a conclusão em segundo plano só começa com o
+    // player parado (e nunca disputa banda com ele).
     this.streams.set(infoHash, (this.streams.get(infoHash) ?? 0) + 1);
     this.vault.markUsed(infoHash); // último uso, para a retenção por idade
     log.debug(`stream aberto em ${short(infoHash)} (${this.streams.get(infoHash)} aberto(s))`);
@@ -1928,13 +1949,12 @@ class Bridge {
     const iterator = stream[Symbol.asyncIterator]();
 
     this.playbackPositions.set(torrent, { fileIdx, start });
-    // A fila de conclusão é só otimização: se o motor recusar a seleção (torrent destruído no meio
-    // do pedido, por exemplo), o vídeo continua e o próximo GET ou o timer tentam de novo.
+    // Só a ORDEM da conclusão depende da posição: o GET nunca a inicia (isso segue as regras de
+    // ociosidade e de episódio pronto). Com a conclusão já ativa, reorganiza a fila; é só
+    // otimização: se o motor recusar a seleção (torrent destruído no meio do pedido), o vídeo segue.
     try {
       if (this.completing.has(infoHash)) {
         selectCompletion(torrent, completionPlan(torrent, this.entries.get(infoHash), { fileIdx, start }));
-      } else {
-        this.completionTick();
       }
     } catch (err) {
       log.warn(`conclusão: não foi possível reorganizar a fila de ${short(infoHash)}: ${err.message}`);

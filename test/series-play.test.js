@@ -388,6 +388,7 @@ function packAberto({ baixado = [0, 0, 0], abertos = [1], streams = 1, ...over }
   const files = PACK.files.map((f, i) => ({ length: f.length, downloaded: baixado[i] ?? 0, select: (p) => selecoes.push(['arquivo', i, p]) }));
   b.client.torrents.push({ infoHash: HASH, name: 'Pack', ready: true, done: false, length: 30 * GB, downloaded: GB,
     pieces: new Array(31), pieceLength: GB, progress: 0.03, files, select: (...a) => selecoes.push(['torrent', ...a.slice(0, 3)]) });
+  // Posição do último GET Range: só alimenta a ORDEM da fila, nunca decide quando a conclusão começa.
   b.playbackPositions.set(b.client.torrents[0], { fileIdx: abertos.at(-1), start: 0 });
   b.startedAt.set(HASH, 0);
   b.packFiles.set(HASH, new Map(abertos.map((i) => [i, 10 * GB])));
@@ -395,16 +396,17 @@ function packAberto({ baixado = [0, 0, 0], abertos = [1], streams = 1, ...over }
   return { b, vault, selecoes };
 }
 
-test('pack: busca completar o torrent mesmo com o episódio e o player abertos', () => {
+test('pack: com o episódio aberto ainda baixando e o player aberto, não completa o pack', () => {
   const { b, selecoes } = packAberto({ baixado: [0, 4 * GB, 0] });
   b.completionTick(1e6);
-  assert.deepEqual(selecoes, [['torrent', 10, 19, 0]]);
+  assert.deepEqual(selecoes, []);
 });
 
 test('pack: episódio aberto inteiro em disco começa o resto do pack mesmo com o player aberto', () => {
   const { b, vault, selecoes } = packAberto({ baixado: [0, 10 * GB, 0] });
   b.completionTick(1e6);
-  // Inclui o atual: uma lacuna anterior ao seek também precisa ser concluída.
+  // Gatilho de sempre (episódio aberto inteiro); a ordem é por peças: primeiro o resto do arquivo
+  // atual (peças 10-19), prioridade baixa. As etapas seguintes só entram com as peças verificadas.
   assert.deepEqual(selecoes, [['torrent', 10, 19, 0]]);
   assert.equal(vault.get(HASH).backgroundComplete, true);
   b.completionTick(2e6);
@@ -414,7 +416,19 @@ test('pack: episódio aberto inteiro em disco começa o resto do pack mesmo com 
 test('pack: abrir um episódio adiante completa os anteriores depois do atual', () => {
   const { b, selecoes } = packAberto({ baixado: [0, 0, 10 * GB], abertos: [2] });
   b.completionTick(1e6);
-  assert.deepEqual(selecoes, [['torrent', 20, 29, 0]]);
+  assert.deepEqual(selecoes, [['torrent', 20, 29, 0]], 'começa pelo restante do episódio aberto (o 3.º)');
+});
+
+test('pack: o início da conclusão segue o gatilho de sempre; a posição só define a ordem', () => {
+  // Player aberto e episódio ainda baixando: com posição conhecida, mesmo assim nada é selecionado.
+  const aberto = packAberto({ baixado: [0, 4 * GB, 0] });
+  aberto.b.completionTick(1e6);
+  assert.deepEqual(aberto.selecoes, []);
+  // Parado há mais que o limite: começa, na ordem da posição registrada (episódio 2 a partir do meio).
+  const parado = packAberto({ baixado: [0, 4 * GB, 0], streams: 0 });
+  parado.b.playbackPositions.set(parado.b.client.torrents[0], { fileIdx: 1, start: 5 * GB });
+  parado.b.completionTick(1e6);
+  assert.deepEqual(parado.selecoes, [['torrent', 15, 19, 0]], 'do ponto do seek até o fim do arquivo');
 });
 
 test('pack: sem episódio pronto e parado, a conclusão automática completa pela ociosidade', () => {
@@ -546,6 +560,8 @@ test('o tracker dizendo "baixando" (parcial) nunca vira obrigação cumprida por
 
 test('GET com Range reorganiza a conclusão ao começar no meio e ao fazer seek', async () => {
   const { b, vault, selecoes } = packAberto({ streams: 0 });
+  b.completing.add(HASH); // conclusão já ativa pelas regras de sempre: o GET só reordena a fila
+  vault.setBackground(HASH, true);
   const torrent = b.client.torrents[0];
   torrent.files = [0, 1, 2].map((i) => video3(i, Buffer.from('0123456789')));
   torrent.files.push({ length: 1, path: 'capa.jpg' });
@@ -568,34 +584,32 @@ test('GET com Range reorganiza a conclusão ao começar no meio e ao fazer seek'
   assert.equal(b.streams.get(HASH), 0);
 });
 
-// Interação com o que a main já decidiu (#114): a conclusão agora começa no GET de vídeo, então as
-// escolhas do usuário que seguram a conclusão automática precisam valer também nesse caminho.
 async function getComPack(ctx) {
   const torrent = ctx.b.client.torrents[0];
   torrent.files = [0, 1, 2].map((i) => video3(i, Buffer.from('0123456789')));
   torrent.pieces = new Array(30);
   torrent.pieceLength = 1;
+  // `completos`: o episódio aberto já está inteiro em disco, o gatilho que liberaria a conclusão de um pack.
+  if (ctx.completos) for (const f of torrent.files) f.downloaded = f.length;
   ctx.b.getTorrent = async () => torrent;
   const res = resposta();
   await ctx.b.handle(pedido('GET', `/s/${HASH}/1`, { range: 'bytes=2-5' }), res);
   return res;
 }
 
-for (const [nome, preparar] of [
-  ['exclusão de um episódio', ({ vault }) => vault.setExcluded(HASH, 2, true)],
-  ['escolha de baixar só parte do pack', ({ b }) => b.partialScope.set(HASH, new Set([1]))],
-  ['espaço insuficiente para o restante', null],
-]) {
-  test(`GET de vídeo não inicia a conclusão automática com ${nome}`, async () => {
-    const ctx = packAberto({ streams: 0, ...(preparar ? {} : { freeSpace: () => 5 }) });
-    preparar?.(ctx);
-    const res = await getComPack(ctx);
-    assert.equal(res.statusCode, 206, 'a reprodução segue');
-    assert.deepEqual(ctx.selecoes, [], 'nada além do streaming foi selecionado');
-    assert.equal(ctx.b.completing.has(HASH), false);
-    assert.ok(!ctx.vault.get(HASH).backgroundComplete);
-  });
-}
+
+test('GET de vídeo registra a posição, mas não inicia a conclusão automática', async () => {
+  const ctx = packAberto({ streams: 0 });
+  // Episódio aberto inteiro (gatilho que liberaria a conclusão de um pack): só o timer
+  // (completionTick) decide quando começar; o GET não.
+  ctx.completos = true;
+  const res = await getComPack(ctx);
+  assert.equal(res.statusCode, 206);
+  assert.deepEqual(ctx.selecoes, []);
+  assert.equal(ctx.b.completing.has(HASH), false);
+  assert.ok(!ctx.vault.get(HASH).backgroundComplete);
+  assert.deepEqual(ctx.b.playbackPositions.get(ctx.b.client.torrents[0]), { fileIdx: 1, start: 2 });
+});
 
 test('falha ao reorganizar a conclusão não derruba a reprodução nem o timer', async () => {
   const ctx = packAberto({ streams: 0 });

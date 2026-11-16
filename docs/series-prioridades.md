@@ -1,12 +1,12 @@
 # Séries: conclusão integral, prioridades e estado da entrega
 
-Registro de 16/11/2026, relacionado ao plano [#83](https://github.com/msouza10/ascstremio/issues/83) e à etapa [#88](https://github.com/msouza10/ascstremio/issues/88). Descreve a implementação local e suas verificações; não comprova publicação de release, instalação na instância pessoal ou validação em cliente real.
+Registro de 16/11/2026, relacionado ao plano [#83](https://github.com/msouza10/ascstremio/issues/83) e à etapa [#88](https://github.com/msouza10/ascstremio/issues/88). Descreve a implementação local e suas verificações. **O gatilho de início da conclusão automática não mudou** (decisão do dono em 16/11/2026: manter a regra atual); muda só a ordem em que o torrent é baixado depois que ela começa; não comprova publicação de release, instalação na instância pessoal ou validação em cliente real.
 
 ## Decisão que orienta o download
 
 **O objetivo é completar o torrent inteiro para semear**, independentemente de ele conter um filme, um episódio, uma temporada ou várias temporadas. Episódios disponíveis são estados intermediários; concluir um episódio não abre nem quita uma obrigação independente de seed.
 
-A prioridade protege o que a pessoa está assistindo e prepara o que vem depois. Começar no meio ou fazer seek muda a ordem do trabalho, sem abandonar os bytes anteriores que faltam. A confirmação de cumprimento continua sendo do tracker, por infoHash.
+Quando a conclusão começa, a prioridade protege o que a pessoa está assistindo e prepara o que vem depois. **Quando** ela começa segue as regras de sempre: filme depois de `BACKGROUND_IDLE_MINUTES` sem reprodução; pack quando o episódio aberto termina de baixar; nunca com o player assistindo nos demais casos. Começar no meio ou fazer seek muda a ordem do trabalho, sem abandonar os bytes anteriores que faltam. A confirmação de cumprimento continua sendo do tracker, por infoHash.
 
 Esta decisão substitui, para o planejamento, propostas antigas de usar conclusão por episódio ou temporada como objetivo final. Esses itens da #88 precisam ser reconciliados com a conclusão integral; não são funcionalidades entregues por esta alteração.
 
@@ -30,13 +30,13 @@ Um GET válido com Range atualiza a posição da fila, mesmo quando pede um inte
 
 ## O que mudou em relação ao código anterior
 
-- A conclusão automática não espera o episódio inteiro ficar pronto nem o player ficar ocioso para começar.
-- O arquivo atual participa da conclusão: o trecho anterior a um seek não fica esquecido.
+- **O gatilho de início não mudou.** Nem o GET de vídeo nem o timer iniciam a conclusão antes das condições de antes; o GET só registra a posição e, se a conclusão já estiver ativa, reorganiza a fila.
+- O arquivo atual participa da fila: o trecho anterior a um seek não fica esquecido.
 - A ordem dos próximos episódios deixa de depender da posição física no torrent.
-- A seleção de fundo passa a liberar uma etapa por vez, respeitando a verificação de peças.
+- A seleção de fundo passa a liberar uma etapa por vez, respeitando a verificação de peças, em intervalos de peças do torrent (e não mais um `select` por arquivo).
 - Um seek substitui o plano de fundo; notificações pendentes do plano antigo não podem reativá-lo.
 - As seleções do streaming são preservadas ao reorganizar as seleções de fundo.
-- Logs de inicialização, descrição das configurações e guias de seed/configuração refletem a nova política.
+- Uma recusa do motor ao selecionar não derruba a reprodução nem o timer.
 - O teste de exclusão seguido de reprodução aguarda o evento `close` no servidor antes de verificar a liberação do contador de streams; receber o corpo no cliente pode acontecer antes desse evento.
 
 ## Implementação e motivo técnico
@@ -44,10 +44,7 @@ Um GET válido com Range atualiza a posição da fila, mesmo quando pede um inte
 | Arquivo | Papel na mudança |
 |---|---|
 | `src/completion-order.js` | Calcula os intervalos de peças, elimina sobreposição e executa a fila de conclusão |
-| `src/bridge.js` | Guarda a posição por instância de torrent, admite o restante no disco, inicia a conclusão e reorganiza a fila nos GETs de vídeo |
-| `src/index.js` | Explica a conclusão durante a reprodução no log de partida |
-| `src/settings.js` | Descreve a política e a compatibilidade da configuração antiga de ociosidade |
-| `src/ui/settings-model.js` | Identifica no painel o prazo antigo como sem efeito |
+| `src/bridge.js` | Guarda a posição por instância de torrent (mesmo sem iniciar a conclusão), usa-a na ordem da fila quando a conclusão começa pelas regras de sempre e a reorganiza nos GETs de vídeo |
 
 O WebTorrent mescla seleções de fundo sobrepostas **e adjacentes**. Selecionar todos os arquivos de uma vez, na mesma prioridade, não preserva uma fila confiável. A implementação mantém uma etapa selecionada com prioridade zero e libera a próxima quando o bitfield confirma todas as peças dessa etapa.
 
@@ -57,14 +54,13 @@ O plano e a posição são mantidos em memória. Após reinício, não se restau
 
 ## Configuração e proteções preservadas
 
-- `BACKGROUND_COMPLETE=auto` continua sendo o padrão. Busca completar o torrent durante a reprodução; a prioridade do streaming vem antes da fila de fundo.
+- `BACKGROUND_COMPLETE=auto` continua sendo o padrão, com o gatilho de sempre; a prioridade do streaming vem antes da fila de fundo.
 - `BACKGROUND_COMPLETE=off` preserva a opção de concluir somente por pedido explícito.
-- `BACKGROUND_IDLE_MINUTES` continua aceito por compatibilidade, mas não retarda mais a conclusão. O painel informa que está sem efeito.
+- `BACKGROUND_IDLE_MINUTES` continua valendo como antes: é a ociosidade exigida antes de concluir um filme (e um pack sem episódio pronto).
 - A conclusão exige admissão de espaço para os dados restantes do torrent. Se não houver espaço ou medida confiável, ela não começa; a reprodução segue a admissão própria e o aviso de falta de espaço é mantido.
 - O custo de ratio fora do freeleech continua gerando aviso, sem impedir por si só a conclusão.
 - Uma exclusão manual persistida continua bloqueando a conclusão automática. Esta mudança não baixa silenciosamente os arquivos excluídos.
-- A escolha de baixar só um episódio ou uma temporada (conclusão parcial, [#114](https://github.com/msouza10/ascstremio/pull/114)) também continua valendo contra a conclusão automática: o pack não é completado sozinho enquanto essa escolha existir (ela fica em memória e some ao reiniciar). O pedido explícito de concluir o torrent (**Baixar o que falta**) limpa a escolha parcial e as exclusões, e então a fila integral começa. Concluir parte do pack não abre a obrigação de seed; ela só nasce quando o torrent inteiro fecha.
-- O início da conclusão automática passa a acompanhar o primeiro GET de vídeo, e não mais a ociosidade ou o episódio pronto. Ela continua um play que já passou pelas travas de início de download (inclusive a reconferência de freeleech da [#138](https://github.com/msouza10/ascstremio/pull/138)); a conclusão em si não repete essa consulta e, fora do freeleech, só gera o aviso de ratio.
+- A escolha de baixar só um episódio ou uma temporada (conclusão parcial, [#114](https://github.com/msouza10/ascstremio/pull/114)) também continua valendo contra a conclusão automática: o pack não é completado sozinho enquanto essa escolha existir (ela fica em memória e some ao reiniciar; depois disso vale de novo o gatilho normal). O pedido explícito de concluir o torrent (**Baixar o que falta**) limpa a escolha parcial e as exclusões, e então a fila integral começa. Concluir parte do pack não abre a obrigação de seed; ela só nasce quando o torrent inteiro fecha.
 - Listagem e HEAD continuam sem iniciar download de vídeo nem announce. Credenciais, proteção de Host e controles administrativos seguem exigidos.
 - A meta continua sendo do torrent inteiro. Depois de reabrir um pack incompleto, o relógio local não soma seed enquanto o motor ainda está baixando.
 
@@ -72,14 +68,14 @@ A prioridade é uma política de seleção dentro do torrent, não uma garantia 
 
 ## Verificação realizada
 
-Resultado local da portagem sobre a `main` (com a #139): `npm run check` com todos os testes aprovados e a barreira `scripts/check-no-secrets.sh .` aprovada. Esse resultado é local; não representa CI em Windows, pacote, imagem ou reprodução real.
+Resultado local da portagem sobre a `main` (com a #139), depois da decisão de manter o gatilho: `npm run check` com todos os testes aprovados e a barreira `scripts/check-no-secrets.sh .` aprovada. Esse resultado é local; não representa CI em Windows, pacote, imagem ou reprodução real.
 
 | Teste | Evidência coberta |
 |---|---|
 | `test/completion-order.test.js` | Filme iniciado no meio; episódios fisicamente embaralhados; ordem numérica entre temporadas; cobertura de todas as peças e bordas compartilhadas |
 | `test/completion-order.test.js` | Coleção de seleções usada pelo WebTorrent preserva streaming ao substituir o fundo; avanço só após verificação; invalidação de notificação anterior ao seek |
-| `test/series-play.test.js` | Conclusão com episódio ainda baixando e player aberto; modo off; pedido explícito; GET com Range curto e reorganização após seek |
-| `test/seed-policy.test.js` | Conclusão sem esperar ociosidade; modo off; avisos de ratio; recusa por espaço insuficiente |
+| `test/series-play.test.js` | Gatilho de sempre com a nova ordem (episódio ainda baixando e player aberto não inicia; parado inicia a partir da posição); modo off; pedido explícito; GET registra a posição sem iniciar a conclusão; Range curto e seek reorganizam a fila ativa; falha de seleção não derruba o vídeo nem o timer |
+| `test/seed-policy.test.js` | Teste original da `main` (não conclui com player assistindo, antes do limite ou em modo off), só com o formato da seleção ajustado para ignorar o callback de notificação |
 | `test/file-actions.test.js` | Após excluir um episódio, os restantes servem Range sem restaurar o excluído; encerramento de reprodução observado no servidor; o pedido explícito de concluir o pack desfaz o escopo parcial e passa a selecionar intervalos de peças |
 
 O teste da coleção de seleções importa a implementação do WebTorrent instalada, mas não inicia um cliente BitTorrent. Os demais testes usam dados sintéticos e motores simulados; o teste HTTP de exclusão usa arquivos temporários e servidor local. Não houve download de vídeo real, announce ao ASC ou alteração de biblioteca pelo MCP nesta entrega.
@@ -112,3 +108,11 @@ Já estão na `main` (fora desta entrega): estado por arquivo ([#113](https://gi
 O suporte já existente inclui estado por arquivo e exclusão individual com as travas do tracker. Num pack com conclusão registrada, excluir exige confirmação atual do cumprimento; um pack nunca concluído segue o tratamento existente. Esta entrega não altera essa regra nem resolve a dúvida da #109.
 
 Antes de considerar o conjunto pronto: reconciliar os critérios das issues com a decisão final, concluir os itens técnicos restantes, validar no cliente e no tracker e executar o CI exigido pelo projeto. Nenhuma issue foi fechada por esta documentação.
+
+## Decisões ainda abertas desta entrega
+
+Em 16/11/2026 o dono decidiu **manter o gatilho atual** de início da conclusão; isso não é mais uma pendência. Restam:
+
+- **Fila etapa a etapa:** se uma peça da etapa atual não existe no swarm, as etapas seguintes aguardam. Em swarms pequenos isso pode atrasar o fim do download; manter duas ou três etapas selecionadas é uma alternativa não implementada.
+- **Escolha parcial só em memória:** depois de reiniciar, a escolha de baixar só parte do pack some e vale o gatilho normal (limite já descrito em [seed](seed.md#séries-e-packs-baixar-e-excluir-por-episódio)).
+- **Sondas do player:** a posição vem do último GET Range; sondagens de cauda (índices do MKV ou MP4) podem reordenar o prefetch até o GET seguinte.
