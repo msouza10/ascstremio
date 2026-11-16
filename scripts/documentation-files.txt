@@ -8,6 +8,7 @@ docs/instalacao.md
 docs/configuracao.md
 docs/uso.md
 docs/seed.md
+docs/series-prioridades.md
 docs/seguranca.md
 docs/manutencao.md
 docs/arquitetura.md

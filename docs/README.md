@@ -14,6 +14,7 @@ Se esta é sua primeira instalação, siga **[instalação](instalacao.md)** e d
 | Fazer login, instalar o addon e escolher uma fonte | [Uso](uso.md) |
 | Configurar ambiente, portas, pastas e políticas | [Configuração](configuracao.md) |
 | Entender o que mantém o computador ligado e quando os arquivos são apagados | [Seed e regras operacionais](seed.md) |
+| Entender a conclusão integral, prioridades de reprodução e pendências de séries | [Séries e prioridades de download](series-prioridades.md) |
 | Atualizar, preservar os dados e resolver falhas | [Manutenção e diagnóstico](manutencao.md) |
 | Avaliar acesso pela rede, credenciais e relatos de problemas | [Segurança](seguranca.md) |
 | Entender o fluxo e consultar as rotas locais | [Arquitetura e interfaces](arquitetura.md) |

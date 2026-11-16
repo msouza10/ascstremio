@@ -26,6 +26,8 @@ sequenceDiagram
 
 O download do torrent usa a sessão do site e preserva os bytes recebidos, que podem conter a passkey. Quando configurada separadamente, a passkey monta o announce do motor em memória; isso não sanitiza o `.torrent` salvo. Listagem e HEAD não entram no swarm. O cofre mantém obrigações locais, e o vigia reconcilia com o histórico/atividade do tracker.
 
+A conclusão durante a reprodução e a reorganização após seek estão detalhadas em [séries e prioridades de download](series-prioridades.md), incluindo seleção por peças, testes e limites conhecidos.
+
 ## Componentes
 
 | Código | Responsabilidade |
@@ -39,6 +41,7 @@ O download do torrent usa a sessão do site e preserva os bytes recebidos, que p
 | `src/episodes.js` | Identidade de episódios a partir dos nomes dos arquivos de um torrent (episódio avulso, temporada, série completa) |
 | `src/file-state.js`, `src/piece-check.js` | Estado por arquivo (`completo`, `provável`, `em parte`, `não baixado`) e conferência por peças, sem o motor, contra o `.torrent` |
 | `src/file-actions.js`, `src/disk-policy.js` | Baixar e excluir por episódio ou temporada, e a política de disco que vale para todo novo download |
+| `src/completion-order.js` | Fila de peças da conclusão integral: trecho à frente, próximos episódios e retorno ao que falta |
 | `src/bridge.js` | Motor BitTorrent, streaming Range, conclusão, retomada e liberação |
 | `src/seedvault.js`, `src/hnr-guard.js` | Persistência e conciliação das obrigações; tracker prevalece |
 | `src/config-server.js`, `src/ui/` | Painel, login, monitor e logs; frontend em JavaScript puro |
@@ -93,7 +96,7 @@ As rotas de log funcionam sem sessão ASC para diagnóstico local. A interface u
 
 Todas as rotas ficam sob o prefixo da credencial: `/<credencial>/manifest.json`, `/<credencial>/catalog/…`, `/<credencial>/meta/…`, `/<credencial>/stream/…` e `/<credencial>/status/poster/<id>.svg`. Sem credencial ativa (ausente, errada ou revogada) a resposta é 403, inclusive para o manifesto; rotas fora dessa lista dão 404. O prefixo é removido antes de chegar ao roteador do SDK (`src/addon-auth.js`) e o token acompanha a requisição para montar as URLs de vídeo com a mesma credencial.
 
-O SDK Stremio fornece manifesto, catálogos, metadados e fontes. `/status/poster/<id>.svg` gera os cartões do monitor para identificadores existentes no estado atual. IDs IMDb de filmes e identificadores locais são convertidos pelos provedores; aceitar o formato de um episódio no parser não implica suporte online a séries.
+O SDK Stremio fornece manifesto, catálogos, metadados e fontes. `/status/poster/<id>.svg` gera os cartões do monitor para identificadores existentes no estado atual. IDs IMDb de filmes, pedidos de episódios e identificadores locais são convertidos pelos provedores. A descoberta de episódios usa o índice canônico; formatos legados e anime com numeração divergente continuam sujeitos aos limites descritos em [séries e prioridades](series-prioridades.md).
 
 As fontes da ponte usam `behaviorHints.notWebReady` para o cliente escolher uma reprodução compatível. Não há conversão para magnet público, descoberta pública nem reprodução BitTorrent delegada ao motor do Stremio.
 

@@ -39,6 +39,8 @@ Abra um episódio no Stremio (Descobrir → Séries). As fontes vêm dos release
 
 Em packs a descrição separa o tamanho do pacote inteiro do tamanho do episódio (`💾 Pacote: 20 GB`, `▶ Este episódio: 2 GB`), porque o custo de ratio e de seed é do pacote. `ℹ A confirmar ao tocar` indica um release que ainda não foi lido por completo; a confirmação acontece no play. O play baixa só o episódio escolhido. Com a conclusão automática ligada (`BACKGROUND_COMPLETE=auto`, o padrão), o resto do pack entra na fila em segundo plano quando esse episódio termina de baixar ([seed](seed.md#assistir-só-um-trecho)); com `off`, só quando você pede. O próximo episódio da mesma temporada é encadeado pelo Stremio.
 
+Ao tocar um episódio sem ter escolhido só parte do pack, o addon busca completar o torrent inteiro em segundo plano, sempre atrás do que você assiste (ordem e limites em [séries e prioridades](series-prioridades.md)).
+
 ### Estado por episódio e ações no painel
 
 Na página do pack (`/filmes/<infoHash>`) a lista **Episódios** mostra o que há em disco, arquivo por arquivo:
