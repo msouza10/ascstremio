@@ -1,9 +1,10 @@
-# Permissões da integração e preparação do contato jurídico
+# Permissões da integração e canal de contato jurídico
 
-Estado em 16/11/2026: **decisões externas pendentes**. Este roteiro apoia as
-[issues #94](https://github.com/msouza10/ascstremio/issues/94) e
-[#95](https://github.com/msouza10/ascstremio/issues/95); não registra aprovação do
-tracker, autorização de obras, revisão profissional ou um canal privado já disponível.
+Estado em 16/11/2026: **permissões pendentes**; o canal de contato jurídico está
+**definido: as issues públicas do repositório** (decisão do mantenedor, sem canal privado).
+Este roteiro apoia a [#94](https://github.com/msouza10/ascstremio/issues/94) e registra a
+decisão da [#95](https://github.com/msouza10/ascstremio/issues/95); não registra aprovação do
+tracker, autorização de obras nem revisão profissional.
 Os [avisos legais](../LEGAL.md) descrevem o funcionamento e os limites atuais.
 
 ## Registrar permissões e limites
@@ -26,18 +27,19 @@ exige nova revisão. Ausência de resposta não comprova autorização. Se falta
 um uso pretendido, registrar o ajuste ou a suspensão desse uso específico. Não declarar
 a #94 concluída somente porque este roteiro ou um aviso foi publicado.
 
-## Primeiro contato pelo GitHub
+## Canal de contato: issues públicas
 
-O primeiro contato jurídico usa as **issues públicas do repositório**, acompanhado pelo
-mantenedor `msouza10`. Para começar, [abra uma issue](https://github.com/msouza10/ascstremio/issues/new)
-com o assunto e a localização pública do material do projeto. Inclua uma descrição objetiva
-e, se couber sem dados sensíveis, a titularidade ou representação alegada. Não anexe obras,
-`.torrent`, logs, credenciais, documentos pessoais ou provas privadas.
+Por decisão do mantenedor `msouza10` (16/11/2026), o canal de contato jurídico do projeto são
+as **issues públicas do repositório**. **Não há canal privado**, e isso é deliberado. Para
+começar, [abra uma issue](https://github.com/msouza10/ascstremio/issues/new) com o assunto e a
+localização pública do material do projeto. Inclua uma descrição objetiva e, se couber sem
+dados sensíveis, a titularidade ou representação alegada.
 
-Se precisar tratar informações confidenciais, escreva somente que precisa de contato privado
-e aguarde orientação do mantenedor, sem anexar esse material. **Ainda não há canal jurídico
-privado específico confirmado.** Essa solicitação pública não garante que um canal privado
-esteja disponível nem dispensa eventual meio de notificação legal aplicável.
+Tudo o que for escrito na issue é público. Não anexe obras, `.torrent`, logs, credenciais,
+documentos pessoais, endereços, telefones ou provas privadas, e não peça nem ofereça um meio
+privado de resposta por esse canal. Se o assunto exigir informação confidencial, escreva
+apenas que ele é confidencial; o mantenedor não receberá nem solicitará esse material por aqui.
+Essa solicitação pública não dispensa eventual meio de notificação legal aplicável.
 
 Vulnerabilidades seguem a [política de segurança](../.github/SECURITY.md), pelo
 [relato privado de vulnerabilidade](https://github.com/msouza10/ascstremio/security/advisories/new).
@@ -64,38 +66,37 @@ Veja [como configurar notificações no GitHub](https://docs.github.com/en/subsc
 notificação não transforma a issue pública em conversa privada. Não envie dados sensíveis
 por esse caminho.
 
-## Preparar o canal privado
+## Se um canal privado vier a existir
 
-Antes de anunciar um canal jurídico privado, o mantenedor precisa confirmar:
+Não está planejado. Se o mantenedor mudar a decisão, antes de anunciar qualquer canal privado
+precisa confirmar:
 
 - Endereço ou formulário real, responsável pelo acompanhamento e pessoas com acesso.
 - Finalidade dos dados recebidos, armazenamento restrito, retenção e descarte; definir
   como atender solicitações e quando preservar evidências necessárias, com revisão qualificada.
 - Capacidade de recebimento e resposta, sem prometer prazo voluntário que não possa cumprir
   nem afastar eventual prazo legal obrigatório.
-- Link acessível sem conta do projeto, quando essa for a proposta do canal, e destino
-  correto, verificados sem enviar dados ou reclamações reais.
+- Link acessível sem conta do projeto e destino correto, verificados sem enviar dados reais.
 
-Só depois dessa confirmação devem ser atualizados o § 8 de `LEGAL.md`, a linha J13 da
-[matriz](conformidade-juridica.md) e a #95. O contato público já existe; a publicação deste
-roteiro não ativa um canal privado nem conclui a #95.
+Só então atualizar o § 8 de `LEGAL.md` (nova versão do aviso), a linha J13 da
+[matriz](conformidade-juridica.md) e abrir uma nova issue; a #95 foi encerrada com a decisão
+das issues públicas.
 
 ## Tratamento das solicitações
 
-1. **Receber o mínimo necessário:** no contato público, assunto e localização pública,
-   conforme acima. Informações adicionais sensíveis, inclusive meio privado de resposta,
-   só devem ser solicitadas após confirmar um canal adequado e a necessidade de recebê-las.
-2. **Triar:** separar suporte, vulnerabilidades e reclamações jurídicas. Não copiar relatos
-   privados para issues públicas. Solicitar somente informações necessárias pelo canal adequado.
+1. **Receber o mínimo necessário:** assunto e localização pública, conforme acima. Não solicitar
+   informações sensíveis nem meio privado de resposta por esse canal.
+2. **Triar:** separar suporte, vulnerabilidades e reclamações jurídicas. Vulnerabilidades vão
+   pelo relato privado de segurança; material privado recebido por engano não é copiado nem
+   mantido na issue.
 3. **Analisar e decidir:** verificar se o material está sob controle do projeto e obter
-   avaliação qualificada quando necessária. Evidências privadas, decisão, responsável e data
-   devem ficar sob acesso restrito, quando houver estrutura confirmada para recebê-las.
+   avaliação qualificada quando necessária. Registrar na própria issue a decisão, o responsável
+   e a data, sem dados privados.
 4. **Responder e executar:** comunicar a decisão sem dados privados e registrar a ação
    sobre materiais ou distribuições do projeto. Não prometer apagar arquivos em máquinas
    pessoais nem conteúdo do ASC ou de terceiros.
-5. **Encerrar o registro:** para dados privados eventualmente recebidos, aplicar a retenção
-   e o descarte definidos, considerando eventual necessidade de preservação. Issues e suas
-   notificações podem ter cópias fora do controle do mantenedor; não prometer apagá-las.
+5. **Encerrar o registro:** issues públicas e suas notificações podem ter cópias fora do
+   controle do mantenedor; não prometer apagá-las.
 
-O mantenedor deve validar as condições de tratamento de dados antes de receber material
-privado. Uma rotina documental não comprova autorização nem assegura imunidade jurídica.
+Como o canal é público, o mantenedor não deve solicitar nem aceitar material privado por ele.
+Uma rotina documental não comprova autorização nem assegura imunidade jurídica.
