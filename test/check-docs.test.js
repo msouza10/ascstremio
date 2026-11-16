@@ -201,6 +201,15 @@ test('CLI: sai 1 quando há problemas', (t) => {
   assert.match(r.stderr, /nada\.md/);
 });
 
+test('portas: a chave PORT crua é validada contra outra porta de serviço válida', (t) => {
+  const esquema = [...ESQUEMA, { key: 'BRIDGE_PORT', type: 'int', default: 7010 }];
+  const tabela = '# C\n\n## Rede\n\n| V | P | N |\n|---|---|---|\n| `PORT` | `7010` | a |\n| `BRIDGE_PORT` | `7010` | b |\n| `ALFA` | x | c |\n';
+  const dir = arvore(t, { 'docs/configuracao.md': tabela });
+  const p = verificar(dir, { esquema });
+  assert.deepEqual(p.map((x) => x.regra), ['portas']);
+  assert.match(p[0].mensagem, /PORT deveria ser 7000/);
+});
+
 // Regressão: a árvore real do repositório precisa estar coerente (é o que o CI exige).
 test('a documentação real do repositório passa no verificador', () => {
   const r = spawnSync(process.execPath, [path.join(raiz, 'scripts', 'check-docs.js'), raiz], { encoding: 'utf8' });

@@ -193,7 +193,7 @@ function verificar(raiz, opcoes = {}) {
 
       // (f) linha da tabela de variáveis com padrão de porta divergente.
       if (rel === posix(DOC_VARIAVEIS)) {
-        const t = /^\|\s*`([A-Z][A-Z0-9_]*PORT)`\s*\|\s*([^|]*)\|/.exec(linha);
+        const t = /^\|\s*`((?:[A-Z][A-Z0-9_]*_)?PORT)`\s*\|\s*([^|]*)\|/.exec(linha);
         const entrada = t && esquema.find((e) => e.key === t[1]);
         if (entrada && entrada.default > 0 && !new RegExp(`(?<!\\d)${entrada.default}(?!\\d)`).test(t[2])) {
           erro(rel, n, 'portas', `padrão de ${t[1]} deveria ser ${entrada.default}`);
