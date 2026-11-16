@@ -1,6 +1,7 @@
 LEGAL.md
 docs/README.md
 docs/conformidade-juridica.md
+docs/permissoes-e-contato.md
 docs/instalacao.md
 docs/configuracao.md
 docs/uso.md
