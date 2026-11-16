@@ -13,8 +13,9 @@ node scripts/license-inventory.js . /tmp/inventario-lock.json
 ```
 
 O resultado enumera candidatos de produção do `package-lock.json`, incluindo
-opcionais de outras plataformas. Registra versão, origem, integridade e licença
-declarada. Não é uma lista de componentes efetivamente instalados.
+opcionais de outras plataformas. Registra versão, origem e integridade. O
+lockfile não traz licença, então nesse modo `licencaDeclarada` vale `desconhecida`
+(e o componente entra em `atencao`). Não é uma lista de componentes instalados.
 
 Depois de `npm ci`, acrescente `--installed` para examinar a árvore montada:
 
@@ -22,11 +23,46 @@ Depois de `npm ci`, acrescente `--installed` para examinar a árvore montada:
 node scripts/license-inventory.js . /tmp/inventario-instalado.json --installed
 ```
 
-Esse modo filtra pacotes ausentes, localiza textos de licença/avisos dentro de
+Esse modo lê `name` e licença do `package.json` de cada pacote (`license` string
+SPDX, `license` objeto legado ou o campo legado `licenses[]`), filtra pacotes ausentes, localiza textos de licença/avisos dentro de
 cada pacote e registra SHA-256 dos arquivos nativos encontrados. Os caminhos são
 relativos à raiz examinada. Os textos permanecem junto aos componentes; o JSON
 não os substitui. Ausência de texto é uma pendência de revisão, não aprovação.
 O comando não acessa a rede nem lê dados da conta.
+
+## Itens que requerem revisão
+
+O JSON traz a lista `atencao` (e o campo `atencao` em cada componente). Regras
+simples: só `MIT`, `ISC`, `BSD-2-Clause`, `BSD-3-Clause`, `Apache-2.0` e `0BSD`
+isolados dispensam atenção; todo o resto requer revisão humana. Motivos:
+`copyleft-fraco` (MPL, LGPL, GPL etc.), `licenca-composta` (OR/AND/WITH),
+`licenca-incomum`, `campo-legado`, `licenca-desconhecida` e `sem-texto-de-licenca`
+(nenhum LICENSE/NOTICE no diretório instalado). Não é conclusão jurídica: a
+ausência de um item não significa aprovação.
+
+Resultado sobre a árvore de produção instalada (`npm ci --omit=dev`, Linux,
+309 componentes; varia com a plataforma e com as dependências):
+
+| Componente | Motivo | Observação |
+|---|---|---|
+| `node-datachannel` 0.32.3 (MPL 2.0) | copyleft-fraco | MPL é copyleft por arquivo: revisar a obrigação de oferecer o código-fonte dos arquivos MPL ao distribuir. |
+| `expand-template` (MIT OR WTFPL), `rc` (BSD-2-Clause OR MIT OR Apache-2.0) | licenca-composta | Escolher e registrar a opção adotada. |
+| `sax` (BlueOak-1.0.0) | licenca-incomum | Ler os termos. |
+| `limiter` | campo-legado | Declara via `licenses[]`; confirmar o texto. |
+| 15 a 17 pacotes (entre eles `ip`, `tr46`, `cookie-signature`, `default-gateway`, `err-code`, `uint8-util`, `webrtc-polyfill`) | sem-texto-de-licenca | Sem arquivo LICENSE/NOTICE no diretório; obter o aviso no repositório de origem. |
+
+## Fonte Inter (SIL OFL 1.1)
+
+`src/ui/assets/inter-*.woff2` é a fonte Inter, sob a SIL Open Font License 1.1,
+desde a primeira versão do repositório. O texto da licença e o aviso
+"Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter)"
+estão em `src/ui/assets/INTER-LICENSE.txt`, cópia literal do `LICENSE.txt` do
+repositório upstream `rsms/inter` (commit `3ac1bd32a473`, SHA-256
+`262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a`). Como
+fica dentro de `src/`, acompanha a fonte no tarball, no instalador Windows e na
+imagem Docker. Pendente: o histórico não registra a versão do Inter nem a
+origem exata dos `.woff2` (download ou subconjunto); confirmar com o dono. Os
+arquivos não foram modificados por este PR.
 
 ## Entrega por formato
 
