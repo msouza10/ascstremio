@@ -72,3 +72,49 @@ test('bandeja do Windows: o launcher abre o PowerShell oculto e o pacote o grava
   assert.match(prepare, /ps1/);
   assert.match(prepare, /\\ufeff/i, 'PowerShell 5.1 só lê UTF-8 com BOM');
 });
+
+test('atalhos do Windows controlam o serviço (sc) e usam os dados em ProgramData', () => {
+  assert.ok(!fs.existsSync(path.join(raiz, 'windows', 'launcher.vbs')), 'o processo oculto sem supervisão foi substituído pelo serviço');
+  assert.match(ler('windows', 'start.cmd'), /sc start AscStremio/);
+  assert.match(ler('windows', 'stop.cmd'), /sc stop AscStremio/);
+  assert.match(ler('windows', 'parar-bandeja.cmd'), /bandeja\.ps1/);
+  for (const nome of ['start.cmd', 'stop.cmd', 'open-panel.cmd', 'configurar.cmd', 'credenciais.cmd', 'parar-bandeja.cmd']) {
+    const txt = ler('windows', nome);
+    assert.doesNotMatch(txt, /launcher\.vbs|LOCALAPPDATA/i, `${nome} ainda aponta para o modelo antigo`);
+  }
+  for (const nome of ['open-panel.cmd', 'configurar.cmd', 'credenciais.cmd']) {
+    assert.match(ler('windows', nome), /DATA_DIR=%ProgramData%\\AscStremio\\data/, nome);
+  }
+  // O painel abre na porta efetiva e a bandeja sobe junto (instância única).
+  const abrir = ler('windows', 'open-panel.cmd');
+  assert.match(abrir, /credenciais-cli\.js porta painel/);
+  assert.match(abrir, /bandeja\.vbs/);
+});
+
+test('instalador do Windows: serviço, administrador, ACL dos dados e migração sem apagar nada', () => {
+  const nsi = ler('windows', 'installer.nsi');
+  assert.match(nsi, /RequestExecutionLevel admin/);
+  assert.match(nsi, /InstallDir "\$PROGRAMFILES64\\AscStremio"/);
+  assert.match(nsi, /SetRegView 64/);
+  assert.match(nsi, /AscStremioServico\.exe" install/);
+  assert.match(nsi, /AscStremioServico\.exe" (stop|uninstall)/);
+  // Dados do serviço só para SYSTEM, administradores, LocalService e quem instalou; sem herança do ProgramData.
+  assert.match(nsi, /icacls .*\/inheritance:r/);
+  assert.match(nsi, /\*S-1-5-19/);
+  assert.match(nsi, /\*S-1-5-18/);
+  assert.match(nsi, /\*S-1-5-32-544/);
+  // O usuário comum controla só este serviço, sem UAC (a bandeja reinicia por aí).
+  assert.match(nsi, /sc sdset AscStremio/);
+  // Migra os dados do modelo antigo movendo (nunca copia dezenas de GB nem sobrescreve o destino).
+  assert.match(nsi, /\$LOCALAPPDATA\\AscStremio\\data/);
+  assert.match(nsi, /Rename "\$LOCALAPPDATA\\AscStremio\\data"/);
+  // Bandeja no início do Windows; o serviço sobe por conta própria (startmode Automatic).
+  assert.match(nsi, /bandeja\.vbs/);
+  assert.doesNotMatch(nsi, /launcher\.vbs/);
+  // Desinstalar remove o serviço, mas mantém passkey, sessão e cofre de seed.
+  assert.match(nsi, /Section "Uninstall"[\s\S]*AscStremioServico\.exe" uninstall/);
+  assert.doesNotMatch(nsi, /RMDir \/r "\$(COMMONAPPDATA|PROGRAMDATA)|RMDir \/r "\$APPDATA/i);
+  // O registro de desinstalação agora é da máquina (HKLM); do HKCU só se remove a chave do modelo antigo.
+  assert.doesNotMatch(nsi, /WriteReg\w+ HKCU/);
+  assert.match(nsi, /DeleteRegKey HKCU/);
+});
