@@ -25,6 +25,7 @@ function setup({ afterSeed = 'delete', history = cumprido, checkedAgoMs = 30 * 2
   const arquivos = {};
   const chamadas = [];
   const torrents = [];
+  const biblioteca = new Map();
   hashes.forEach((h, i) => {
     vault.markSeen(h, { name: `Filme ${i}`, torrentPath: path.join(dir, `asc-${100 + i}.torrent`) });
     vault.markCompleted(h);
@@ -36,7 +37,14 @@ function setup({ afterSeed = 'delete', history = cumprido, checkedAgoMs = 30 * 2
     clock.t = agora;
     arquivos[h] = path.join(dir, `video${i}.mkv`);
     fs.writeFileSync(arquivos[h], 'vídeo sintético');
-    torrents.push({ infoHash: h, destroy(opts, cb) { chamadas.push({ h, ...opts }); cb(); } });
+    // Biblioteca: o título conhece os arquivos que o .torrent traz (é daí que vem a checagem de compartilhamento).
+    biblioteca.set(h, { infoHash: h, files: [{ path: `video${i}.mkv`, length: 1 }] });
+    // O motor de verdade apaga o armazenamento com destroyStore: o dublê também, para provar o efeito no disco.
+    torrents.push({ infoHash: h, destroy(opts, cb) {
+      chamadas.push({ h, ...opts });
+      if (opts?.destroyStore) fs.rmSync(arquivos[h], { force: true });
+      cb();
+    } });
   });
   const asc = { consultas: [], history: async (id) => {
     asc.consultas.push(id);
@@ -48,6 +56,7 @@ function setup({ afterSeed = 'delete', history = cumprido, checkedAgoMs = 30 * 2
     trackerCheck: (hs, opts = {}) => hnr.reconcile({ asc, vault, only: hs, ...opts }),
     ...extra,
   });
+  for (const [h, lib] of biblioteca) b.entries.set(h, lib);
   b.client = { torrents };
   const mudo = async () => { const log = console.log; console.log = () => {}; try { return await b.releaseSatisfied(); } finally { console.log = log; } };
   return { b, vault, asc, chamadas, clock, dir, arquivos, liberar: mudo };
@@ -293,4 +302,110 @@ test('o aviso de "aguardando confirmação" some assim que o usuário resolve o 
   // Ao voltar atrás, o motivo volta a valer: a próxima passada decide de novo.
   s.vault.setSeedChoice(HASH, null);
   assert.ok(mostra(s).warnings.some((w) => aviso.test(w)));
+});
+
+// Issue #134: dois títulos apontando para o MESMO arquivo em disco. O outro título pode ter
+// obrigação de seed aberta (13.1) ou ser assistido: a liberação automática só solta a rede.
+function compartilhar(s, a = HASH, b = HASH2) {
+  s.b.entries.get(b).files = [{ path: s.b.entries.get(a).files[0].path, length: 1 }];
+  s.arquivos[b] = s.arquivos[a];
+}
+
+test('delete: arquivo usado também por outro título (ainda sem cumprir) NÃO é apagado; só a rede é liberada', async () => {
+  const s = setup({ hashes: [HASH, HASH2] });
+  compartilhar(s);
+  s.vault.get(HASH2).satisfiedAt = null; // o outro título não cumpriu: o tracker não confirma
+  s.vault.get(HASH2).tracker = undefined;
+  const r = await s.liberar();
+  assert.deepEqual(r.map((x) => x.infoHash), [HASH]);
+  assert.deepEqual(s.chamadas.map((c) => [c.h, c.destroyStore]), [[HASH, false]]);
+  assert.ok(fs.existsSync(s.arquivos[HASH]), 'o arquivo compartilhado continua no disco');
+  assert.equal(s.vault.get(HASH).releasedAs, 'stop', 'o cofre registra o que de fato ocorreu: rede liberada, arquivos mantidos');
+});
+
+test('delete: o aviso do painel e o log dizem que os arquivos foram mantidos por serem compartilhados', async () => {
+  const s = setup({ hashes: [HASH, HASH2] });
+  compartilhar(s);
+  s.vault.get(HASH2).satisfiedAt = null;
+  s.vault.get(HASH2).tracker = undefined;
+  const linhas = [];
+  const original = console.log;
+  console.log = (...a) => linhas.push(a.join(' '));
+  try { await s.b.releaseSatisfied(); } finally { console.log = original; }
+  assert.ok(linhas.some((l) => /arquivos mantidos/.test(l) && !/arquivos liberados/.test(l)), linhas.join('\n'));
+  const titulo = s.b.snapshot(s.clock.t).titles.find((t) => t.infoHash === HASH);
+  assert.ok(titulo.warnings.some((w) => /compartilh/i.test(w) && /mantid/i.test(w)), JSON.stringify(titulo.warnings));
+  assert.ok(s.b.hnrWarnings(s.clock.t).some((w) => /compartilh/i.test(w)));
+});
+
+test('delete: com os dois títulos cumpridos e compartilhando o arquivo, nenhum apaga (o arquivo segue no disco)', async () => {
+  const s = setup({ hashes: [HASH, HASH2] });
+  compartilhar(s);
+  const r = await s.liberar();
+  assert.equal(r.length, 2);
+  assert.deepEqual(s.chamadas.map((c) => c.destroyStore), [false, false]);
+  assert.ok(fs.existsSync(s.arquivos[HASH]));
+});
+
+test('delete: arquivos que só um título usa continuam sendo apagados', async () => {
+  const s = setup({ hashes: [HASH, HASH2] });
+  const r = await s.liberar();
+  assert.equal(r.length, 2);
+  assert.deepEqual(s.chamadas.map((c) => c.destroyStore), [true, true]);
+  assert.equal(fs.existsSync(s.arquivos[HASH]), false);
+  assert.equal(s.vault.get(HASH).releasedAs, 'delete');
+  assert.equal(s.b.hnrWarnings(s.clock.t).some((w) => /compartilh/i.test(w)), false);
+});
+
+test('delete: caminhos que diferem só em "./" contam como o mesmo arquivo (mesma identidade das ações individuais)', async () => {
+  const s = setup({ hashes: [HASH, HASH2] });
+  s.b.entries.get(HASH2).files = [{ path: './video0.mkv', length: 1 }];
+  s.vault.get(HASH2).satisfiedAt = null;
+  s.vault.get(HASH2).tracker = undefined;
+  await s.liberar();
+  assert.deepEqual(s.chamadas.map((c) => c.destroyStore), [false]);
+});
+
+test('delete: título fora da biblioteca (sem lista de arquivos) falha fechado e mantém os arquivos', async () => {
+  const s = setup();
+  s.b.entries.delete(HASH);
+  const r = await s.liberar();
+  assert.equal(r.length, 1);
+  assert.deepEqual(s.chamadas.map((c) => c.destroyStore), [false]);
+  assert.ok(fs.existsSync(s.arquivos[HASH]));
+});
+
+test('stop com arquivo compartilhado não gera aviso de "mantidos por compartilhamento"', async () => {
+  const s = setup({ afterSeed: 'stop', hashes: [HASH, HASH2] });
+  compartilhar(s);
+  await s.liberar();
+  assert.equal(s.b.hnrWarnings(s.clock.t).some((w) => /compartilh/i.test(w)), false);
+});
+
+test('arquivos mantidos por falta da lista: o cofre guarda o motivo, sobrevive ao recarregar e o aviso o explica', async () => {
+  const s = setup();
+  s.b.entries.set(HASH, { infoHash: HASH, files: [] });
+  await s.liberar();
+  assert.equal(s.vault.get(HASH).releaseFilesKept, 'arquivos-desconhecidos');
+  const recarregado = new SeedVault({ file: path.join(s.dir, 'vault.json'), now: () => s.clock.t });
+  assert.equal(recarregado.get(HASH).releaseFilesKept, 'arquivos-desconhecidos');
+  assert.ok(s.b.hnrWarnings(s.clock.t).some((w) => /não foi possível confirmar quais arquivos/.test(w)));
+});
+
+test('o aviso de arquivos compartilhados some quando o outro título sai da biblioteca ou o usuário mantém o seed', async () => {
+  const s = setup({ hashes: [HASH, HASH2] });
+  compartilhar(s);
+  s.vault.get(HASH2).satisfiedAt = null;
+  s.vault.get(HASH2).tracker = undefined;
+  await s.liberar();
+  const aviso = () => s.b.hnrWarnings(s.clock.t).some((w) => /compartilh/i.test(w));
+  assert.equal(aviso(), true);
+  const outro = s.b.entries.get(HASH2);
+  s.b.entries.delete(HASH2);
+  assert.equal(aviso(), false, 'sem o outro título o aviso ficaria obsoleto');
+  s.b.entries.set(HASH2, outro);
+  assert.equal(aviso(), true);
+  s.vault.setSeedChoice(HASH, 'keep');
+  assert.equal(aviso(), false);
+  assert.equal(s.vault.get(HASH).releaseFilesKept, undefined);
 });
