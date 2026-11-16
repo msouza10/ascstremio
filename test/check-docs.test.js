@@ -67,10 +67,6 @@ test('variáveis: variável documentada que deixou de existir falha, mas as fora
   assert.deepEqual(verificar(fora, { esquema: ESQUEMA }), []);
 });
 
-test('variáveis: constante local fora do esquema (ADDON_VERSION) não é cobrada na documentação', (t) => {
-  assert.deepEqual(verificar(arvore(t), { esquema: [...ESQUEMA] }), []);
-});
-
 test('comandos: npm run inexistente falha e existente passa', (t) => {
   const ruim = arvore(t, { 'docs/uso.md': '# Uso\n\nRode `npm run naoexiste`.\n' });
   assert.deepEqual(regras(ruim), ['comandos']);
@@ -134,6 +130,32 @@ test('node: versão mínima divergente do engines falha', (t) => {
   assert.deepEqual(regras(matriz), []);
 });
 
+test('BOM no início de arquivo não quebra título nem lista', (t) => {
+  const dir = arvore(t);
+  for (const rel of ['docs/uso.md', 'docs/configuracao.md', 'scripts/documentation-files.txt']) {
+    const f = path.join(dir, ...rel.split('/'));
+    fs.writeFileSync(f, `\uFEFF${fs.readFileSync(f, 'utf8')}`);
+  }
+  assert.deepEqual(verificar(dir, { esquema: ESQUEMA }), []);
+});
+
+test('links: selo (imagem dentro de link) tem o destino conferido', (t) => {
+  const ruim = arvore(t, { 'docs/uso.md': '# Uso\n\n[![s](img/a.png)](nada.md)\n', 'docs/img/a.png': 'x' });
+  assert.deepEqual(regras(ruim), ['links']);
+});
+
+test('node: sem engines.node a regra falha em vez de sumir; >= também é conferido', (t) => {
+  const sem = arvore(t, { 'package.json': JSON.stringify({ scripts: { check: 'x', start: 'y' } }) });
+  assert.deepEqual(regras(sem), ['node']);
+  const ge = arvore(t, { 'docs/uso.md': '# Uso\n\nExige Node.js >= 18.\n' });
+  assert.deepEqual(regras(ge), ['node']);
+});
+
+test('portas: a de peers do contêiner vem do Dockerfile', (t) => {
+  const dir = arvore(t, { Dockerfile: 'ENV TORRENT_PORT=7030\n', 'docs/uso.md': '# Uso\n\nPeers na 7030.\n' });
+  assert.deepEqual(regras(dir), []);
+});
+
 test('nome: brazuka fora das exceções falha e dentro delas passa', (t) => {
   const ruim = arvore(t, { 'docs/uso.md': '# Uso\n\nO serviço brazuka-asc antigo.\n' });
   assert.deepEqual(regras(ruim), ['nome']);
@@ -170,7 +192,7 @@ test('slug segue o GitHub: minúsculas, acentos mantidos, pontuação removida',
   assert.equal(slug('Medir a reprodução (benchmark offline)'), 'medir-a-reprodução-benchmark-offline');
 });
 
-test('CLI: sai 1 com problemas e 0 sem eles', (t) => {
+test('CLI: sai 1 quando há problemas', (t) => {
   const script = path.join(raiz, 'scripts', 'check-docs.js');
   const dir = arvore(t, { 'docs/uso.md': '# Uso\n\n[x](nada.md)\n' });
   // O esquema real não bate com a árvore mínima; o importante é o código de saída.

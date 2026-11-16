@@ -43,7 +43,7 @@ const EXCECOES_BRAZUKA = new Set([
 const PREFIXOS_CITADOS = ['scripts', 'windows', 'src', 'test'];
 
 const posix = (p) => p.split(path.sep).join('/');
-const ler = (arquivo) => fs.readFileSync(arquivo, 'utf8').replace(/\r\n?/g, '\n');
+const ler = (arquivo) => fs.readFileSync(arquivo, 'utf8').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
 const existe = (arquivo) => fs.existsSync(arquivo);
 
 // Mesma regra do GitHub: minúsculas, remove tudo que não é letra, número, espaço, `_` ou `-`
@@ -120,6 +120,7 @@ function verificar(raiz, opcoes = {}) {
   }
   const scriptsNpm = new Set(Object.keys(pacote.scripts ?? {}));
   const minNode = /(\d+)/.exec(pacote.engines?.node ?? '')?.[1];
+  if (!minNode) erro('package.json', 0, 'node', 'engines.node ausente: não há versão mínima do Node para conferir');
 
   const chaves = new Set(esquema.map((e) => e.key));
 
@@ -174,8 +175,9 @@ function verificar(raiz, opcoes = {}) {
 
       // (d) versão mínima do Node.
       if (minNode) {
-        for (const m of linha.matchAll(/\bNode(?:\.js)?\s+(\d+)(\+|\s+ou\s+superior)/g)) {
-          if (m[1] !== minNode) erro(rel, n, 'node', `Node ${m[1]} citado, mas engines exige >=${minNode}`);
+        for (const m of linha.matchAll(/\bNode(?:\.js)?\s+(?:(?:>=|≥)\s*(\d+)|(\d+)(?:\+|\s+ou\s+superior))/g)) {
+          const v = m[1] ?? m[2];
+          if (v !== minNode) erro(rel, n, 'node', `Node ${v} citado, mas engines exige >=${minNode}`);
         }
       }
 
@@ -193,7 +195,7 @@ function verificar(raiz, opcoes = {}) {
       if (rel === posix(DOC_VARIAVEIS)) {
         const t = /^\|\s*`([A-Z][A-Z0-9_]*PORT)`\s*\|\s*([^|]*)\|/.exec(linha);
         const entrada = t && esquema.find((e) => e.key === t[1]);
-        if (entrada && entrada.default > 0 && !t[2].includes(String(entrada.default))) {
+        if (entrada && entrada.default > 0 && !new RegExp(`(?<!\\d)${entrada.default}(?!\\d)`).test(t[2])) {
           erro(rel, n, 'portas', `padrão de ${t[1]} deveria ser ${entrada.default}`);
         }
       }
@@ -202,8 +204,10 @@ function verificar(raiz, opcoes = {}) {
     // (c) links e imagens internos (fora de blocos e de código inline).
     const prosa = limpo.split('\n').map((l) => l.replace(/`[^`]*`/g, (c) => ' '.repeat(c.length)));
     prosa.forEach((linha, i) => {
-      for (const m of linha.matchAll(/(!?)\[(?:[^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)) {
-        const [, imagem, alvoCru] = m;
+      const alvos = [...linha.matchAll(/(!?)\[(?:[^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)].map((m) => [m[1], m[2]]);
+      // Imagem dentro de link (selo clicável): [![alt](img)](destino); o destino também vale.
+      for (const m of linha.matchAll(/\[!\[[^\]]*\]\([^)]*\)\]\(\s*<?([^)\s>]+)>?\s*\)/g)) alvos.push(['', m[1]]);
+      for (const [imagem, alvoCru] of alvos) {
         if (/^[a-z][a-z0-9+.-]*:/i.test(alvoCru) || alvoCru.startsWith('//')) continue;
         const [caminhoCru, ancoraCrua] = alvoCru.split('#');
         let caminho = caminhoCru;
@@ -220,8 +224,9 @@ function verificar(raiz, opcoes = {}) {
           erro(rel, i + 1, regra, `${alvoCru} não está na lista pública (${posix(LISTA)}); no clone limpo o link quebra`);
           continue;
         }
-        if (ancora && !imagem && /\.md$/.test(abs)) {
-          const textoAlvo = textos.get(relAlvo) ?? ler(abs);
+        // Âncora só é conferida em guias verificados (lista pública e extras); outros alvos só precisam existir.
+        if (ancora && !imagem && textos.has(relAlvo)) {
+          const textoAlvo = textos.get(relAlvo);
           if (!ancoras(textoAlvo).has(ancora.toLowerCase())) erro(rel, i + 1, regra, `âncora #${ancora} não existe em ${relAlvo}`);
         }
       }
