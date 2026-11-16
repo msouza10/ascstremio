@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const raiz = path.join(__dirname, '..');
-const ler = (...p) => fs.readFileSync(path.join(raiz, ...p), 'utf8');
+// No Windows o Git pode entregar CRLF; os testes olham o texto, não a quebra de linha.
+const ler = (...p) => fs.readFileSync(path.join(raiz, ...p), 'utf8').replace(/\r\n/g, '\n');
 
 test('serviço do Windows: WinSW roda o Node do pacote com a conta de baixo privilégio e reinicia se cair', () => {
   const xml = ler('windows', 'servico.xml');
