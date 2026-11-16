@@ -15,7 +15,7 @@ Por padrão o upload não muda quando você assiste. Com `BRIDGE_STREAM_UPLOAD_L
 3. **Download parcial:** o tracker já pode registrar atividade; não presuma que manter apenas partes do arquivo quita uma pendência.
 4. **Conclusão:** o download completo abre a meta de seed acompanhada pelo cofre.
 5. **Conciliação:** o aplicativo consulta a atividade/histórico do ASC. O estado do tracker prevalece sobre o tempo local.
-6. **Liberação:** depois da confirmação, aplica `AFTER_SEED`.
+6. **Liberação:** depois da confirmação, aplica `AFTER_SEED`. Antes de parar o seed ou apagar arquivos sozinho, o aplicativo exige uma leitura **recente** do tracker (veja abaixo).
 
 O cofre `DATA_DIR/seed-vault.json` sobrevive a reinícios e é salvo periodicamente. A contagem local avança com o torrent ativo e semeando; não é um comprovante de tempo aceito pelo tracker. Pendências são retomadas na inicialização quando os arquivos necessários estão disponíveis.
 
@@ -67,6 +67,8 @@ Um pack é um torrent com vários episódios. As regras abaixo valem para as aç
 | `stop` | Encerra | Mantém no disco |
 | `keep` | Continua | Mantém no disco |
 | `manual` | Continua até sua decisão | Mantém; você decide no painel |
+
+**Confirmação recente.** O cofre guarda para sempre que o tracker já confirmou o seed, mas isso não basta para agir sozinho. Com `AFTER_SEED=delete` ou `stop`, antes de encerrar o seed ou apagar arquivos o aplicativo confere se a leitura do tracker tem no máximo `SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES` minutos (padrão 5; `0` = sempre reler). Se for mais antiga, sem data (cofre de versão anterior) ou "do futuro" (relógio que voltou), ele relê o tracker e só prossegue se o cumprimento continuar confirmado e sem hit-and-run. Sessão expirada, tracker fora do ar, torrent sem registro, resposta incompleta ou confirmação revogada mantêm seed e arquivos, nada é gravado como liberado e o painel mostra "liberação automática aguardando confirmação recente do tracker". Falha de acesso interrompe o ciclo (nova tentativa na próxima conciliação). Reprodução, abertura ou sessão recente também adiam a liberação. Estados antigos são conservados e reconferidos: a migração não zera estatísticas nem apaga nada.
 
 Para decidir por conteúdo, escolha `AFTER_SEED=manual` em **Configurações** e reinicie o aplicativo quando indicado. Ao confirmar o cumprimento, o painel mostra **Continuar semeando**, **Parar seed e manter arquivos** e **Excluir arquivos e parar seed** na página do filme. A confirmação do botão deixa explícito se os arquivos serão apagados. A aplicação consulta o tracker novamente antes de agir; falhas, obrigação pendente, reprodução ou sessão recente bloqueiam a ação. A decisão é persistida: o modo manual retoma o seed após reiniciar, exceto se você já decidiu parar ou excluir. Você também pode excluir depois os arquivos de um seed que já parou. Se a exclusão falhar parcialmente (por exemplo, arquivo em uso), a parada fica salva e os dados já excluídos não são baixados de novo automaticamente; você pode tentar remover o restante depois. Escolher continuar protege esse conteúdo da liberação automática de `AFTER_SEED`; a retenção por orçamento continua sendo uma operação separada, manual e confirmada.
 
