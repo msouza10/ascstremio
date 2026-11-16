@@ -1762,6 +1762,7 @@ class Bridge {
 
     // /a/<id>: fonte listada pelo Stremio sem .torrent local. Só o GET (o play)
     // baixa o .torrent; HEAD e sondagens nunca baixam nem anunciam.
+    let resolvedNow = false; // o resolvedor acabou de confirmar o freeleech: a trava abaixo não repete
     let seriesImdb = null; // série do episódio tocado, para vincular o pack no cofre
     if (lazy) {
       const ascId = lazy[1];
@@ -1805,6 +1806,7 @@ class Bridge {
         } finally {
           this.disk.release(holder);
         }
+        resolvedNow = true;
         // Credencial revogada (ou cliente que saiu) enquanto o .torrent era preparado: não abre o torrent.
         if (res.destroyed) return;
         lease?.rekey(`s:${infoHash}:${fileIdx}`);
@@ -1845,7 +1847,7 @@ class Bridge {
     // mesmo com o .torrent já local e sem passar pelo resolvedor. A trava confirma o freeleech agora.
     // Torrent já aberto não é início; arquivo completo e concluído toca sem consulta.
     const gateId = lazy ? lazy[1] : this.ascIdOf(this.entries.get(infoHash));
-    if (this.ascStartGate && gateId && this.startsNewDownload(infoHash)) {
+    if (this.ascStartGate && gateId && !resolvedNow && this.startsNewDownload(infoHash)) {
       try { await this.ascStartGate(gateId); } catch (err) {
         const status = Number.isInteger(err?.status) ? err.status : 503;
         log.warn(`play de #${gateId} recusado (${status}): ${err?.message ?? err}`);

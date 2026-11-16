@@ -201,3 +201,15 @@ test('HEAD nunca aciona a trava (não baixa nada)', async () => {
   await b.handle(pedido('HEAD', '/a/1'), res);
   assert.equal(res.statusCode, 200);
 });
+
+test('GET de fonte nova: o resolvedor já confirmou o freeleech, a trava não consulta de novo', async () => {
+  const b = ponte();
+  let consultas = 0;
+  b.ascResolver = async () => { b.entries.set(HASH, { infoHash: HASH, torrentPath: '/x/asc-1.torrent', files: [{ index: 0, path: 'F.mkv', length: 10, isVideo: true }] }); return { infoHash: HASH, fileIdx: 0 }; };
+  b.ascStartGate = async () => { consultas++; };
+  b.getTorrent = async () => torrentFalso(Buffer.from('abcdefghij'));
+  const res = resposta();
+  await b.handle(pedido('GET', '/a/1'), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(consultas, 0);
+});

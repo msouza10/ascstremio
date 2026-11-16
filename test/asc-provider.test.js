@@ -13,7 +13,7 @@ const linha = (id, extra = {}) => ({
 });
 
 // Ponte e ASC falsos que registram tudo: o que importa é o QUE foi baixado e QUANDO.
-async function fixture(t, { rows = [linha(1), linha(2)], videosPorId = {}, arquivosPorId = {}, diskFull = false, onlyFreeleech = false, historyFreeleech = true, downloadErro = null, connected = true, original } = {}) {
+async function fixture(t, { rows = [linha(1), linha(2)], videosPorId = {}, arquivosPorId = {}, diskFull = false, onlyFreeleech = false, historyFreeleech = true, downloadErro = null, connected = true, original, now } = {}) {
   const dir = tmpdir('asc-provider-');
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const calls = { searches: 0, downloads: [], histories: [], originals: [] };
@@ -32,6 +32,7 @@ async function fixture(t, { rows = [linha(1), linha(2)], videosPorId = {}, arqui
     async history(id) { calls.histories.push(String(id)); return { history: null, freeleech: historyFreeleech, name: 'x' }; },
   };
   const provider = createAscProvider(asc, bridge, dir, {
+    ...(now ? { now } : {}),
     async readTorrentImpl(file) {
       const id = /asc-(\d+)\.torrent$/.exec(file)[1];
       if (arquivosPorId[id]) {
@@ -290,24 +291,28 @@ test('episódio: o play também revalida o freeleech em vez de confiar na busca'
 });
 
 test('falha ao consultar a página: fail-closed (503/401), sem baixar nem usar a busca antiga', async (t) => {
-  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1, { freeleech: true })] });
+  const rel = { t: 1_000_000 };
+  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1, { freeleech: true })], now: () => rel.t });
   await f.provider.findStreams(imdb);
   f.asc.history = async () => { throw new Error('rede caiu'); };
   await assert.rejects(f.provider.resolve('1'), (e) => e.status === 503 && /não foi possível confirmar/i.test(e.message));
   assert.deepEqual(f.calls.downloads, []);
+  rel.t += 20_000; // passa a recusa lembrada
   f.asc.connected = false;
   await assert.rejects(f.provider.resolve('1'), (e) => e.status === 401);
   assert.deepEqual(f.calls.downloads, []);
 });
 
 test('.torrent local com dados incompletos: revalida o freeleech antes de baixar o que falta', async (t) => {
-  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1)] });
+  const rel = { t: 1_000_000 };
+  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1)], now: () => rel.t });
   entradaLocal(f);
   f.bridge.diskState = () => 'partial';
   f.asc.history = async (id) => { f.calls.histories.push(String(id)); return { history: null, freeleech: false, name: 'x' }; };
   await assert.rejects(f.provider.resolve('1'), (e) => e.status === 409 && /freeleech/.test(e.message));
   assert.deepEqual(f.calls.histories, ['1']);
-  // ainda freeleech: autoriza
+  // ainda freeleech (depois da janela da recusa lembrada): autoriza
+  rel.t += 20_000;
   f.asc.history = async () => ({ history: null, freeleech: true, name: 'x' });
   assert.equal((await f.provider.resolve('1')).fileIdx, 0);
   // não deu para confirmar: não autoriza
@@ -330,4 +335,15 @@ test('filtro desligado: .torrent local incompleto continua sem consulta', async 
   f.bridge.diskState = () => 'partial';
   f.asc.history = async () => { throw new Error('não devia consultar'); };
   assert.equal((await f.provider.resolve('1')).fileIdx, 0);
+});
+
+test('recusa repetida pelo player (GET/Range) não relê a página a cada tentativa, e nunca autoriza por cache', async (t) => {
+  const rel = { t: 1_000_000 };
+  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1)], historyFreeleech: false, now: () => rel.t });
+  for (let i = 0; i < 4; i++) await assert.rejects(f.provider.resolve('1'), (e) => e.status === 409);
+  assert.deepEqual(f.calls.histories, ['1'], 'uma leitura só dentro da janela');
+  rel.t += 20_000;
+  f.asc.history = async (id) => { f.calls.histories.push(String(id)); return { history: null, freeleech: true, name: 'x' }; };
+  assert.equal((await f.provider.resolve('1')).fileIdx, 0, 'passada a janela, lê de novo e o resultado de agora vale');
+  assert.deepEqual(f.calls.histories, ['1', '1']);
 });

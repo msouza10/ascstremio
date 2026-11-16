@@ -204,15 +204,28 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return task;
   }
 
+  // Recusa lembrada por pouco tempo: o player repete GET/Range sem parar e cada tentativa leria a
+  // página do release de novo (risco de limite de requisições do ASC). Só lembra NEGATIVAS, o que
+  // só recusa mais: nunca autoriza nada por cache.
+  const REFUSAL_TTL_MS = 15_000;
+  const refusals = new Map(); // id -> { at, status, message }
   async function confirmFreeleech(id) {
     if (!asc.onlyFreeleech) return;
+    const recent = refusals.get(id);
+    if (recent && now() - recent.at < REFUSAL_TTL_MS) throw httpError(recent.status, recent.message);
+    const refuse = (status, message) => {
+      if (status !== 401) refusals.set(id, { at: now(), status, message });
+      throw httpError(status, message);
+    };
+    const NAO_CONFIRMOU = 'Não foi possível confirmar agora se o release ainda é freeleech; nada foi baixado. Tente de novo.';
     let freeleech;
     try { freeleech = await freeleechNow(id); } catch (error) {
       log.warn(`freeleech do release #${id} não confirmado: ${error?.message ?? error}`);
-      throw httpError(asc.connected === false ? 401 : 503, 'Não foi possível confirmar agora se o release ainda é freeleech; nada foi baixado. Tente de novo.');
+      return refuse(asc.connected === false ? 401 : 503, NAO_CONFIRMOU);
     }
-    if (freeleech === null) throw httpError(503, 'Não foi possível confirmar agora se o release ainda é freeleech; nada foi baixado. Tente de novo.');
-    if (!freeleech) throw httpError(409, 'Este release não é freeleech e o filtro "somente freeleech" está ligado.');
+    if (freeleech === null) return refuse(503, NAO_CONFIRMOU);
+    if (!freeleech) return refuse(409, 'Este release não é freeleech e o filtro "somente freeleech" está ligado.');
+    refusals.delete(id);
   }
 
   // .torrent já local: só dados completos E concluídos no cofre dispensam a consulta (o tamanho
