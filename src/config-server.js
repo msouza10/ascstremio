@@ -22,7 +22,7 @@ const TYPES = {
 const PAGES = [/^\/$/, /^\/filmes$/, /^\/filmes\/[A-Za-z0-9_-]{1,64}$/, /^\/trafego$/, /^\/logs$/, /^\/conta$/, /^\/entrar$/, /^\/configuracoes$/, /^\/assistente$/];
 // Leituras repetidas pelo próprio painel: não geram linha de log (seria ruído e laço).
 const QUIET = new Set(['/api/monitor', '/api/status', '/api/logs', '/api/logs/files', '/api/addon-connection', '/config.js']);
-const MAX_DOWNLOAD = 100_000;
+const { buildLogExport, LogExportError } = require('./log-export');
 const PANEL_POSTS = ['/api/settings', '/api/settings/preview', '/api/wizard/complete', '/api/wizard/dismiss', '/api/credentials', '/api/credentials/revoke', '/api/credentials/rotate'];
 const ALERT_POSTS = ['/api/alerts/webhook', '/api/alerts/webhook/clear', '/api/alerts/test'];
 
@@ -254,23 +254,15 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         });
       }
       if (req.method === 'GET' && url.pathname === '/api/logs/files') return send(200, { files: logs.listFiles(), retentionDays: logs.retentionDays });
-      if (req.method === 'GET' && url.pathname === '/api/logs/download') {
-        const nd = sp.get('formato') === 'ndjson';
-        const { entries } = logs.query(Logger.parseFilter(sp), { limit: MAX_DOWNLOAD });
-        const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
-        res.writeHead(200, {
-          'Content-Type': nd ? 'application/x-ndjson; charset=utf-8' : 'text/plain; charset=utf-8',
-          'Content-Disposition': `attachment; filename="asc-logs-${stamp}.${nd ? 'ndjson' : 'txt'}"`,
-        });
-        log.info(`download de logs (${nd ? 'ndjson' : 'txt'}): ${entries.length} linha(s)`);
-        return res.end(entries.map((e) => (nd ? JSON.stringify(e) : logs.format(e))).join('\n') + (entries.length ? '\n' : ''));
-      }
-      if (req.method === 'GET' && url.pathname === '/api/logs/file') {
-        const full = logs.filePath(sp.get('nome'));
-        if (!full) return send(404, { error: 'Arquivo de log inexistente.' });
-        res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Content-Disposition': `attachment; filename="${path.basename(full)}"` });
-        log.info(`download do arquivo ${path.basename(full)}`);
-        return res.end(fs.readFileSync(full));
+      if (['/api/logs/preview', '/api/logs/download', '/api/logs/file'].includes(pathname)) {
+        if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return send(405, { error: 'Método não permitido.' }); }
+        if (req.headers.origin && req.headers.origin !== channel.origin) return send(403, { error: 'Origem não autorizada.' });
+        const preview = pathname === '/api/logs/preview';
+        const result = buildLogExport(logs, sp, { defaultMode: preview ? 'suporte' : 'completo', file: pathname === '/api/logs/file' });
+        if (preview) return send(200, result);
+        res.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': result.contentType,
+          'Content-Disposition': `attachment; filename="${result.filename}"` });
+        return res.end(result.content);
       }
 
       if (req.method === 'GET' && url.pathname === '/api/status') return send(200, asc.status());
@@ -410,6 +402,7 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       log.info('sessão local removida pelo painel');
       return send(200, await asc.logout());
     } catch (error) {
+      if (error instanceof LogExportError) return send(error.status, { error: error.message });
       const known = error instanceof AscError;
       // O motivo real vai para o log (já redigido); a resposta ao navegador segue genérica.
       log[known ? 'warn' : 'error'](`${req.method} ${pathname}: ${error?.message ?? error}`, known ? undefined : { stack: error?.stack });

@@ -88,7 +88,7 @@ Só há números: nenhum infoHash, caminho, nome de arquivo, IP, credencial ou p
 
 Abra **http://127.0.0.1:7020/logs** mesmo quando o login no ASC estiver falhando. É possível filtrar por nível, fonte, período e texto, acompanhar novas entradas e exportar texto/NDJSON ou arquivos diários.
 
-O buffer guarda até 5000 entradas; os arquivos ficam em `DATA_DIR/logs/ascstremio-AAAA-MM-DD.log`, com retenção padrão de 14 dias. Depois do limite diário de 20 MB, apenas avisos e erros continuam sendo gravados. O nível mínimo padrão é `debug`. A saída do processo e os arquivos do logger têm filtros próprios.
+O buffer guarda até 5000 entradas; os arquivos ficam em `DATA_DIR/logs/ascstremio-AAAA-MM-DD.log`, com retenção padrão de 14 dias. Depois do limite diário de 20 MB, apenas avisos e erros continuam sendo gravados. O nível mínimo padrão é `info`; `debug` exige escolha explícita. A saída do processo e os arquivos do logger têm filtros próprios.
 
 | Instalação | Saída do processo |
 |---|---|
@@ -98,7 +98,13 @@ O buffer guarda até 5000 entradas; os arquivos ficam em `DATA_DIR/logs/ascstrem
 | Compose | `docker compose logs --tail 100 -f` |
 | Windows | `%ProgramData%\AscStremio\data\AscStremioServico.out.log` (ou ícone da bandeja › **Ver logs**) |
 
-A redação automática não remove necessariamente dados pessoais, títulos ou identificadores. Revise antes de compartilhar.
+Todos os botões de exportar e copiar abrem uma prévia local. O modo inicial **Suporte** contém somente tempo relativo, nível e fonte reconhecida; omite mensagem, dados, títulos, hashes, caminhos e horário absoluto. Fontes desconhecidas aparecem como `outros`. O modo **Completo** preserva mensagens e dados, reaplicando a redação de segredos conhecidos. Nenhum modo garante anonimização.
+
+A prévia informa seleção, quantidade, retenção e linhas ilegíveis omitidas. TXT e NDJSON usam os filtros da tela e os registros em memória; o arquivo diário usa o dia inteiro, sem filtros. Baixar ou copiar usa exatamente a fotografia revisada, mesmo que novos eventos cheguem depois. Exemplo sintético de suporte: `+0ms WARN [ponte]`; o equivalente completo pode revelar `Filme Exemplo /pasta/video.mkv`. Arquivos acima de 32 MiB são recusados no painel.
+
+`info` evita o detalhamento de cada requisição e reprodução bem-sucedida de `debug`, preservando eventos operacionais e todos os avisos/erros de seed, falhas e segurança. Não elimina títulos ou identificadores de todos os eventos. Ajustes explícitos de nível são preservados. As rotas diretas de download continuam disponíveis para clientes existentes, com modo completo padrão e redação reaplicada; a revisão é exigida pelos botões do painel, não pelas chamadas diretas à API.
+
+A prévia não envia logs ao mantenedor. Exportações, clipboard, backups, journald e logs do hospedeiro têm retenção independente; a limpeza local não os apaga. Revise também o destino antes de compartilhar.
 
 ## Diagnóstico
 

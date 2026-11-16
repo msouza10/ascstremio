@@ -293,7 +293,7 @@ Precedência normal: ambiente, depois `settings.json`, depois o padrão. Valor d
 
 | Variável | Padrão | Comportamento |
 |---|---|---|
-| `LOG_LEVEL` | `debug` | Mínimo registrado: `debug`, `info`, `warn` ou `error` |
+| `LOG_LEVEL` | `info` | Mínimo registrado: `debug`, `info`, `warn` ou `error` |
 | `LOG_RETENTION_DAYS` | `14` | Retenção dos arquivos diários |
 
 A página `/logs` permite mudar o nível durante a execução; para preservar a escolha depois de reiniciar, altere o ambiente. Consulte [manutenção](manutencao.md#logs).

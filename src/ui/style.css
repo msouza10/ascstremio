@@ -581,3 +581,8 @@ html[data-route="assistente"] #nav, html[data-route="assistente"] #nav-mobile { 
 .choice small { display: block; font-size: 12px; line-height: 18px; color: var(--muted-foreground); font-weight: 400; margin-top: 2px; }
 .foot-list { font-size: 12px; color: var(--muted-foreground); max-width: 78ch; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 @media (max-width: 519px) { .opt-row .input { max-width: none; } .savebar .btn { flex: 1 1 auto; } }
+
+/* Prévia local de logs: texto extenso precisa caber também em telas pequenas. */
+dialog.log-export { width: min(900px, 92vw); max-height: 90vh; overflow: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--background); color: var(--foreground); padding: 24px; }
+dialog.log-export::backdrop { background: #0009; }
+.log-export textarea { width: 100%; font-family: monospace; margin-block: 12px; }
