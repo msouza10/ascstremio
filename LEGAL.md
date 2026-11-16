@@ -88,6 +88,10 @@ Logs têm retenção local configurável, de 14 dias por padrão, com limpeza en
 executa suas rotinas; isso não apaga cópias exportadas ou backups. Outros dados têm ciclos de
 vida diferentes. Desinstalar ou revogar uma credencial não significa apagar todos os dados,
 encerrar todas as sessões externas ou eliminar cópias mantidas por terceiros.
+O painel também pode guardar URLs recém-emitidas na sessão da aba do navegador; elas contêm
+credenciais. Remover o destino do webhook não apaga seu histórico local ou mensagens já entregues.
+O [inventário de dados](https://github.com/msouza10/ascstremio/blob/main/docs/dados-privacidade.md)
+detalha persistência, destinos e os limites de cada ação de remoção/revogação.
 Consulte as instruções de [segurança](https://github.com/msouza10/ascstremio/blob/main/docs/seguranca.md)
 e [manutenção](https://github.com/msouza10/ascstremio/blob/main/docs/manutencao.md).
 

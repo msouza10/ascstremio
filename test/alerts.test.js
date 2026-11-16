@@ -348,3 +348,30 @@ test('disco desconhecido mantém o alerta aberto; abertura pendente obsoleta é 
   assert.equal(mgr.removeDestination().ok, true);
   void behavior;
 });
+
+test('transparência: campos informados correspondem ao envio; desabilitar não envia nem apagar destino limpa histórico', async () => {
+  for (const format of ['json', 'text']) {
+    const { mgr, sent, dataDir } = setup({ format });
+    mgr.setConfig({ ALERTS_ENABLED: false });
+    mgr.observeSnapshot(diskLow());
+    await mgr.pump();
+    assert.equal(sent.length, 0, 'opt-in continua obrigatório');
+    const fields = mgr.status().payloadFields;
+    assert.deepEqual(fields, format === 'json' ? [...A.CAMPOS_JSON] : ['message']);
+    mgr.setConfig({ ALERTS_ENABLED: true });
+    mgr.observeSnapshot(diskLow()); await mgr.pump();
+    assert.equal(sent.length, 1);
+    if (format === 'json') assert.deepEqual(Object.keys(sent[0].parsed).sort(), fields.filter((k) => k !== 'count').sort(), 'contagem é opcional e não acompanha o evento de disco');
+    else {
+      assert.equal(sent[0].headers['Content-Type'], 'text/plain; charset=utf-8');
+      assert.equal(sent[0].body, 'O espaço livre em disco está abaixo do patamar de aviso.');
+    }
+    assert.equal(mgr.status().host, 'ntfy.example.org');
+    assert.ok(!JSON.stringify(mgr.status()).includes(SECRET_URL));
+    mgr.setConfig({ ALERTS_ENABLED: false });
+    const history = fs.readFileSync(path.join(dataDir, A.STATE_FILE), 'utf8');
+    assert.equal(mgr.removeDestination().ok, true);
+    assert.equal(fs.existsSync(path.join(dataDir, A.DEST_FILE)), false);
+    assert.equal(fs.readFileSync(path.join(dataDir, A.STATE_FILE), 'utf8'), history);
+  }
+});

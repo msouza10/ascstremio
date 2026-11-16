@@ -41,6 +41,10 @@ O cache pode ser grande, mas restaurar apenas o cofre não restaura os dados nec
 
 Desinstalar o serviço Linux ou o programa Windows preserva os dados (passo a passo em [instalação](instalacao.md#desinstalar)). A exclusão definitiva deve considerar seed pendente e revogação das credenciais, além de backups existentes.
 
+O [inventário de dados e privacidade](dados-privacidade.md) lista arquivos, destinos externos,
+prazos e diferenças entre logout, revogação, remoção de webhook e desinstalação. Não há
+remoção geral de dados: limpar vídeos não limpa automaticamente cofre, torrents ou backups.
+
 ## Retenção por orçamento
 
 Opcional e desligada por padrão (`RETENTION_MODE=off`; chaves em [configuração](configuracao.md#retenção-por-orçamento-opcional)). Ela só roda **com o aplicativo em execução**: a ponte sabe quais filmes estão tocando e é quem fala com o tracker; com o aplicativo parado nada disso é conhecido, então não existe modo offline que apague arquivos. Escolha de segurança: não há remoção automática.
