@@ -418,6 +418,8 @@ jobs:
           if (-not $fechou) { throw "o painel continuou abrindo em $ip depois de desligar" }
           if ((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7020/ -TimeoutSec 5).StatusCode -ne 200) { throw 'o painel local deveria continuar abrindo' }
           if ((netsh advfirewall firewall show rule name="Amigos Share Stremio (painel LAN)" | Out-String) -match '7020') { throw 'desligar deveria remover a regra do painel' }
+          # O último netsh devolve 1 quando a regra não existe (o esperado aqui); não deixa isso virar a saída do passo.
+          exit 0
       - name: Para e desinstala
         shell: pwsh
         run: |
