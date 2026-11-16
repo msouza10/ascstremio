@@ -517,75 +517,82 @@
     const epsBar = el('div', 'item-badges');
     const epsPanel = el('div', 'stack');
     cEps.append(cardHead('Episódios em disco'), epsList, epsNote, epsBar, epsPanel);
-    // Ação em andamento no card: excluir um episódio ou baixar o que falta (sempre com confirmação).
-    let epAction = null; let epBusy = false; let epResult = ''; let epSig = ''; let epCurrent = null;
-    const epTag = (e) => window.EpisodesModel.tag(e);
+    // Estado do card (ação escolhida, ocupado, resultado): a lógica é pura e testada em episodes-model.js.
+    const EM = window.EpisodesModel;
+    let ep = EM.estadoInicial(); let epSig = ''; let epCurrent = null;
+    const epSet = (next) => { ep = next; renderEps(epCurrent); };
     function renderEps(t) {
       epCurrent = t;
       const eps = Array.isArray(t.episodes) ? t.episodes : [];
       cEps.hidden = eps.length === 0;
       if (cEps.hidden) return;
-      const sig = JSON.stringify([eps, t.state, t.deadline, t.completedAt, t.tracker?.satisfied, t.tracker?.hitAndRun, epAction, epBusy, epResult]);
+      const sig = JSON.stringify([eps, t.state, t.deadline, t.completedAt, t.tracker?.satisfied, t.tracker?.hitAndRun, t.freeleech, ep]);
       if (sig === epSig) return;
       epSig = sig;
       // "completo" vem das peças verificadas (motor aberto); "provável" é só o espaço alocado em disco.
       const label = { completo: 'completo', provavel: 'provável (não verificado)', parcial: 'em parte', ausente: 'não baixado' };
       clear(epsList); clear(epsBar); clear(epsPanel);
-      for (const e of eps) {
-        const row = el('div', 'row');
-        const detail = e.state === 'parcial' ? ` · ${fmtBytes(e.onDisk)} de ${fmtBytes(e.length)}` : ` · ${fmtBytes(e.length)}`;
-        const dd = el('dd', '', e.excluded ? `excluído por você${detail}` : `${label[e.state] ?? e.state}${detail}`);
-        if (e.state !== 'ausente' && !e.excluded) {
-          // A regra é a mesma do servidor (src/file-actions.js): só depois de o tracker confirmar o seed.
-          // Desabilitado, o botão fica visível com o motivo, em vez de sumir sem explicar.
-          const acao = window.EpisodesModel.acaoExcluir(t);
-          const b = el('button', 'btn btn-ghost btn-sm btn-icon');
-          b.type = 'button'; b.disabled = epBusy || !acao.permitida;
-          b.title = acao.permitida ? `Excluir o arquivo de ${epTag(e)}` : acao.motivo;
-          b.append(icon(acao.permitida ? 'trash-2' : 'clock'), document.createTextNode('Excluir'));
-          b.addEventListener('click', () => { epAction = { kind: 'exclude', file: e.index, tag: epTag(e) }; epResult = ''; renderEps(epCurrent); });
-          dd.append(document.createTextNode(' '), b);
+      // A regra de exclusão é a mesma do servidor (src/file-actions.js): só depois de o tracker confirmar
+      // o seed. Desabilitado, o botão fica visível com o motivo, em vez de sumir sem explicar.
+      const acao = EM.acaoExcluir(t);
+      const completing = t.state === 'completing';
+      const small = (text, iconName, kind, title, off) => {
+        const b = el('button', 'btn btn-ghost btn-sm btn-icon');
+        b.type = 'button'; b.disabled = ep.busy || off; b.title = title;
+        b.append(icon(iconName), document.createTextNode(text));
+        b.addEventListener('click', () => epSet(EM.escolher(ep, kind)));
+        return b;
+      };
+      const temporadas = EM.temporadas(eps);
+      for (const ts of temporadas) {
+        if (temporadas.length > 1) {
+          const head = el('div', 'row');
+          const dd = el('dd', '');
+          if (ts.falta && !completing) dd.append(small('Baixar temporada', 'download', { kind: 'completeSeason', season: ts.season }, `Baixa só os episódios da temporada ${ts.season}.`, false), document.createTextNode(' '));
+          if (ts.podeExcluir) dd.append(small('Excluir temporada', acao.permitida ? 'trash-2' : 'clock', { kind: 'excludeSeason', season: ts.season }, acao.permitida ? `Excluir os arquivos da temporada ${ts.season}` : acao.motivo, !acao.permitida));
+          head.append(el('dt', '', `Temporada ${ts.season}`), dd);
+          epsList.append(head);
         }
-        row.append(el('dt', '', epTag(e)), dd);
-        epsList.append(row);
+        for (const e of ts.episodes) {
+          const row = el('div', 'row');
+          const detail = e.state === 'parcial' ? ` · ${fmtBytes(e.onDisk)} de ${fmtBytes(e.length)}` : ` · ${fmtBytes(e.length)}`;
+          const dd = el('dd', '', e.excluded ? `excluído por você${detail}` : `${label[e.state] ?? e.state}${detail}`);
+          const tag = EM.tag(e);
+          if (e.state !== 'completo' && !completing) dd.append(document.createTextNode(' '), small('Baixar', 'download', { kind: 'completeFile', file: e.index, tag }, `Baixa só ${tag} em segundo plano.`, false));
+          if (e.state !== 'ausente' && !e.excluded) dd.append(document.createTextNode(' '), small('Excluir', acao.permitida ? 'trash-2' : 'clock', { kind: 'exclude', file: e.index, tag }, acao.permitida ? `Excluir o arquivo de ${tag}` : acao.motivo, !acao.permitida));
+          row.append(el('dt', '', tag), dd);
+          epsList.append(row);
+        }
       }
-      const falta = eps.some((e) => e.state === 'ausente' || e.state === 'parcial' || e.excluded);
-      if (falta && t.state !== 'completing' && !epAction) {
+      const falta = temporadas.some((x) => x.falta);
+      if (falta && !completing && !ep.action) {
         const b = el('button', 'btn btn-outline btn-sm btn-icon');
-        b.type = 'button'; b.disabled = epBusy;
+        b.type = 'button'; b.disabled = ep.busy;
         b.title = 'Baixa o que falta do torrent com prioridade baixa e traz de volta os episódios que você excluiu.';
         b.append(icon('download'), document.createTextNode('Baixar o que falta'));
-        b.addEventListener('click', () => { epAction = { kind: 'restore' }; epResult = ''; renderEps(epCurrent); });
+        b.addEventListener('click', () => epSet(EM.escolher(ep, { kind: 'restore' })));
         epsBar.append(b);
       }
-      if (epAction) {
-        const exclude = epAction.kind === 'exclude';
-        epsPanel.append(alertBox(exclude ? 'leech' : 'complete',
-          exclude ? `Excluir ${epAction.tag}` : 'Baixar o que falta',
-          exclude
-            ? 'O arquivo deste episódio será apagado, o seed deste pack para até você baixar o que falta e nada será baixado de volta sozinho.'
-            : (t.freeleech === true
-              ? 'O restante baixa em segundo plano e o seed volta a contar para o pack inteiro.'
-              : 'Este release não é freeleech: o que falta conta no seu ratio. O seed volta a contar para o pack inteiro.')));
+      if (ep.action) {
+        const d = EM.descricao(ep.action, t);
+        epsPanel.append(alertBox(d.perigo ? 'leech' : 'complete', d.titulo, d.texto));
         const row = el('div', 'item-badges');
-        const ok = el('button', exclude ? 'btn btn-danger' : 'btn btn-primary', epBusy ? 'Aguarde…' : 'Confirmar');
+        const ok = el('button', d.perigo ? 'btn btn-danger' : 'btn btn-primary', ep.busy ? 'Aguarde…' : 'Confirmar');
         const cancel = el('button', 'btn btn-ghost', 'Cancelar');
-        ok.type = cancel.type = 'button'; ok.disabled = cancel.disabled = epBusy;
-        cancel.addEventListener('click', () => { epAction = null; renderEps(epCurrent); });
+        ok.type = cancel.type = 'button'; ok.disabled = cancel.disabled = ep.busy;
+        cancel.addEventListener('click', () => epSet(EM.cancelar(ep)));
         ok.addEventListener('click', async () => {
-          const action = epAction; epBusy = true; renderEps(epCurrent);
-          try {
-            const res = action.kind === 'exclude'
-              ? await app().call('POST', 'exclude', { infoHash: epCurrent.infoHash, file: action.file })
-              : await app().call('POST', 'complete', { infoHash: epCurrent.infoHash });
-            epResult = res.message ?? (res.aviso ? `Iniciado. ${res.aviso}` : 'Iniciado. O restante baixa em segundo plano.');
-          } catch (err) { epResult = err.message || 'Não foi possível concluir a ação.'; }
-          epBusy = false; epAction = null; renderEps(epCurrent); app().refresh();
+          const indo = EM.confirmar(ep);
+          if (!indo) return;
+          const req = EM.pedido(indo.action, epCurrent.infoHash);
+          epSet(indo);
+          try { epSet(EM.concluido(ep, await app().call('POST', req.route, req.body))); } catch (err) { epSet(EM.falhou(ep, err)); }
+          app().refresh();
         });
         row.append(ok, cancel);
         epsPanel.append(row);
       }
-      if (epResult) { const m = el('p', 'foot', epResult); m.setAttribute('role', 'status'); epsPanel.append(m); }
+      if (ep.result) { const m = el('p', 'foot', ep.result); m.setAttribute('role', 'status'); epsPanel.append(m); }
       setText(epsNote, eps.some((e) => e.verified)
         ? 'O seed é do torrent inteiro: a meta de 72 h vale para o pack, não por episódio.'
         : 'Torrent fora do motor: os tamanhos vêm do espaço em disco e não foram conferidos peça a peça. A meta de 72 h vale para o pack inteiro, não por episódio.');
