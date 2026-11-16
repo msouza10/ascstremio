@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.7.0](https://github.com/msouza10/ascstremio/compare/v0.6.0...v0.7.0) (2026-11-16)
+
+
+### Novidades
+
+* **logs:** revise exportações com prévia e modo de suporte ([#123](https://github.com/msouza10/ascstremio/issues/123)) ([5dff988](https://github.com/msouza10/ascstremio/commit/5dff988df56b99c05694587988c18fbfbc26e30a))
+* **privacidade:** descreva dados e campos enviados pelo webhook ([#116](https://github.com/msouza10/ascstremio/issues/116)) ([29c200b](https://github.com/msouza10/ascstremio/commit/29c200b8f86ad70dd0fc5e6229a5f0d152cd5b69))
+* **series:** baixe a conclusão do torrent por prioridade de posição ([#143](https://github.com/msouza10/ascstremio/issues/143)) ([37fea68](https://github.com/msouza10/ascstremio/commit/37fea686fc4cae0db96a5a349c51ac7320132146)), closes [#88](https://github.com/msouza10/ascstremio/issues/88) [#83](https://github.com/msouza10/ascstremio/issues/83)
+
+
+### Correções
+
+* **freeleech:** revalidar o freeleech antes de iniciar novos downloads ([#138](https://github.com/msouza10/ascstremio/issues/138)) ([7991934](https://github.com/msouza10/ascstremio/commit/7991934016b2504d8eb75fc9997bbb55aec17264)), closes [#80](https://github.com/msouza10/ascstremio/issues/80)
+* **seed:** exigir confirmação recente do tracker antes de liberar o seed ([#133](https://github.com/msouza10/ascstremio/issues/133)) ([2c70a70](https://github.com/msouza10/ascstremio/commit/2c70a708448563404390e77fdbebc0683b20003e)), closes [#100](https://github.com/msouza10/ascstremio/issues/100)
+* **seed:** liberação automática não apaga arquivo usado por outro título ([#137](https://github.com/msouza10/ascstremio/issues/137)) ([29b1e1c](https://github.com/msouza10/ascstremio/commit/29b1e1c434a75b10a6885f1f396f35d6eef3f410)), closes [#134](https://github.com/msouza10/ascstremio/issues/134) [#100](https://github.com/msouza10/ascstremio/issues/100)
+
+
+### Documentação
+
+* **juridico:** registre as issues públicas como canal de contato jurídico ([#127](https://github.com/msouza10/ascstremio/issues/127)) ([9bdedd3](https://github.com/msouza10/ascstremio/commit/9bdedd30e4b1aeee354a0771255b318bbdf542a9)), closes [#95](https://github.com/msouza10/ascstremio/issues/95) [#94](https://github.com/msouza10/ascstremio/issues/94)
+* **readme:** apresente o painel com capturas nos dois temas ([#132](https://github.com/msouza10/ascstremio/issues/132)) ([b4b0519](https://github.com/msouza10/ascstremio/commit/b4b05193ca2143f953595d3cbdf5042c821ab5be)), closes [#130](https://github.com/msouza10/ascstremio/issues/130)
+* **seguranca:** corrija a afirmação sobre passkey nos .torrent salvos ([#136](https://github.com/msouza10/ascstremio/issues/136)) ([bd6aae0](https://github.com/msouza10/ascstremio/commit/bd6aae06687c2668f0364ed70bc3c122dff4d56f)), closes [#99](https://github.com/msouza10/ascstremio/issues/99)
+
+
+### Build e empacotamento
+
+* **licencas:** gere inventários e preserve avisos dos componentes ([#128](https://github.com/msouza10/ascstremio/issues/128)) ([5b96098](https://github.com/msouza10/ascstremio/commit/5b96098ba82c90d6296c404edf2a61633eb58b0d)), closes [#103](https://github.com/msouza10/ascstremio/issues/103)
+
+
+### Esteira (CI/CD)
+
+* **docs:** verificador determinístico de documentação ([#139](https://github.com/msouza10/ascstremio/issues/139)) ([b20fe41](https://github.com/msouza10/ascstremio/commit/b20fe417e581d022bfb0cb52185796c0c270d8b2)), closes [#131](https://github.com/msouza10/ascstremio/issues/131)
+
 ## [0.6.0](https://github.com/msouza10/ascstremio/compare/v0.5.0...v0.6.0) (2026-11-16)
 
 
