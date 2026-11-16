@@ -323,3 +323,22 @@ test('credenciais porta: segue o settings.json e o ambiente vence (atalho do Win
   await cli.run(['porta'], { env: { DATA_DIR: novo() }, out: (l) => padrao.push(l) });
   assert.deepEqual(padrao, ['7010']);
 });
+
+test('credenciais porta painel: porta efetiva do painel para a bandeja do Windows', async () => {
+  const cli = require('../src/credenciais-cli');
+  const dir = novo();
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 1, revision: 1, values: { CONFIG_PORT: 7120 } }));
+  const saida = [];
+  assert.equal(await cli.run(['porta', 'painel'], { env: { DATA_DIR: dir }, out: (l) => saida.push(l) }), 0);
+  assert.deepEqual(saida, ['7120']);
+  const comEnv = [];
+  await cli.run(['porta', 'painel'], { env: { DATA_DIR: dir, CONFIG_PORT: '7220' }, out: (l) => comEnv.push(l) });
+  assert.deepEqual(comEnv, ['7220']);
+  const padrao = [];
+  await cli.run(['porta', 'painel'], { env: { DATA_DIR: novo() }, out: (l) => padrao.push(l) });
+  assert.deepEqual(padrao, ['7020']);
+  // Sem argumento continua sendo a porta da ponte.
+  const ponte = [];
+  await cli.run(['porta'], { env: { DATA_DIR: dir }, out: (l) => ponte.push(l) });
+  assert.deepEqual(ponte, ['7010']);
+});

@@ -40,3 +40,35 @@ test('build do instalador embute o WinSW com versão e SHA-256 fixados', () => {
   // Confere o hash antes de embutir, como já se faz com o Node.
   assert.match(build, /SHA-256 do WinSW não confere/);
 });
+
+test('bandeja do Windows: instância única, estados, menu em português e só fala com 127.0.0.1', () => {
+  const ps = ler('windows', 'bandeja.ps1');
+  // Só o código conta nas checagens de segredo: o cabeçalho explica o que a bandeja NÃO faz.
+  const codigo = ps.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  assert.match(ps, /Mutex/, 'uma só bandeja por usuário');
+  assert.match(ps, /System\.Windows\.Forms/);
+  assert.match(ps, /NotifyIcon/);
+  assert.match(ps, /\$servico\s*=\s*'AscStremio'/);
+  for (const estado of ['online', 'iniciando', 'parado']) assert.match(ps, new RegExp(`'${estado}'`), estado);
+  for (const item of ['Abrir painel', 'Iniciar', 'Reiniciar', 'Parar', 'Ver logs', 'Pasta de dados', 'Sair da bandeja']) {
+    assert.ok(ps.includes(item), `falta o item de menu "${item}"`);
+  }
+  // Painel e saúde sempre em loopback, com a porta efetiva pela CLI (não fixa).
+  assert.match(ps, /http:\/\/127\.0\.0\.1:\$\{?porta/i);
+  assert.match(ps, /credenciais-cli\.js'\s*,\s*'porta'/);
+  assert.doesNotMatch(codigo, /0\.0\.0\.0|https?:\/\/(?!127\.0\.0\.1)[a-z]/i, 'nada fora do loopback');
+  // A bandeja nunca toca em credencial, passkey nem token; não baixa nem executa texto de fora.
+  assert.doesNotMatch(codigo, /passkey|credentials\.json|admin-key|bridge-key|[?&]k=|ascc_/i);
+  assert.doesNotMatch(codigo, /Invoke-Expression|\biex\b|DownloadString|Invoke-WebRequest|Invoke-RestMethod/i);
+});
+
+test('bandeja do Windows: o launcher abre o PowerShell oculto e o pacote o grava com BOM para manter os acentos', () => {
+  const vbs = ler('windows', 'bandeja.vbs');
+  assert.match(vbs, /powershell/i);
+  assert.match(vbs, /-WindowStyle Hidden/);
+  assert.match(vbs, /bandeja\.ps1/);
+  assert.match(vbs, /, 0, False/, 'janela oculta e sem esperar');
+  const prepare = ler('windows', 'prepare-scripts.js');
+  assert.match(prepare, /ps1/);
+  assert.match(prepare, /\\ufeff/i, 'PowerShell 5.1 só lê UTF-8 com BOM');
+});

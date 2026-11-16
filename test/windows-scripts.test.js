@@ -26,3 +26,15 @@ test('pacote Windows prepara todos os atalhos com CRLF, sem BOM e sem alterar ou
   prepareScripts(stage);
   assert.deepEqual(fs.readFileSync(path.join(stage, 'credenciais.cmd')), before, 'normalização idempotente');
 });
+
+test('pacote Windows grava os .ps1 com BOM UTF-8 e CRLF, sem duplicar o BOM ao repetir', () => {
+  const stage = tmpdir('scripts-ps1-');
+  fs.writeFileSync(path.join(stage, 'bandeja.ps1'), '# Serviço: ação\nWrite-Output "ok"\n');
+  prepareScripts(stage);
+  const bytes = fs.readFileSync(path.join(stage, 'bandeja.ps1'));
+  assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'BOM UTF-8');
+  const texto = bytes.toString('utf8').replace(/^﻿/, '');
+  assert.equal(texto, '# Serviço: ação\r\nWrite-Output "ok"\r\n');
+  prepareScripts(stage);
+  assert.deepEqual(fs.readFileSync(path.join(stage, 'bandeja.ps1')), bytes, 'idempotente: um BOM só');
+});
