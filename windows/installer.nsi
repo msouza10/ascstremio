@@ -33,6 +33,8 @@ Section "Instalar"
   SetRegView 64
   SetShellVarContext all
   ReadEnvStr $R9 ProgramData
+  ; %LOCALAPPDATA% do usuário que instalou, lido do ambiente: a variável interna do NSIS muda com o contexto "all".
+  ReadEnvStr $R5 LOCALAPPDATA
 
   ; Atualização: encerra a bandeja e o serviço da versão em execução antes de trocar os arquivos.
   IfFileExists "$INSTDIR\AscStremioServico.exe" 0 semservicoanterior
@@ -45,13 +47,13 @@ Section "Instalar"
 
   ; Modelo antigo (por usuário, sem serviço): para o processo, tira atalhos e arquivos antigos.
   ; Os dados em %LOCALAPPDATA%\AscStremio\data NÃO são apagados aqui: são movidos mais abaixo.
-  IfFileExists "$LOCALAPPDATA\Programs\AscStremio\stop.cmd" 0 semmodeloantigo
-    ExecWait '"$LOCALAPPDATA\Programs\AscStremio\stop.cmd"'
+  IfFileExists "$R5\Programs\AscStremio\stop.cmd" 0 semmodeloantigo
+    ExecWait '"$R5\Programs\AscStremio\stop.cmd"'
     SetShellVarContext current
     Delete "$SMSTARTUP\Amigos Share Stremio.lnk"
     RMDir /r "$SMPROGRAMS\Amigos Share Stremio"
     SetShellVarContext all
-    RMDir /r "$LOCALAPPDATA\Programs\AscStremio"
+    RMDir /r "$R5\Programs\AscStremio"
     DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AscStremio"
   semmodeloantigo:
 
@@ -62,12 +64,16 @@ Section "Instalar"
   CreateDirectory "$R9\AscStremio"
   StrCpy $R6 0
   IfFileExists "$R9\AscStremio\data\*.*" dadosprontos 0
-    IfFileExists "$LOCALAPPDATA\AscStremio\data\*.*" 0 dadossemorigem
+    IfFileExists "$R5\AscStremio\data\*.*" 0 dadossemorigem
       ; Move (mesmo volume: instantâneo), nunca copia dezenas de GB nem sobrescreve o destino.
       ClearErrors
-      Rename "$LOCALAPPDATA\AscStremio\data" "$R9\AscStremio\data"
+      Rename "$R5\AscStremio\data" "$R9\AscStremio\data"
       IfErrors 0 dadosmovidos
-        DetailPrint "Não foi possível mover os dados antigos; seguem em $LOCALAPPDATA\AscStremio\data."
+        ; Plano B: o move do cmd também só renomeia (mesmo volume), sem copiar.
+        nsExec::ExecToLog 'cmd.exe /c move "$R5\AscStremio\data" "$R9\AscStremio\data"'
+        Pop $0
+        IfFileExists "$R9\AscStremio\data\*.*" dadosmovidos 0
+        DetailPrint "Não foi possível mover os dados antigos; seguem em $R5\AscStremio\data."
         Goto dadossemorigem
       dadosmovidos:
       StrCpy $R6 1

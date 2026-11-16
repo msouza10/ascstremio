@@ -106,8 +106,10 @@ test('instalador do Windows: serviço, administrador, ACL dos dados e migração
   // O usuário comum controla só este serviço, sem UAC (a bandeja reinicia por aí).
   assert.match(nsi, /sc sdset AscStremio/);
   // Migra os dados do modelo antigo movendo (nunca copia dezenas de GB nem sobrescreve o destino).
-  assert.match(nsi, /\$LOCALAPPDATA\\AscStremio\\data/);
-  assert.match(nsi, /Rename "\$LOCALAPPDATA\\AscStremio\\data"/);
+  // Lido do ambiente: $LOCALAPPDATA muda com SetShellVarContext all e apontaria para outro lugar.
+  assert.match(nsi, /ReadEnvStr \$R5 LOCALAPPDATA/);
+  assert.match(nsi, /Rename "\$R5\\AscStremio\\data" "\$R9\\AscStremio\\data"/);
+  assert.doesNotMatch(nsi, /\$LOCALAPPDATA/, 'nenhum caminho do usuário pode depender do contexto de $LOCALAPPDATA');
   // Bandeja no início do Windows; o serviço sobe por conta própria (startmode Automatic).
   assert.match(nsi, /bandeja\.vbs/);
   assert.doesNotMatch(nsi, /launcher\.vbs/);
