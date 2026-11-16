@@ -1957,6 +1957,9 @@ class Bridge {
         selectCompletion(torrent, completionPlan(torrent, this.entries.get(infoHash), { fileIdx, start }));
       }
     } catch (err) {
+      // A reorganização remove as seleções de fundo antes de criar a nova: com falha no meio o
+      // torrent ficaria "concluindo" sem seleção. Soltar o estado deixa o timer recomeçar a fila.
+      this.completing.delete(infoHash);
       log.warn(`conclusão: não foi possível reorganizar a fila de ${short(infoHash)}: ${err.message}`);
     }
 

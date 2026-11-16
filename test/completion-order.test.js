@@ -31,6 +31,17 @@ test('arquivo atual vazio ou posição inválida cai na fila do torrent inteiro,
   assert.deepEqual(completionPlan(torrent, {}, { fileIdx: 7, start: 0 }), [[0, 9]]);
 });
 
+test('posição além do fim do arquivo é limitada e arquivos auxiliares com peças próprias vêm por último', () => {
+  const files = [
+    { index: 0, path: 'S01E01.mkv', length: 20, isVideo: true },
+    { index: 1, path: 'S01E02.mkv', length: 20, isVideo: true },
+    { index: 2, path: 'extra.nfo', length: 20, isVideo: false },
+  ];
+  const torrent = { files, pieces: new Array(6), pieceLength: 10 };
+  // `start` vem do Range do cliente: um valor absurdo não pode gerar peça fora do torrent.
+  assert.deepEqual(completionPlan(torrent, { files }, { fileIdx: 0, start: 1e9 }), [[1, 1], [2, 3], [0, 0], [4, 5]]);
+});
+
 test('ordena temporadas e episódios numericamente, preservando índices físicos', () => {
   const files = ['S02E01', 'S01E10', 'S01E02', 'S01E01'].map((id, index) => ({ index, path: `${id}.mkv`, length: 10, isVideo: true }));
   const torrent = { files, pieces: new Array(4), pieceLength: 10 };

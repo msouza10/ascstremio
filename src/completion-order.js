@@ -75,8 +75,15 @@ function selectCompletion(torrent, plan) {
       queueMicrotask(() => {
         queued = false;
         if (activePlans.get(torrent) !== state || torrent.destroyed) return;
-        while (cursor <= to && torrent.bitfield?.get(cursor)) cursor += 1;
-        if (cursor > to) advance();
+        // Corre fora de qualquer try/catch do chamador: uma recusa do motor aqui viraria exceção
+        // não capturada (e o processo encerra). O próximo GET ou o timer refazem a fila.
+        try {
+          while (cursor <= to && torrent.bitfield?.get(cursor)) cursor += 1;
+          if (cursor > to) advance();
+        } catch (err) {
+          activePlans.delete(torrent);
+          console.warn(`[conclusão] fila interrompida: ${err.message}`);
+        }
       });
     });
   };

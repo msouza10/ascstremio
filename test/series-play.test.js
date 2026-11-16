@@ -611,16 +611,42 @@ test('GET de vídeo registra a posição, mas não inicia a conclusão automáti
   assert.deepEqual(ctx.b.playbackPositions.get(ctx.b.client.torrents[0]), { fileIdx: 1, start: 2 });
 });
 
-test('falha ao reorganizar a conclusão não derruba a reprodução nem o timer', async () => {
-  const ctx = packAberto({ streams: 0 });
+test('falha ao selecionar não derruba a reprodução nem o timer, e o timer tenta de novo', async (t) => {
+  const ctx = packAberto({ streams: 0, baixado: [0, 10 * GB, 0] });
   const torrent = ctx.b.client.torrents[0];
-  ctx.b.completing.add(HASH);
-  // Seleção de peças recusada pelo motor (por exemplo, torrent destruído no meio do pedido).
+  const avisos = [];
+  t.mock.method(console, 'warn', (m) => avisos.push(String(m)));
+  // Timer: o motor recusa a seleção. Sem seleção feita, a conclusão não é dada como ativa nem marcada.
+  const original = torrent.select;
+  torrent.select = () => { throw new Error('invalid selection'); };
+  assert.doesNotThrow(() => ctx.b.completionTick(1e6));
+  assert.equal(ctx.b.completing.has(HASH), false);
+  assert.ok(!ctx.vault.get(HASH).backgroundComplete);
+  assert.ok(avisos.some((m) => m.includes('não foi possível selecionar')), 'a falha é registrada');
+  torrent.select = original;
+  ctx.b.completionTick(2e6);
+  assert.equal(ctx.b.completing.has(HASH), true, 'quando o motor aceita, a conclusão começa');
+  // GET com a conclusão ativa: a reorganização falha, o vídeo continua e o timer refaz a fila.
   torrent.select = () => { throw new Error('invalid selection'); };
   const res = await getComPack(ctx);
   assert.equal(res.statusCode, 206, 'a conclusão é otimização: o vídeo continua');
-  // O timer de 30 s também não pode lançar: uma exceção ali encerra o processo inteiro.
-  ctx.b.completing.delete(HASH);
-  assert.doesNotThrow(() => ctx.b.completionTick());
-  assert.equal(ctx.b.completing.has(HASH), false, 'sem seleção feita, a conclusão não é dada como ativa');
+  assert.equal(ctx.b.completing.has(HASH), false, 'sem seleção de fundo, deixa o timer recomeçar');
+});
+
+test('falha numa etapa posterior da fila (microtarefa) não vira exceção não capturada', async () => {
+  const { selectCompletion } = require('../src/completion-order');
+  const verificadas = new Set();
+  let notifica;
+  const torrent = { pieces: new Array(4), bitfield: { get: (i) => verificadas.has(i) }, deselect: () => {},
+    select: (from, to, p, notify) => { if (from === 2) throw new Error('invalid selection'); notifica = notify; } };
+  const naoCapturadas = [];
+  const ouvinte = (err) => naoCapturadas.push(err);
+  process.on('uncaughtException', ouvinte);
+  try {
+    selectCompletion(torrent, [[0, 1], [2, 3]]);
+    verificadas.add(0); verificadas.add(1);
+    notifica();
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally { process.off('uncaughtException', ouvinte); }
+  assert.deepEqual(naoCapturadas, []);
 });
