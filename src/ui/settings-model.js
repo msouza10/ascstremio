@@ -133,7 +133,7 @@
     DISK_RESERVE_PERCENT: { title: 'Reserva em % do disco', hint: 'Outra forma de reservar espaço: vale a que guardar mais. Deixe 0 para usar só os GiB.' },
     ASC_ONLY_FREELEECH: {
       title: 'Quais releases mostrar',
-      hint: 'Freeleech não gasta ratio.',
+      hint: 'Freeleech não gasta ratio. O filtro confere o release antes de iniciar um download, mas o benefício pode acabar durante a transferência; a contabilidade final é do tracker.',
       values: { true: 'Só freeleech (recomendado)', false: 'Todos (os demais gastam ratio)' },
     },
     ASCSTREMIO_MODE: { title: 'Modo de uso' },
@@ -205,6 +205,7 @@
       hint: 'Adiciona uma fonte de demonstração externa.',
       values: { true: 'Adicionar a fonte de demonstração', false: 'Não adicionar (padrão)' },
     },
+    SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES: { title: 'Idade máxima da leitura do tracker para liberar o seed sozinho (minutos)', hint: '0 = sempre reler o tracker antes de parar o seed ou apagar arquivos.' },
     BACKGROUND_IDLE_MINUTES: { title: 'Minutos de inatividade antes da conclusão automática' },
     BRIDGE_UPLOAD_RESTORE_SECONDS: { title: 'Segundos sem reprodução antes de voltar ao teto normal de upload', hint: 'Só vale com o teto de upload durante a reprodução.' },
     ALERT_WEBHOOK_URL: { title: 'URL do webhook de alertas', hint: 'Segredo: só pelo ambiente; nunca é exibida.' },

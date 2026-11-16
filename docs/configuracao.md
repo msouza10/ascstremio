@@ -185,6 +185,7 @@ A senha fica só como verificador scrypt com sal em `DATA_DIR/panel-admin.json` 
 | Variável | Padrão | Comportamento |
 |---|---|---|
 | `AFTER_SEED` | `delete` | Depois da confirmação do tracker: `delete` encerra e apaga arquivos; `stop` encerra e preserva; `keep` continua semeando; `manual` mantém até sua decisão por conteúdo no painel |
+| `SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES` | `5` | Idade máxima da leitura do tracker aceita para a liberação automática (`delete`/`stop`); inteiro de 0 a 60. Mais velha que isso, o addon relê o tracker antes de parar o seed ou apagar arquivos; sem confirmação, mantém tudo. `0` = sempre reler. Reinício necessário |
 | `BACKGROUND_COMPLETE` | `auto` | `auto` baixa o que falta do torrent inteiro em prioridade baixa (série: assim que o episódio aberto terminar de baixar; demais: depois de parado); em release que não é freeleech, o download conta no seu ratio. `off` só conclui quando você pede |
 | `BACKGROUND_IDLE_MINUTES` | `10` | Inatividade antes da conclusão automática; número ≥ 1 |
 | `SEED_REQUIRED_HOURS` | `72` | Meta local; não altera a obrigação imposta pelo tracker |
@@ -285,14 +286,14 @@ Campos do JSON: `schemaVersion`, `eventId` (aleatório, não deriva de nada), `t
 
 | Variável | Padrão | Comportamento |
 |---|---|---|
-| `ASC_ONLY_FREELEECH` | `true` | `true` lista e baixa só releases freeleech (o download deles não conta no ratio, regra 2.7); `false` mostra todos e os que não são freeleech gastam ratio. Vale na hora, sem novo login |
+| `ASC_ONLY_FREELEECH` | `true` | `true` lista e baixa só releases freeleech (o download deles não conta no ratio, regra 2.7); `false` mostra todos e os que não são freeleech gastam ratio. O play confere de novo antes de iniciar o download, mas o benefício pode acabar durante a transferência e a contabilidade final é do tracker. Vale na hora, sem novo login |
 
 Precedência normal: ambiente, depois `settings.json`, depois o padrão. Valor diferente de `true`/`false` é recusado (na partida, a partida falha; no painel e na CLI, a alteração é rejeitada).
 ## Logs
 
 | Variável | Padrão | Comportamento |
 |---|---|---|
-| `LOG_LEVEL` | `debug` | Mínimo registrado: `debug`, `info`, `warn` ou `error` |
+| `LOG_LEVEL` | `info` | Mínimo registrado: `debug`, `info`, `warn` ou `error` |
 | `LOG_RETENTION_DAYS` | `14` | Retenção dos arquivos diários |
 
 A página `/logs` permite mudar o nível durante a execução; para preservar a escolha depois de reiniciar, altere o ambiente. Consulte [manutenção](manutencao.md#logs).

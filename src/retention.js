@@ -62,6 +62,20 @@ function pathKey(rel) {
   return process.platform === 'win32' || process.platform === 'darwin' ? norm.toLowerCase() : norm;
 }
 
+// Outro título da biblioteca que usa ALGUM destes caminhos (mesma identidade de `pathKey`)? Devolve o
+// infoHash do primeiro que usa, ou null. É a única definição de "arquivo compartilhado": exclusão
+// individual, retenção, verificação de seed e liberação automática perguntam aqui. Caminho que não
+// normaliza (chave null) casa com outro igual, de propósito: na dúvida, conta como compartilhado.
+function sharedWith(entries, infoHash, relPaths) {
+  const keys = new Set((relPaths ?? []).map(pathKey));
+  if (!keys.size) return null;
+  for (const [other, lib] of entries) {
+    if (other === infoHash) continue;
+    if ((lib?.files ?? []).some((f) => keys.has(pathKey(f.path)))) return other;
+  }
+  return null;
+}
+
 function realRoot(storeDir) {
   return fs.realpathSync(storeDir);
 }
@@ -135,4 +149,4 @@ function select(items, policy) {
   return result;
 }
 
-module.exports = { inspectFile, removeFiles, select, safeRelative, pathKey, realRoot, DAY_MS, GIB, SAFETY_MS };
+module.exports = { inspectFile, removeFiles, select, safeRelative, pathKey, sharedWith, realRoot, DAY_MS, GIB, SAFETY_MS };

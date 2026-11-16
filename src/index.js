@@ -157,6 +157,7 @@ async function main() {
     credentials, adminKey, uploadLimit, announceBase,
     streamUploadLimit: v.BRIDGE_STREAM_UPLOAD_LIMIT, uploadRestoreMs: v.BRIDGE_UPLOAD_RESTORE_SECONDS * 1000, vault,
     backgroundMode, idleMs: idleMinutes * 60 * 1000, afterSeed,
+    releaseConfirmMaxAgeMs: v.SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES * 60 * 1000,
     minFreeBytes: Math.round(v.DISK_RESERVE_GIB * 1024 ** 3), reservePercent: v.DISK_RESERVE_PERCENT,
     maxPlaybacks: v.PLAYBACK_MAX_SESSIONS, maxPlaybacksPerCredential: v.PLAYBACK_MAX_PER_CREDENTIAL,
     playbackGraceMs: v.PLAYBACK_SESSION_GRACE_SECONDS * 1000,
@@ -242,6 +243,7 @@ async function main() {
   const remote = createAscProvider(asc, bridge, torrentDir, { cache: metaCache });
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).
   bridge.ascResolver = (ascId) => remote.resolve(ascId);
+  bridge.ascStartGate = (ascId) => remote.confirmFreeleech(ascId);
   bridge.ascSizeHint = (ascId) => remote.sizeOf(ascId);
   bridge.ascEpisodeResolver = (ascId, season, episode) => remote.resolveEpisode(ascId, season, episode);
   bridge.ascImdbHint = (ascId) => remote.imdbOf(ascId);

@@ -28,9 +28,7 @@ async function verifySeedFiles(bridge, infoHash) {
       return { rel: f.path, full, length: f.length };
     });
     const inspect = () => {
-      for (const [other, entry] of bridge.entries) {
-        if (other !== infoHash && (entry.files ?? []).some(f => seen.has(files.pathKey(f.path)))) throw fail();
-      }
+      if (files.sharedWith(bridge.entries, infoHash, targets.map((t) => t.rel))) throw fail();
       return targets.map(f => {
         const inspected = files.inspectFile(root, f.rel);
         if (!inspected.ok || !inspected.exists) throw fail();

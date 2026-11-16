@@ -13,7 +13,7 @@ const linha = (id, extra = {}) => ({
 });
 
 // Ponte e ASC falsos que registram tudo: o que importa é o QUE foi baixado e QUANDO.
-async function fixture(t, { rows = [linha(1), linha(2)], videosPorId = {}, arquivosPorId = {}, diskFull = false, onlyFreeleech = false, historyFreeleech = true, downloadErro = null, connected = true, original } = {}) {
+async function fixture(t, { rows = [linha(1), linha(2)], videosPorId = {}, arquivosPorId = {}, diskFull = false, onlyFreeleech = false, historyFreeleech = true, downloadErro = null, connected = true, original, now } = {}) {
   const dir = tmpdir('asc-provider-');
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const calls = { searches: 0, downloads: [], histories: [], originals: [] };
@@ -32,6 +32,7 @@ async function fixture(t, { rows = [linha(1), linha(2)], videosPorId = {}, arqui
     async history(id) { calls.histories.push(String(id)); return { history: null, freeleech: historyFreeleech, name: 'x' }; },
   };
   const provider = createAscProvider(asc, bridge, dir, {
+    ...(now ? { now } : {}),
     async readTorrentImpl(file) {
       const id = /asc-(\d+)\.torrent$/.exec(file)[1];
       if (arquivosPorId[id]) {
@@ -221,7 +222,7 @@ test('id inválido é recusado antes de qualquer rede', async (t) => {
 
 test('"somente freeleech" vale no play: release que não é freeleech nunca é baixado', async (t) => {
   // a linha mudou para não-freeleech depois de listada
-  let f = await fixture(t, { onlyFreeleech: true, rows: [linha(1, { freeleech: false })] });
+  let f = await fixture(t, { onlyFreeleech: true, rows: [linha(1, { freeleech: false })], historyFreeleech: false });
   await f.provider.findStreams(imdb);
   await assert.rejects(f.provider.resolve('1'), (e) => e.status === 409 && /freeleech/.test(e.message));
   assert.deepEqual(f.calls.downloads, []);
@@ -260,4 +261,89 @@ test('abertura direta revalida freeleech mesmo com metadados em cache e não bai
   await provider.catalog('Movie');
   assert.deepEqual(await provider.streamsFor(1), []);
   assert.equal(downloads, 0);
+});
+
+// ---- Issue #80: o filtro "somente freeleech" revalida ANTES de iniciar novos downloads ----------
+// Regra 2.7: download fora do freeleech conta no ratio. O estado da busca e a existência do
+// .torrent local não provam que o benefício continua valendo agora.
+const HASH1 = '1'.padStart(40, 'a');
+const entradaLocal = (f) => f.bridge.entries.set(HASH1, { infoHash: HASH1, torrentPath: path.join(f.dir, 'asc-1.torrent'), files: [{ index: 0, path: 'f.mkv', length: 9, isVideo: true }] });
+
+test('freeleech que acabou depois da busca: o play revalida na página e NÃO baixa', async (t) => {
+  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1, { freeleech: true })] });
+  await f.provider.findStreams(imdb); // a busca viu freeleech: true
+  f.asc.history = async (id) => { f.calls.histories.push(String(id)); return { history: null, freeleech: false, name: 'x' }; };
+  await assert.rejects(f.provider.resolve('1'), (e) => e.status === 409 && /freeleech/.test(e.message));
+  assert.deepEqual(f.calls.histories, ['1'], 'consulta atual, não o cache da busca');
+  assert.deepEqual(f.calls.downloads, [], 'nenhum .torrent baixado');
+});
+
+test('episódio: o play também revalida o freeleech em vez de confiar na busca', async (t) => {
+  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1, { freeleech: true })] });
+  // a listagem da série (freeleech: true) é o que o play conhece do release
+  f.asc.searchSeries = async () => ({ rows: [linha(1, { name: 'Show S01 1080p', freeleech: true })], truncated: false });
+  f.asc.releaseFiles = async () => ({ complete: true, files: [{ path: 'Show.S01E01.mkv', size: 1000 }] });
+  await f.provider.seriesCandidates({ imdbId: 'tt1', season: 1, episode: 1 });
+  f.asc.history = async (id) => { f.calls.histories.push(String(id)); return { history: null, freeleech: false, name: 'x' }; };
+  await assert.rejects(f.provider.resolveEpisode('1', 1, 1), (e) => e.status === 409);
+  assert.deepEqual(f.calls.histories, ['1']);
+  assert.deepEqual(f.calls.downloads, []);
+});
+
+test('falha ao consultar a página: fail-closed (503/401), sem baixar nem usar a busca antiga', async (t) => {
+  const rel = { t: 1_000_000 };
+  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1, { freeleech: true })], now: () => rel.t });
+  await f.provider.findStreams(imdb);
+  f.asc.history = async () => { throw new Error('rede caiu'); };
+  await assert.rejects(f.provider.resolve('1'), (e) => e.status === 503 && /não foi possível confirmar/i.test(e.message));
+  assert.deepEqual(f.calls.downloads, []);
+  rel.t += 20_000; // passa a recusa lembrada
+  f.asc.connected = false;
+  await assert.rejects(f.provider.resolve('1'), (e) => e.status === 401);
+  assert.deepEqual(f.calls.downloads, []);
+});
+
+test('.torrent local com dados incompletos: revalida o freeleech antes de baixar o que falta', async (t) => {
+  const rel = { t: 1_000_000 };
+  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1)], now: () => rel.t });
+  entradaLocal(f);
+  f.bridge.diskState = () => 'partial';
+  f.asc.history = async (id) => { f.calls.histories.push(String(id)); return { history: null, freeleech: false, name: 'x' }; };
+  await assert.rejects(f.provider.resolve('1'), (e) => e.status === 409 && /freeleech/.test(e.message));
+  assert.deepEqual(f.calls.histories, ['1']);
+  // ainda freeleech (depois da janela da recusa lembrada): autoriza
+  rel.t += 20_000;
+  f.asc.history = async () => ({ history: null, freeleech: true, name: 'x' });
+  assert.equal((await f.provider.resolve('1')).fileIdx, 0);
+  // não deu para confirmar: não autoriza
+  f.asc.history = async () => { throw new Error('fora do ar'); };
+  await assert.rejects(f.provider.resolve('1'), (e) => e.status === 503);
+});
+
+test('arquivo completo (concluído no cofre): toca offline, sem consultar a página', async (t) => {
+  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1, { freeleech: false })], diskFull: true });
+  entradaLocal(f);
+  f.bridge.vault = { get: () => ({ completedAt: 1 }) };
+  f.asc.history = async () => { throw new Error('não devia consultar'); };
+  assert.equal((await f.provider.resolve('1')).fileIdx, 0);
+  assert.deepEqual(f.calls.downloads, []);
+});
+
+test('filtro desligado: .torrent local incompleto continua sem consulta', async (t) => {
+  const f = await fixture(t, { onlyFreeleech: false, rows: [linha(1)] });
+  entradaLocal(f);
+  f.bridge.diskState = () => 'partial';
+  f.asc.history = async () => { throw new Error('não devia consultar'); };
+  assert.equal((await f.provider.resolve('1')).fileIdx, 0);
+});
+
+test('recusa repetida pelo player (GET/Range) não relê a página a cada tentativa, e nunca autoriza por cache', async (t) => {
+  const rel = { t: 1_000_000 };
+  const f = await fixture(t, { onlyFreeleech: true, rows: [linha(1)], historyFreeleech: false, now: () => rel.t });
+  for (let i = 0; i < 4; i++) await assert.rejects(f.provider.resolve('1'), (e) => e.status === 409);
+  assert.deepEqual(f.calls.histories, ['1'], 'uma leitura só dentro da janela');
+  rel.t += 20_000;
+  f.asc.history = async (id) => { f.calls.histories.push(String(id)); return { history: null, freeleech: true, name: 'x' }; };
+  assert.equal((await f.provider.resolve('1')).fileIdx, 0, 'passada a janela, lê de novo e o resultado de agora vale');
+  assert.deepEqual(f.calls.histories, ['1', '1']);
 });

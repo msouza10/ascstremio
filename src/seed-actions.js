@@ -40,11 +40,7 @@ async function manageSeed(bridge, infoHash, action) {
     const inspect = () => {
       const root = files.realRoot(bridge.storeDir);
       if (!paths.length || paths.some((p) => !files.inspectFile(root, p).ok)) throw fail(409, 'Não foi possível validar os arquivos para exclusão.');
-      for (const [other, otherLib] of bridge.entries) {
-        if (other === infoHash) continue;
-        const shared = new Set((otherLib.files ?? []).map((f) => files.pathKey(f.path)));
-        if (paths.some((p) => shared.has(files.pathKey(p)))) throw fail(409, 'Arquivos compartilhados com outro conteúdo não podem ser excluídos.');
-      }
+      if (files.sharedWith(bridge.entries, infoHash, paths)) throw fail(409, 'Arquivos compartilhados com outro conteúdo não podem ser excluídos.');
     };
     if (action === 'delete') inspect();
     if (torrent) {
@@ -81,7 +77,7 @@ async function resumeSeed(bridge, infoHash, entry, fail) {
   }
   const idle = () => {
     if (bridge.loading.has(infoHash) || (bridge.streams.get(infoHash) ?? 0) > 0 || bridge.limiter.hasKeyPrefix(`s:${infoHash}:`)
-      || bridge.limiter.hasKeyPrefix(`a:${hnr.ascIdFromPath(entry.torrentPath)}`)) throw fail(409, 'Conteúdo em uso.');
+      || bridge.limiter.hasAscSession(hnr.ascIdFromPath(entry.torrentPath))) throw fail(409, 'Conteúdo em uso.');
     const sessions = bridge.limiter.snapshot();
     if (sessions.maxSessions > 0 && sessions.active >= sessions.maxSessions) throw fail(409, 'Aguarde uma vaga de reprodução antes de verificar os arquivos.');
   };

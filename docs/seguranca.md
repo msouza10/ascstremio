@@ -136,6 +136,9 @@ Publicar o repositório, os releases e a imagem (GitHub, GHCR) distribui o **pro
 
 ## Logs e publicação do código
 
+Consulte o [inventário de dados e comunicações](dados-privacidade.md) para conhecer também
+os dados da aba do navegador, o histórico de alertas e os limites da desinstalação/revogação.
+
 O logger redige segredos conhecidos e padrões sensíveis antes de gravar, mas revise qualquer exportação antes de enviá-la. Títulos, info hashes, caminhos e horários continuam podendo ser pessoais.
 
 A licença do código ([MIT](../LICENSE)) não dá acesso ao ASC nem direitos sobre conteúdo de terceiros.

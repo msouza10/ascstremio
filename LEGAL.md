@@ -84,10 +84,20 @@ de todos os componentes de terceiros. Não envie senhas, cookies, passkeys, URLs
 `.torrent` reais ou logs sem revisão em pedidos de suporte. Títulos, hashes, caminhos e horários
 podem revelar hábitos mesmo quando os segredos são redigidos.
 
+O painel apresenta uma prévia antes de copiar ou baixar logs. O modo inicial de suporte omite
+mensagens, dados e horários absolutos; o modo completo pode revelar títulos, caminhos e
+identificadores. Revise o conteúdo e o destinatário: nenhum modo garante anonimização.
+A prévia não envia o conteúdo ao mantenedor. Clientes que usam as rotas diretas de download
+precisam revisar o resultado por conta própria.
+
 Logs têm retenção local configurável, de 14 dias por padrão, com limpeza enquanto o aplicativo
 executa suas rotinas; isso não apaga cópias exportadas ou backups. Outros dados têm ciclos de
 vida diferentes. Desinstalar ou revogar uma credencial não significa apagar todos os dados,
 encerrar todas as sessões externas ou eliminar cópias mantidas por terceiros.
+O painel também pode guardar URLs recém-emitidas na sessão da aba do navegador; elas contêm
+credenciais. Remover o destino do webhook não apaga seu histórico local ou mensagens já entregues.
+O [inventário de dados](https://github.com/msouza10/ascstremio/blob/main/docs/dados-privacidade.md)
+detalha persistência, destinos e os limites de cada ação de remoção/revogação.
 Consulte as instruções de [segurança](https://github.com/msouza10/ascstremio/blob/main/docs/seguranca.md)
 e [manutenção](https://github.com/msouza10/ascstremio/blob/main/docs/manutencao.md).
 

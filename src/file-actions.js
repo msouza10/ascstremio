@@ -47,11 +47,8 @@ async function excludeFiles(bridge, infoHash, pick, notFound) {
     const root = files.realRoot(bridge.storeDir);
     for (const file of selected) {
       if (!files.inspectFile(root, file.path).ok) throw fail(409, 'Não foi possível validar o arquivo para exclusão.');
-      const key = files.pathKey(file.path);
-      for (const [other, otherLib] of bridge.entries) {
-        if (other !== infoHash && (otherLib.files ?? []).some((f) => files.pathKey(f.path) === key)) {
-          throw fail(409, 'O arquivo é compartilhado com outro conteúdo e não pode ser excluído.');
-        }
+      if (files.sharedWith(bridge.entries, infoHash, [file.path])) {
+        throw fail(409, 'O arquivo é compartilhado com outro conteúdo e não pode ser excluído.');
       }
     }
     // Com conclusão registrada há obrigação de seed: o tracker precisa confirmar o cumprimento agora.

@@ -803,6 +803,7 @@ class AlertManager {
       host: d.valid ? d.host : null,
       problem: d.valid ? null : d.problem ?? null,
       format: this.cfg.format,
+      payloadFields: this.cfg.format === 'text' ? ['message'] : [...CAMPOS_JSON],
       allowPrivate: this.cfg.allowPrivate,
       thresholds: {
         hnrWithinHours: this.cfg.hnrWithinHours, diskFreeGiB: this.cfg.diskFreeGiB, trackerMinutes: this.cfg.trackerMinutes,

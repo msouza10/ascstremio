@@ -46,6 +46,31 @@ Código e comentários em português do Brasil (com acentuação), comentários 
 aspas simples e ponto e vírgula; siga o arquivo que estiver editando. Sem dependências novas sem
 necessidade. O código precisa funcionar em Linux, Windows e contêiner.
 
+## Capturas para a apresentação
+
+As capturas em `docs/imagens/` mostram a interface real com dados fictícios. Nunca capture
+uma conta real. Antes de adicionar uma imagem, revise visualmente usuário, credenciais,
+caminhos, títulos e logs. Use PNG sem metadados textuais/EXIF, largura máxima de 1280 px,
+até 200 KiB por imagem e até 2 MiB na pasta. Toda imagem precisa de texto alternativo.
+
+Libere cada nome exato no `.gitignore` (depois de `*.png`) e em
+`scripts/documentation-files.txt`. As imagens acompanham o tarball Linux e o instalador
+Windows para manter os links relativos do README disponíveis offline; a imagem Docker
+continua sem os guias de `docs/`.
+
+Para regenerar, com Node.js 22+ e um Chrome instalado:
+
+```bash
+node scripts/demo-capturas.js
+# Em outro terminal; CHROME_BIN permite indicar o executável do Chrome:
+node scripts/capturar-telas.js dist/capturas
+```
+
+A demonstração usa as portas locais 18020 e 18022 e uma pasta temporária, sem conectar ao
+ASC ou iniciar torrents. Encerre-a com Ctrl+C. Confira as novas imagens antes de substituir
+os arquivos públicos; a captura não os sobrescreve automaticamente. Atualize a versão e a
+data indicadas no README conforme a interface capturada, sem alterar a versão do pacote.
+
 ## Releases
 
 Não crie tags nem edite `CHANGELOG.md`, `.release-please-manifest.json` ou a `version` do

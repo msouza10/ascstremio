@@ -141,11 +141,14 @@ class SeedVault {
 
   // Registra que o torrent já cumpriu o limite e foi liberado (rede e, conforme
   // a política, disco).
-  markReleased(infoHash, mode) {
+  // `filesKept` (opcional) é o motivo de os arquivos terem ficado apesar de `AFTER_SEED=delete`
+  // ('arquivo-compartilhado' ou 'arquivos-desconhecidos'); o painel o usa para explicar por que o disco não foi liberado.
+  markReleased(infoHash, mode, filesKept = null) {
     const entry = this.entries.get(infoHash);
     if (!entry) return null;
     entry.releasedAt = this.now();
     entry.releasedAs = mode;
+    if (filesKept) entry.releaseFilesKept = filesKept; else delete entry.releaseFilesKept;
     log.info(`liberado (${mode}): "${label(entry)}"`, { infoHash });
     this.save();
     return entry;
@@ -242,6 +245,7 @@ class SeedVault {
     if (choice === 'keep') {
       delete entry.releasedAs;
       delete entry.releasedAt;
+      delete entry.releaseFilesKept;
     }
     this.save();
   }
