@@ -100,3 +100,27 @@ test('a distribuição gera o inventário e a fonte Inter acompanha o texto da O
   assert.match(ofl, /Copyright \(c\) 2016 The Inter Project Authors/);
   assert.match(ofl, /SIL OPEN FONT LICENSE Version 1\.1/);
 });
+
+test('entradas malformadas ou ambíguas não passam como permissivas nem quebram a saída', t => {
+  const raiz = montar(t, {
+    parenteses: { manifesto: { license: '(MIT' }, arquivos: { LICENSE: 'x' } },
+    gpl: { manifesto: { license: 'GPL-3.0-or-later' }, arquivos: { LICENSE: 'x' } },
+    lista: { manifesto: { license: ['MIT'] }, arquivos: { LICENSE: 'x' } },
+    nomeRuim: { manifesto: { name: {}, license: 'MIT' }, arquivos: { LICENSE: 'x' } },
+    codigo: { manifesto: { license: 'MIT' }, arquivos: { 'license.js': 'x' } }
+  });
+  const quebrado = path.join(raiz, 'node_modules', 'quebrado');
+  fs.mkdirSync(quebrado, { recursive: true });
+  fs.writeFileSync(path.join(quebrado, 'package.json'), '{ não é json');
+  fs.writeFileSync(path.join(quebrado, 'LICENSE'), 'x');
+  const lock = JSON.parse(fs.readFileSync(path.join(raiz, 'package-lock.json'), 'utf8'));
+  lock.packages['node_modules/quebrado'] = { version: '1.0.0' };
+  fs.writeFileSync(path.join(raiz, 'package-lock.json'), JSON.stringify(lock));
+  const por = Object.fromEntries(inventariar(raiz, { instalado: true }).componentes.map(c => [c.caminho.split('/').pop(), c]));
+  assert.ok(por.parenteses.atencao.length > 0);
+  assert.deepEqual(por.gpl.atencao, ['copyleft']);
+  assert.equal(por.lista.licencaDeclarada, 'MIT');
+  assert.equal(typeof por.nomeRuim.nome, 'string');
+  assert.deepEqual(por.codigo.atencao, ['sem-texto-de-licenca']);
+  assert.ok(por.quebrado.atencao.includes('manifesto-ilegivel'));
+});

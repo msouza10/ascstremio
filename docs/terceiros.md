@@ -35,8 +35,9 @@ O comando não acessa a rede nem lê dados da conta.
 O JSON traz a lista `atencao` (e o campo `atencao` em cada componente). Regras
 simples: só `MIT`, `ISC`, `BSD-2-Clause`, `BSD-3-Clause`, `Apache-2.0` e `0BSD`
 isolados dispensam atenção; todo o resto requer revisão humana. Motivos:
-`copyleft-fraco` (MPL, LGPL, GPL etc.), `licenca-composta` (OR/AND/WITH),
-`licenca-incomum`, `campo-legado`, `licenca-desconhecida` e `sem-texto-de-licenca`
+`copyleft-fraco` (MPL, LGPL, EPL, CDDL), `copyleft` (GPL, AGPL etc.),
+`licenca-composta` (OR/AND/WITH), `licenca-incomum`, `campo-legado`,
+`licenca-desconhecida`, `manifesto-ilegivel` e `sem-texto-de-licenca`
 (nenhum LICENSE/NOTICE no diretório instalado). Não é conclusão jurídica: a
 ausência de um item não significa aprovação.
 
