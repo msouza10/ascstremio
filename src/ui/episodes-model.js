@@ -46,6 +46,7 @@
       case 'excludeSeason': return { route: 'exclude', body: { infoHash, season: action.season } };
       case 'completeFile': return { route: 'complete', body: { infoHash, file: action.file } };
       case 'completeSeason': return { route: 'complete', body: { infoHash, season: action.season } };
+      case 'verify': return { route: 'verify-pieces', body: { infoHash } };
       case 'restore': return { route: 'complete', body: { infoHash } };
       default: throw new Error('ação desconhecida');
     }
@@ -73,12 +74,16 @@
       case 'excludeSeason': return { perigo: true, titulo: `Excluir a temporada ${action.season}`, texto: `Os arquivos de todos os episódios da temporada ${action.season} serão apagados, o seed deste pack para até você baixar o que falta e nada será baixado de volta sozinho.` };
       case 'completeFile': return { perigo: false, titulo: `Baixar ${action.tag}`, texto: `Baixa só este episódio em segundo plano. Não conclui o pack: a obrigação de 72 h só nasce com o torrent inteiro.${custo}` };
       case 'completeSeason': return { perigo: false, titulo: `Baixar a temporada ${action.season}`, texto: `Baixa só os episódios da temporada ${action.season} em segundo plano. Não conclui o pack: a obrigação de 72 h só nasce com o torrent inteiro.${custo}` };
+      case 'verify': return { perigo: false, titulo: 'Verificar peças', texto: 'Confere por peças, no disco, os episódios que só parecem completos. Lê os arquivos, mas não baixa nem anuncia nada.' };
       case 'restore': return { perigo: false, titulo: 'Baixar o que falta', texto: `O restante baixa em segundo plano e o seed volta a contar para o pack inteiro.${custo}` };
       default: throw new Error('ação desconhecida');
     }
   }
 
-  const api = { tag, acaoExcluir, estadoInicial, escolher, cancelar, confirmar, mensagem, concluido, falhou, pedido, temporadas, descricao };
+  // Há episódio cujo tamanho só "parece" cheio? Com o motor aberto o estado já vem das peças.
+  const podeVerificar = (eps, flags = {}) => !flags.verified && Array.isArray(eps) && eps.some((e) => e.state === 'provavel');
+
+  const api = { podeVerificar, tag, acaoExcluir, estadoInicial, escolher, cancelar, confirmar, mensagem, concluido, falhou, pedido, temporadas, descricao };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.EpisodesModel = api;
 })();

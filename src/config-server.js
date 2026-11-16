@@ -290,7 +290,7 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         if (!asc.connected) return send(401, { error: 'Conecte e confirme a sessão do ASC para abrir as configurações.' });
         return send(200, alerts.status());
       }
-      const routes = [...ALERT_POSTS, '/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/seed', '/api/exclude', '/api/logs/level', ...PANEL_POSTS];
+      const routes = [...ALERT_POSTS, '/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/seed', '/api/exclude', '/api/verify-pieces', '/api/logs/level', ...PANEL_POSTS];
       if (req.method !== 'POST' || !routes.includes(url.pathname)) return send(404, { error: 'Página inexistente.' });
       const csrfOk = guard ? safeEqual(req.headers['x-csrf-token'], admin.csrf) : req.headers['x-csrf-token'] === token;
       if (req.headers.origin !== channel.origin || !csrfOk || req.headers['content-type'] !== 'application/json') {
@@ -358,6 +358,19 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
             ? await monitor.excludeSeason(body.infoHash, scope.season)
             : await monitor.excludeFile(body.infoHash, scope.file);
           log.info(`${scope.season !== undefined ? 'temporada' : 'episódio'} excluído pelo painel`);
+          return send(200, result);
+        } catch (err) {
+          if (err.expose) return send(err.status, { error: err.message });
+          throw err;
+        }
+      }
+      if (url.pathname === '/api/verify-pieces') {
+        if (!monitor?.verifyEpisodes) return send(404, { error: 'Verificação por peças indisponível.' });
+        if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
+        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash)) return send(400, { error: 'Conteúdo inválido.' });
+        try {
+          const result = await monitor.verifyEpisodes(body.infoHash);
+          log.info('verificação por peças feita pelo painel');
           return send(200, result);
         } catch (err) {
           if (err.expose) return send(err.status, { error: err.message });

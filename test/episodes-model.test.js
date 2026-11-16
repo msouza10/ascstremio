@@ -121,6 +121,7 @@ test('cada ação vira o pedido certo, só com números e o infoHash', () => {
   assert.deepEqual(p({ kind: 'excludeSeason', season: 2 }), { route: 'exclude', body: { infoHash: HASH, season: 2 } });
   assert.deepEqual(p({ kind: 'completeFile', file: 4 }), { route: 'complete', body: { infoHash: HASH, file: 4 } });
   assert.deepEqual(p({ kind: 'completeSeason', season: 1 }), { route: 'complete', body: { infoHash: HASH, season: 1 } });
+  assert.deepEqual(p({ kind: 'verify' }), { route: 'verify-pieces', body: { infoHash: HASH } });
   assert.deepEqual(p({ kind: 'restore' }), { route: 'complete', body: { infoHash: HASH } });
   assert.throws(() => p({ kind: 'qualquer' }));
 });
@@ -166,4 +167,14 @@ test('views.js usa o modelo do card em vez de repetir a lógica', () => {
     assert.match(views, new RegExp(`EM\\.${fn}\\b`), fn);
   }
   assert.doesNotMatch(views, /app\(\)\.call\('POST', 'exclude'/, 'o pedido sai do modelo');
+});
+
+test('"Verificar peças" só se oferece quando há episódio apenas provável e nenhum pedido em voo', () => {
+  const eps = (...states) => states.map((state, index) => ({ index, state }));
+  assert.equal(M.podeVerificar(eps('completo', 'provavel')), true);
+  assert.equal(M.podeVerificar(eps('completo', 'parcial', 'ausente')), false, 'nada a provar');
+  assert.equal(M.podeVerificar(eps('provavel'), { verified: true }), false, 'motor aberto já é exato');
+  assert.equal(M.podeVerificar(undefined), false);
+  assert.match(M.descricao({ kind: 'verify' }, {}).texto, /não baixa/i);
+  assert.equal(M.descricao({ kind: 'verify' }, {}).perigo, false);
 });
