@@ -110,6 +110,7 @@ Section "Instalar"
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Abrir painel.lnk" "$INSTDIR\open-panel.cmd" "" "$INSTDIR\node\node.exe"
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Bandeja.lnk" "wscript.exe" '"$INSTDIR\bandeja.vbs"'
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Obter URL do addon.lnk" "cmd.exe" '/c ""$INSTDIR\credenciais.cmd""'
+  CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Painel pela rede.lnk" "cmd.exe" '/k ""$INSTDIR\painel-lan.cmd""'
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Configuração.lnk" "cmd.exe" '/k ""$INSTDIR\configurar.cmd""'
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Pasta de dados.lnk" "$R9\AscStremio\data"
   ; A bandeja abre sozinha ao entrar no Windows; o serviço já sobe no boot por conta própria.
@@ -131,6 +132,9 @@ Section "Uninstall"
   nsExec::ExecToLog '"$INSTDIR\AscStremioServico.exe" stop'
   Pop $0
   nsExec::ExecToLog '"$INSTDIR\AscStremioServico.exe" uninstall'
+  Pop $0
+  ; Regras de firewall criadas pelo painel pela rede (se existirem).
+  nsExec::ExecToLog '"$INSTDIR\firewall-lan.cmd" remover'
   Pop $0
   Delete "$SMSTARTUP\Amigos Share Stremio.lnk"
   RMDir /r "$SMPROGRAMS\Amigos Share Stremio"
