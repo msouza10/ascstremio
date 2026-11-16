@@ -58,8 +58,8 @@ Resultado sobre a árvore de produção instalada (`npm ci --omit=dev`, Linux,
 desde a primeira versão do repositório. O texto da licença e o aviso
 "Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter)"
 estão em `src/ui/assets/INTER-LICENSE.txt`, cópia literal do `LICENSE.txt` do
-repositório upstream `rsms/inter` (commit `3ac1bd32a473`, SHA-256
-`262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a`). Como
+repositório upstream `rsms/inter` (commit `3ac1bd32a473`; o SHA-256 do
+arquivo começa com `262481e8` e confere com `sha256sum`). Como
 fica dentro de `src/`, acompanha a fonte no tarball, no instalador Windows e na
 imagem Docker. Pendente: o histórico não registra a versão do Inter nem a
 origem exata dos `.woff2` (download ou subconjunto); confirmar com o dono. Os
