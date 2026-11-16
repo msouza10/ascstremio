@@ -205,7 +205,9 @@ class Bridge {
     this.adminKey = adminKey;
     this.strictHost = strictHost;
     this.firstByteTimeoutMs = firstByteTimeoutMs;
-    // Credencial em memória: os .torrent em disco ficam sem token.
+    // Passkey separada, só em memória, para montar o announce do motor. Ela NÃO limpa os
+    // .torrent em disco: eles guardam os bytes recebidos do ASC (0600), possivelmente com a
+    // passkey no announce. A sanitização/migração desses arquivos ainda não existe (#99).
     this.passkey = passkey;
     this.uploadLimit = uploadLimit;
     // Teto reduzido durante reprodução (src/upload-policy.js). Inerte sem streamUploadLimit.
