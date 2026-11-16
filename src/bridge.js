@@ -870,17 +870,21 @@ class Bridge {
     return `${nome}: liberação automática aguardando confirmação recente do tracker (${this.releaseBlockedFor(hash)?.reason}). Seed e arquivos foram mantidos.`;
   }
 
-  // Avisa que `AFTER_SEED=delete` NÃO apagou os arquivos deste título (outro conteúdo os usa).
-  // Dura enquanto os arquivos seguem em disco e o título segue parado; ao retomar o seed
-  // (`keep`) ou excluir os arquivos, o aviso deixa de valer.
+  // Avisa que `AFTER_SEED=delete` NÃO apagou os arquivos deste título. O motivo gravado é só o que
+  // ocorreu na liberação; o aviso reavalia o compartilhamento agora e some quando o outro título saiu
+  // da biblioteca, quando os arquivos já não estão em disco ou quando o usuário voltou a manter o
+  // seed (`keep` apaga o registro).
   filesKeptNotice(hash) {
     const entry = this.vault.get(hash);
     if (!entry?.releaseFilesKept || entry.releasedAs !== 'stop' || this.diskState(hash) === 'none') return null;
     const nome = String(entry.name ?? hash).slice(0, 50);
-    const motivo = entry.releaseFilesKept === 'arquivo-compartilhado'
-      ? 'os arquivos são compartilhados com outro título'
-      : 'não foi possível confirmar quais arquivos são só deste título';
-    return `${nome}: seed encerrado, mas os arquivos foram mantidos apesar de "excluir após o seed": ${motivo}. Eles só poderão ser apagados quando nenhum outro título os usar.`;
+    const base = `${nome}: seed encerrado, mas os arquivos foram mantidos apesar de "excluir após o seed"`;
+    if (entry.releaseFilesKept === 'arquivo-compartilhado') {
+      const paths = (this.entries.get(hash)?.files ?? []).map((f) => f.path);
+      if (!sharedWith(this.entries, hash, paths)) return null;
+      return `${base}: são compartilhados com outro título. Só poderão ser apagados quando nenhum outro título os usar.`;
+    }
+    return `${base}: não foi possível confirmar quais arquivos são só deste título.`;
   }
 
   // Confirmação do tracker utilizável agora: cumprida, sem hit-and-run e lida há no máximo
@@ -1003,6 +1007,10 @@ class Bridge {
       const daysLeft = deadline === null ? null : (deadline - now) / 86_400_000;
       const warnings = entry ? hnr.warningsFor({ vault: this.vault, entry, active, now }) : [];
       const releaseBlocked = this.releaseBlockedFor(infoHash);
+      const extraWarnings = [...warnings];
+      if (releaseBlocked) extraWarnings.push(this.releaseBlockedNotice(infoHash));
+      const keptNotice = this.filesKeptNotice(infoHash);
+      if (keptNotice) extraWarnings.push(keptNotice);
       const down = torrent?.downloaded || 0;
       const up = torrent?.uploaded || 0;
       const completando = this.completing.has(infoHash) || Boolean(entry?.backgroundComplete && !completed);
@@ -1071,7 +1079,7 @@ class Bridge {
               ? null : Number((tracker.remainingMs / 3_600_000).toFixed(2)),
           }
           : null,
-        warnings: [...warnings, ...[releaseBlocked && this.releaseBlockedNotice(infoHash), this.filesKeptNotice(infoHash)].filter(Boolean)],
+        warnings: extraWarnings,
       };
     };
 
@@ -1208,7 +1216,7 @@ class Bridge {
     }
     for (const hash of this.releaseBlocked.keys()) if (this.releaseBlockedFor(hash)) out.push(this.releaseBlockedNotice(hash));
     for (const entry of this.vault.list()) {
-      const aviso = entry.releaseFilesKept ? this.filesKeptNotice(entry.infoHash) : null;
+      const aviso = this.filesKeptNotice(entry.infoHash);
       if (aviso) out.push(aviso);
     }
     for (const entry of this.vault.list()) {
