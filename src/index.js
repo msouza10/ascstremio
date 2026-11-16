@@ -244,6 +244,7 @@ async function main() {
   bridge.ascResolver = (ascId) => remote.resolve(ascId);
   bridge.ascSizeHint = (ascId) => remote.sizeOf(ascId);
   bridge.ascEpisodeResolver = (ascId, season, episode) => remote.resolveEpisode(ascId, season, episode);
+  bridge.ascImdbHint = (ascId) => remote.imdbOf(ascId);
   bridge.ascEpisodeSizeHint = (ascId, season, episode) => remote.episodeSizeOf(ascId, season, episode);
   // Catálogo "ASC — status" dentro do Stremio (STATUS_CATALOG=off desliga).
   const addonBase = net.urls.addon ?? `http://127.0.0.1:${addonPort}`;

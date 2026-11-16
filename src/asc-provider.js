@@ -377,6 +377,23 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return out;
   }
 
+  // Episódios VERIFICADOS por peças em packs que o usuário já tocou para esta série (vínculo gravado
+  // no play). Sem rede e sem .torrent; sem prova, vazio. Só entra aqui com o ASC indisponível.
+  function localEpisodeStreams(video) {
+    const found = bridge.localEpisodeSources?.(video.imdbId, video.season, video.episode) ?? [];
+    return found.map((src) => ({
+      name: ['📁 Local', `S${pad2(video.season)}E${pad2(video.episode)}`].join('\n'),
+      description: [
+        src.name,
+        `▶ Este episódio: ${fmtBytes(src.length)}`,
+        '✔ Arquivo completo, conferido por peças',
+        `ℹ Fontes online indisponíveis: ${availability.message ?? 'ASC não consultado'}.`,
+      ].filter(Boolean).join('\n'),
+      url: bridge.urlFor(src.infoHash, src.fileIdx),
+      behaviorHints: { notWebReady: true, bingeGroup: src.ascId ? `asc-${src.ascId}` : `local-${src.infoHash.slice(0, 8)}`, filename: path.basename(src.path) },
+    }));
+  }
+
   // Imagens de disco e releases sem seeders vão para o fim da lista (continuam visíveis);
   // no resto, mais seeders primeiro e, em empate, freeleech antes.
   function byPreference(rows) {
@@ -448,6 +465,7 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
       // Guarda o que a listagem mostrou: o play confere o arquivo escolhido com isto e reserva disco.
       const record = seriesRows.get(id) ?? { row, expected: new Map() };
       record.row = row;
+      record.imdbId = video.imdbId; // o play usa isto para vincular o pack à série
       if (file) record.expected.set(`${season}:${episode}`, { path: file.path, length: file.length });
       seriesRows.delete(id);
       seriesRows.set(id, record);
@@ -520,9 +538,8 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
   async function lookup(video) {
     const series = video.type === 'series';
     if (video.type !== 'movie' && !series) return { streams: [], offline: null };
-    // Sem o ASC, filme cai para os arquivos locais completos; episódio ainda não (disponibilidade por
-    // arquivo vem depois): mostra só o aviso de indisponibilidade.
-    const fallback = () => (series ? [] : localStreams(video));
+    // Sem o ASC, filme cai para os arquivos locais completos e episódio para os verificados por peças.
+    const fallback = () => (series ? localEpisodeStreams(video) : localStreams(video));
     const blocked = onlineGate();
     if (blocked) {
       if (blocked === 'session' && availability.online) markOffline('session');
@@ -569,6 +586,7 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
   return {
     sizeOf,
     episodeSizeOf,
+    imdbOf(rawId) { return seriesRows.get(String(rawId))?.imdbId ?? null; },
     resolveEpisode,
     async catalog(query) { return (await search(query)).map(meta); },
     // As linhas lembradas descrevem o release (não dependem do filtro) e a query de cada uma

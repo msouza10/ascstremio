@@ -97,6 +97,20 @@ class SeedVault {
     return entry;
   }
 
+  // Série a que o pack pertence (IMDb), gravada quando um episódio dele é tocado. Serve para
+  // oferecer offline os episódios verificados em disco quando o ASC não responde. Valor inválido
+  // é ignorado; sem entrada no cofre não cria vínculo.
+  setSeriesLink(infoHash, imdbId) {
+    const entry = this.entries.get(infoHash);
+    if (!entry || typeof imdbId !== 'string' || !/^tt\d{1,10}$/.test(imdbId)) return entry ?? null;
+    if (entry.imdbId !== imdbId) {
+      entry.imdbId = imdbId;
+      log.info(`pack vinculado a uma série no cofre: "${label(entry)}"`, { infoHash });
+      this.save();
+    }
+    return entry;
+  }
+
   clearExcluded(infoHash) {
     const entry = this.entries.get(infoHash);
     if (!entry || !entry.excluded?.length) return entry ?? null;
