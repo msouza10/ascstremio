@@ -86,7 +86,7 @@ test('contêiner sem LAN continua local por padrão e escutando em 0.0.0.0', () 
 
 test('update grava de forma atômica, com revisão, sem sobras e com modo 0600', () => {
   const dir = novo();
-  const r = settings.update({ dataDir: dir, env: {}, expectedRevision: 0, changes: { ASCSTREMIO_MODE: 'lan', LOG_LEVEL: 'info' } });
+  const r = settings.update({ dataDir: dir, env: {}, expectedRevision: 0, changes: { ASCSTREMIO_MODE: 'lan', LOG_LEVEL: 'warn' } });
   assert.deepEqual(r.changed.sort(), ['ASCSTREMIO_MODE', 'LOG_LEVEL']);
   assert.deepEqual(r.restart, ['ASCSTREMIO_MODE'], 'LOG_LEVEL vale na hora');
   assert.equal(r.snapshot.revision, 1);

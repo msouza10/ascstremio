@@ -291,7 +291,7 @@ const SCHEMA = Object.freeze([
     description: 'Intervalo mínimo para repetir o mesmo alerta enquanto a condição continua aberta.',
   },
   {
-    key: 'LOG_LEVEL', type: 'enum', values: ['debug', 'info', 'warn', 'error'], default: 'debug', group: 'logs', access: 'editable', restart: false,
+    key: 'LOG_LEVEL', type: 'enum', values: ['debug', 'info', 'warn', 'error'], default: 'info', group: 'logs', access: 'editable', restart: false,
     description: 'Nível mínimo registrado.',
   },
   {
