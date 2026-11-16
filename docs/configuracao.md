@@ -186,7 +186,7 @@ A senha fica só como verificador scrypt com sal em `DATA_DIR/panel-admin.json` 
 |---|---|---|
 | `AFTER_SEED` | `delete` | Depois da confirmação do tracker: `delete` encerra e apaga arquivos; `stop` encerra e preserva; `keep` continua semeando; `manual` mantém até sua decisão por conteúdo no painel |
 | `SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES` | `5` | Idade máxima da leitura do tracker aceita para a liberação automática (`delete`/`stop`); inteiro de 0 a 60. Mais velha que isso, o addon relê o tracker antes de parar o seed ou apagar arquivos; sem confirmação, mantém tudo. `0` = sempre reler. Reinício necessário |
-| `BACKGROUND_COMPLETE` | `auto` | `auto` baixa o que falta do torrent inteiro em prioridade baixa (série: assim que o episódio aberto terminar de baixar; demais: depois de parado); em release que não é freeleech, o download conta no seu ratio. `off` só conclui quando você pede |
+| `BACKGROUND_COMPLETE` | `auto` | `auto` baixa o que falta do torrent inteiro em prioridade baixa (série: assim que o episódio aberto terminar de baixar; demais: depois de parado), na ordem da posição de reprodução ([detalhes](series-prioridades.md)); em release que não é freeleech, o download conta no seu ratio. `off` só conclui quando você pede |
 | `BACKGROUND_IDLE_MINUTES` | `10` | Inatividade antes da conclusão automática; número ≥ 1 |
 | `SEED_REQUIRED_HOURS` | `72` | Meta local; não altera a obrigação imposta pelo tracker |
 | `KEEP_AWAKE` | `auto` | `off` desliga o bloqueio de suspensão; no contêiner o bloqueio não é usado |

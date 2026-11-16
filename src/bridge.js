@@ -12,6 +12,7 @@ const path = require('path');
 const { loadLibrary, mainVideo, isPackEntry } = require('./library');
 const { buildEpisodeIndex, findEpisode } = require('./episodes');
 const { fileStates } = require('./file-state');
+const { completionPlan, selectCompletion } = require('./completion-order');
 const { announceWithPasskey } = require('./passkey');
 const { SeedVault } = require('./seedvault');
 const { isLoopbackRequest, inContainer, hostAllowed } = require('./safety');
@@ -181,9 +182,11 @@ class Bridge {
     // torrent está no motor: se foi destruído (limpeza, seed, retenção) ou nunca abriu, a admissão
     // é refeita. Só em memória: depois de um reinício nada fica "prometido".
     this.packFiles = new Map();
+    // Última posição pedida por GET de vídeo, por instância do torrent (some quando o motor o destrói).
+    this.playbackPositions = new WeakMap();
     this.streams = new Map(); // infoHash -> streams HTTP abertos agora
     this.lastStreamEnd = new Map(); // infoHash -> ms do último stream encerrado
-    this.completing = new Set(); // infoHash com o torrent inteiro selecionado
+    this.completing = new Set(); // infoHash com espaço admitido e fila de conclusão ativa
     // Prova por peças de arquivos fora do motor (infoHash -> Map(índice -> { ok, stamp })). Só em memória.
     this.pieceProof = new Map();
     this.verifying = new Set();
@@ -674,16 +677,6 @@ class Bridge {
     });
   }
 
-  // Ordem do que falta num pack, para o binge: primeiro os arquivos depois do episódio aberto mais
-  // recentemente, depois os anteriores que ficaram para trás. O aberto agora já está pronto ou
-  // vem pelo streaming (prioridade crítica).
-  packCompletionOrder(torrent) {
-    const files = torrent.files ?? [];
-    const current = [...(this.packFiles.get(torrent.infoHash)?.keys() ?? [])].pop() ?? -1;
-    const idx = files.map((_, i) => i);
-    return [...idx.filter((i) => i > current), ...idx.filter((i) => i < current)];
-  }
-
   // Conclusão em segundo plano: baixa o resto do torrent (prioridade baixa, nunca disputa com o
   // player) para que a obrigação de 72 h da regra 13.1 possa de fato ser paga. Torrent baixado
   // em parte fica no tracker como `downloading` e a meta de seed só conta depois da conclusão.
@@ -726,13 +719,15 @@ class Bridge {
       }
       if (entry?.noSpaceWarned) entry.noSpaceWarned = false;
 
-      // Prioridade 0: o streaming (prioridade crítica) sempre passa na frente. Em pack, os arquivos
-      // entram na ordem do binge (seguintes, depois anteriores); empate de prioridade respeita a
-      // ordem de inserção.
-      const order = pack ? this.packCompletionOrder(torrent) : [];
-      const selectable = order.filter((i) => typeof torrent.files?.[i]?.select === 'function');
-      if (selectable.length > 0) for (const i of selectable) torrent.files[i].select(0);
-      else torrent.select(0, torrent.pieces.length - 1, 0);
+      // Uma recusa do motor num torrent não pode abortar os demais nem derrubar o processo (o
+      // timer não tem quem capture); sem seleção feita, a conclusão não é dada como ativa.
+      try {
+        selectCompletion(torrent, completionPlan(torrent, this.entries.get(torrent.infoHash), this.playbackPositions.get(torrent)),
+          () => this.completing.delete(torrent.infoHash));
+      } catch (err) {
+        console.warn(`[conclusão] não foi possível selecionar "${String(torrent.name).slice(0, 40)}": ${err.message}`);
+        continue;
+      }
       this.completing.add(torrent.infoHash);
       this.vault.setBackground(torrent.infoHash, true);
       console.log(`[conclusão] baixando o restante em segundo plano: ${String(torrent.name).slice(0, 50)}`);
@@ -1953,6 +1948,22 @@ class Bridge {
     res.once('close', () => trace.finish(res.writableFinished ? 'ok' : 'fechado'));
     const stream = file.createReadStream({ start, end });
     const iterator = stream[Symbol.asyncIterator]();
+
+    this.playbackPositions.set(torrent, { fileIdx, start });
+    // Só a ORDEM da conclusão depende da posição: o GET nunca a inicia (isso segue as regras de
+    // ociosidade e de episódio pronto). Com a conclusão já ativa, reorganiza a fila; é só
+    // otimização: se o motor recusar a seleção (torrent destruído no meio do pedido), o vídeo segue.
+    try {
+      if (this.completing.has(infoHash)) {
+        selectCompletion(torrent, completionPlan(torrent, this.entries.get(infoHash), { fileIdx, start }),
+          () => this.completing.delete(infoHash));
+      }
+    } catch (err) {
+      // A reorganização remove as seleções de fundo antes de criar a nova: com falha no meio o
+      // torrent ficaria "concluindo" sem seleção. Soltar o estado deixa o timer recomeçar a fila.
+      this.completing.delete(infoHash);
+      log.warn(`conclusão: não foi possível reorganizar a fila de ${short(infoHash)}: ${err.message}`);
+    }
 
     let first;
     try {

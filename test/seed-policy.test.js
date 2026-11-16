@@ -350,7 +350,7 @@ function bridgeBg(vault, over = {}) {
     backgroundMode: 'auto', idleMs: 10 * MIN, minFreeBytes: 1000, freeSpace: () => 1e12, ...over });
   const selecoes = [];
   const t = { infoHash: HASH, name: 'Filme', ready: true, done: false, length: 5000, downloaded: 1000,
-    pieces: new Array(10), progress: 0.2, select: (...a) => selecoes.push(a) };
+    pieces: new Array(10), progress: 0.2, select: (...a) => selecoes.push(a.slice(0, 3)) };
   b.client = { torrents: [t] };
   b.entries.set(HASH, { infoHash: HASH, freeleech: true });
   b.startedAt.set(HASH, 0);

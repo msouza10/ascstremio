@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
@@ -84,6 +85,48 @@ test('a exclusão sobrevive a reiniciar o cofre', async () => {
   await s.b.excludeFile(HASH, 2);
   const reaberto = new SeedVault({ file: s.vault.file });
   assert.deepEqual(reaberto.get(HASH).excluded, [2]);
+});
+
+test('depois de excluir um episódio, os restantes continuam servindo Range sem restaurar o excluído', async (t) => {
+  const s = cenario();
+  const credenciais = new CredentialStore({ file: path.join(tmpdir('excluir-cred-'), 'credentials.json') });
+  const { token } = credenciais.create({ name: 'teste' });
+  s.b.credentials = credenciais;
+  const alvo = fs.statSync(path.join(s.store, s.lib.files[1].path));
+  const removido = await s.b.excludeFile(HASH, 1);
+  assert.equal(removido.bytes, alvo.blocks === undefined ? alvo.size : alvo.blocks * 512);
+  // O motor simulado reabre os arquivos preservados no disco real; não pode fabricar o apagado.
+  const pedidos = [];
+  s.b.getTorrent = async (hash, { fileIdx }) => {
+    assert.equal(hash, HASH);
+    pedidos.push(fileIdx);
+    return { ready: true, files: s.lib.files.map((f) => ({
+      length: f.length, path: f.path,
+      createReadStream: ({ start, end }) => fs.createReadStream(path.join(s.store, f.path), { start, end }),
+    })) };
+  };
+  const encerramentos = [];
+  const servidor = http.createServer((req, res) => {
+    encerramentos.push(new Promise((resolve) => res.once('close', resolve)));
+    s.b.handle(req, res);
+  });
+  t.after(() => new Promise((resolve) => servidor.close(resolve)));
+  await new Promise((resolve) => servidor.listen(0, '127.0.0.1', resolve));
+  for (const indice of [0, 2]) {
+    const res = await fetch(`http://127.0.0.1:${servidor.address().port}/s/${HASH}/${indice}?k=${token}`, {
+      headers: { Range: 'bytes=2-5' },
+    });
+    assert.equal(res.status, 206);
+    assert.equal(res.headers.get('content-range'), 'bytes 2-5/10');
+    assert.deepEqual(Buffer.from(await res.arrayBuffer()), Buffer.alloc(4, 1));
+  }
+  // Receber o corpo no cliente pode anteceder o evento close no servidor.
+  await Promise.all(encerramentos);
+  assert.deepEqual(pedidos, [0, 2]);
+  assert.equal(s.existe(1), false);
+  assert.deepEqual(s.vault.get(HASH).excluded, [1]);
+  assert.equal(s.vault.get(HASH).backgroundComplete, false);
+  assert.equal(s.b.streams.get(HASH), 0, 'as reproduções encerradas não bloqueiam novas ações');
 });
 
 test('sem o torrent no motor também exclui, sem tentar parar nada', async () => {
@@ -387,7 +430,9 @@ test('o pedido explícito de concluir o pack inteiro desfaz o escopo parcial', a
   await s.b.requestFilesCompletion(HASH, { file: 0 });
   await s.b.requestCompletion(HASH);
   assert.equal(s.b.completing.has(HASH), true, 'agora o pack inteiro baixa');
-  assert.ok(m.selecionados.length > 1);
+  // A conclusão integral seleciona intervalos de peças do torrent (não mais arquivo a arquivo): sem
+  // posição de reprodução conhecida, o plano é o torrent inteiro, da primeira à última peça.
+  assert.deepEqual(m.inteiro.map((a) => a.slice(0, 3)), [[0, 1, 0]]);
 });
 
 test('download parcial em andamento mantém o computador acordado até os arquivos escolhidos terminarem', async () => {
