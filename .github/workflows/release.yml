@@ -150,7 +150,10 @@ jobs:
       - shell: pwsh
         run: |
           $exe = Get-ChildItem AscStremio-Setup-*.exe | Select-Object -First 1
-          Start-Process $exe.FullName -ArgumentList '/S' -Wait
+          # Sem -Wait: ele esperaria também a bandeja, que o instalador abre e nunca termina.
+          $inst = Start-Process $exe.FullName -ArgumentList '/S' -PassThru
+          if (-not $inst.WaitForExit(300000)) { $inst.Kill(); throw 'o instalador excedeu 5 minutos' }
+          if ($inst.ExitCode -ne 0) { throw "instalador saiu com código $($inst.ExitCode)" }
           $dir = Join-Path $env:ProgramFiles 'AscStremio'
           if ((Get-Service AscStremio).Status -ne 'Running') { Start-Sleep 5 }
           if ((Get-Service AscStremio).Status -ne 'Running') { throw 'o serviço não está Running no Windows' }

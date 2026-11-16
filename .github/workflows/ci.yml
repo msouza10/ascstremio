@@ -159,7 +159,10 @@ jobs:
           $antigo = Join-Path $env:LOCALAPPDATA 'AscStremio\data'
           New-Item -ItemType Directory -Force $antigo | Out-Null
           Set-Content -Path (Join-Path $antigo 'marcador-migracao.txt') -Value 'dados antigos'
-          Start-Process $exe.FullName -ArgumentList '/S' -Wait
+          # Sem -Wait: ele esperaria também a bandeja, que o instalador abre e nunca termina.
+          $inst = Start-Process $exe.FullName -ArgumentList '/S' -PassThru
+          if (-not $inst.WaitForExit(300000)) { $inst.Kill(); throw 'o instalador excedeu 5 minutos' }
+          if ($inst.ExitCode -ne 0) { throw "instalador saiu com código $($inst.ExitCode)" }
           $dir = Join-Path $env:ProgramFiles 'AscStremio'
           foreach ($f in 'node\node.exe','app\src\index.js','app\LEGAL.md','LEGAL.md','start.cmd','stop.cmd','AscStremioServico.exe','AscStremioServico.xml','bandeja.ps1','bandeja.vbs','parar-bandeja.cmd','desinstalar.exe') {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "faltou $f na instalação" }
