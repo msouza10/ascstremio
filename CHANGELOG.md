@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/msouza10/ascstremio/compare/v0.4.0...v0.5.0) (2026-11-16)
+
+
+### Novidades
+
+* **series:** confere por peças, sem o motor, os episódios que só parecem completos ([#115](https://github.com/msouza10/ascstremio/issues/115)) ([cb13bfd](https://github.com/msouza10/ascstremio/commit/cb13bfd25db649b1ff43266ee9a86b4ea8479e8d))
+* **series:** exclui e conclui por temporada ou por episódio ([#114](https://github.com/msouza10/ascstremio/issues/114)) ([f998b12](https://github.com/msouza10/ascstremio/commit/f998b123533ca031f7ebd64183a8c727e9978c8f))
+* **series:** oferece offline o episódio verificado de um pack que o usuário já tocou ([#117](https://github.com/msouza10/ascstremio/issues/117)) ([2abc573](https://github.com/msouza10/ascstremio/commit/2abc573d72058dfc628ad9766684b00ba606285c))
+* **windows:** serviço do Windows com ícone na bandeja ([#122](https://github.com/msouza10/ascstremio/issues/122)) ([8ddb206](https://github.com/msouza10/ascstremio/commit/8ddb2063b33d191ef368b47a601ccfcdc9761325))
+
+
+### Documentação
+
+* avisa no README dos problemas graves do Windows e do modo LAN ([#121](https://github.com/msouza10/ascstremio/issues/121)) ([2d26688](https://github.com/msouza10/ascstremio/commit/2d26688e6cfbdc3f934db81a60b4cd53811fd627))
+
 ## [0.4.0](https://github.com/msouza10/ascstremio/compare/v0.3.1...v0.4.0) (2026-11-15)
 
 
