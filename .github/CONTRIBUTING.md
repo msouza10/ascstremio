@@ -19,7 +19,7 @@ explica ambiente, verificações e empacotamento.
 ```bash
 git clone https://github.com/msouza10/ascstremio.git && cd ascstremio
 npm ci                 # Node 22+
-npm run check          # sintaxe da UI + testes (os mesmos do CI)
+npm run check          # sintaxe da UI + documentação + testes (os mesmos do CI)
 # instância de teste, sem tocar nos seus dados:
 DATA_DIR=/tmp/ascstremio PORT=18000 BRIDGE_PORT=18010 CONFIG_PORT=18020 npm start
 ```
@@ -28,7 +28,9 @@ DATA_DIR=/tmp/ascstremio PORT=18000 BRIDGE_PORT=18010 CONFIG_PORT=18020 npm star
 
 1. Crie uma branch a partir da `main` (`feat/…`, `fix/…`).
 2. Faça a mudança **com teste** em `test/` (`node:test`, sem rede e sem dados reais).
-3. Rode antes de enviar:
+3. Rode antes de enviar (o `npm run check` também confere a documentação com `scripts/check-docs.js`;
+   se falhar, corrija o texto conforme a mensagem `arquivo:linha: [regra]`, veja o
+   [guia de desenvolvimento](../docs/desenvolvimento.md#verificações)):
    ```bash
    npm run check
    scripts/check-no-secrets.sh .

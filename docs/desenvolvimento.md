@@ -22,6 +22,8 @@ shellcheck -S warning scripts/*.sh windows/build.sh
 actionlint .github/workflows/*.yml
 ```
 
+`npm run check` inclui o **verificador de documentação** (`node scripts/check-docs.js`, também no job `lint` da CI). Ele percorre só os arquivos de `scripts/documentation-files.txt` (mais `README.md` e `AGENTS.md`) e falha quando o texto contradiz o código: variável do esquema de `src/settings.js` sem documentação em `docs/configuracao.md` (ou documentada e inexistente), `npm run <script>` ou `scripts/*`, `windows/*`, `src/*`, `test/*` citados que não existem, link, âncora ou imagem interna quebrados (guia em `docs/` fora da lista pública conta como quebrado), versão mínima do Node diferente de `engines`, o nome antigo do projeto fora dos pontos de migração e porta 70xx que não bate com o esquema. Cada problema sai como `arquivo:linha: [regra] mensagem`. Para corrigir, ajuste o texto ao código (ou o código, se a doc estiver certa); para citar um caminho que não é arquivo real, use um marcador como `<nome>`. Variável nova no esquema exige a linha em `docs/configuracao.md` no mesmo PR. Os testes ficam em `test/check-docs.test.js`.
+
 `npm test` chama a mesma verificação de sintaxe da UI e testes `node:test`. Os testes não devem usar rede real, conta ASC, `private/` ou caminhos específicos da máquina. Para um arquivo: `node --test test/seed-policy.test.js`.
 
 `npm run bench:reproducao` é um benchmark **sob demanda** (swarm local com arquivo sintético, sem rede externa nem dados reais) e não faz parte de `npm run check` nem do CI; só suas partes puras são testadas (`test/bench-playback.test.js`). A instrumentação que ele lê (`src/stream-metrics.js`) é testada com relógio e streams simulados em `test/stream-metrics.test.js`. Como interpretar: [Medir a reprodução](#medir-a-reprodução-benchmark-offline).
@@ -65,7 +67,7 @@ A imagem é validada com `scripts/smoke-container.sh <imagem>`. Os testes de fum
 
 ## CI e release
 
-A CI testa Ubuntu e Windows com Node 22 e 24, scripts/workflows, segredos, auditoria, pacote Linux, imagem e instalador Windows. O teste Windows instala em silêncio como administrador e confere a migração dos dados, o serviço (automático, `LocalService`, ACL), a bandeja, o reinício, a recuperação de queda, as portas só em `127.0.0.1`, a parada limpa, a atualização por cima, um usuário comum (controla o serviço, não lê os dados), o firewall e o painel pela rede, e a desinstalação. Esses testes não usam o tracker real nem validam codecs do player.
+A CI testa Ubuntu e Windows com Node 22 e 24, scripts e workflows, segredos, auditoria, pacote Linux, imagem e instalador Windows. O teste Windows instala em silêncio como administrador e confere a migração dos dados, o serviço (automático, `LocalService`, ACL), a bandeja, o reinício, a recuperação de queda, as portas só em `127.0.0.1`, a parada limpa, a atualização por cima, um usuário comum (controla o serviço, não lê os dados), o firewall e o painel pela rede, e a desinstalação. Esses testes não usam o tracker real nem validam codecs do player.
 
 Os títulos seguem o [padrão de commits](../.github/COMMIT_CONVENTION.md) em português. `feat` sobe a versão menor em 0.x; `fix`, `perf` e `security` sobem a correção. Consulte AGENTS para os demais tipos e quebras de compatibilidade.
 
