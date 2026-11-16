@@ -3,8 +3,8 @@
 // - Níveis: debug < info < warn < error. `LOG_LEVEL` define o mínimo gravado.
 // - Buffer circular em memória (consulta rápida pelo painel) + arquivos diários
 //   NDJSON em private/logs/ (0600), com retenção e teto de tamanho por dia.
-// - REDAÇÃO antes de qualquer gravação: a passkey, cookies, senhas e tokens
-//   nunca chegam ao buffer, ao arquivo, ao terminal nem ao download.
+// - Redação antes da gravação e novamente na consulta/exportação: cobre segredos
+//   conhecidos e padrões previstos, sem garantir anonimização de conteúdo livre.
 // - `captureConsole()` roteia os console.* já existentes (com prefixo [tag])
 //   para cá, sem mudar o que aparece no terminal/journald.
 
@@ -99,7 +99,7 @@ class Logger {
       const json = JSON.stringify(clean);
       extra = json && json.length > MAX_DATA ? { truncado: json.slice(0, MAX_DATA) } : clean;
     }
-    const entry = { id: this.nextId++, t: this.now(), level, src: String(src || 'app').slice(0, 24), msg: message };
+    const entry = { id: this.nextId++, t: this.now(), level, src: this.redact(String(src || 'app')).slice(0, 24), msg: message };
     if (extra !== undefined) entry.data = extra;
     this.entries.push(entry);
     if (this.entries.length > this.max) this.entries.splice(0, this.entries.length - this.max);
@@ -191,7 +191,7 @@ class Logger {
     for (const raw of lines.slice(-this.max)) {
       try {
         const e = JSON.parse(raw);
-        if (e && LEVELS[e.level] && typeof e.t === 'number') this.entries.push({ ...e, id: this.nextId++ });
+        if (e && LEVELS[e.level] && typeof e.t === 'number') this.entries.push({ ...this.redactData(e), id: this.nextId++ });
       } catch { /* linha corrompida */ }
     }
   }
@@ -224,7 +224,7 @@ class Logger {
     else if (before) out = hit.filter((e) => e.id < before).slice(-lim);
     else out = hit.slice(-lim);
     // `more` = existem entradas mais antigas que a primeira devolvida
-    return { entries: out, more: out.length > 0 && hit[0].id < out[0].id };
+    return { entries: out.map((e) => this.redactData(e)), more: out.length > 0 && hit[0].id < out[0].id };
   }
 
   counts(since = 0) {
@@ -232,7 +232,7 @@ class Logger {
     for (const e of this.entries) if (!since || e.t >= since) c[e.level] += 1;
     return c;
   }
-  sources() { return [...new Set(this.entries.map((e) => e.src))].sort(); }
+  sources() { return [...new Set(this.entries.map((e) => this.redact(e.src)))].sort(); }
   get lastId() { return this.nextId - 1; }
 
   format(e) {
@@ -264,8 +264,8 @@ class Logger {
   }
 }
 
-const envLevel = String(process.env.LOG_LEVEL || 'debug').toLowerCase();
-const logger = new Logger({ level: envLevel in LEVELS ? envLevel : 'debug' });
+const envLevel = String(process.env.LOG_LEVEL || 'info').toLowerCase();
+const logger = new Logger({ level: envLevel in LEVELS ? envLevel : 'info' });
 
 // Liga a gravação em disco (index.js passa a pasta).
 function initFiles(dir, opts = {}) {

@@ -12,6 +12,17 @@ const { startConfig, resolveChannel } = require('../src/config-server');
 const { Logger } = require('../src/logger');
 const { tmpdir } = require('./tmp-helper');
 
+test('prévia de logs exige administração quando ativa, inclusive pelo loopback', async () => {
+  const t = await setup();
+  try {
+    for (const host of [t.localHost, t.lanHost]) assert.equal((await t.req('GET', '/api/logs/preview', { host })).status, 401);
+    const s = await t.logged();
+    const r = await t.req('GET', '/api/logs/preview?modo=suporte', { host: t.lanHost, cookie: s.cookie });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.mode, 'suporte');
+  } finally { await t.close(); }
+});
+
 test('aviso legal no canal autorizado não exige login nem abre as APIs administrativas', async () => {
   const t = await setup();
   try {

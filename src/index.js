@@ -157,6 +157,7 @@ async function main() {
     credentials, adminKey, uploadLimit, announceBase,
     streamUploadLimit: v.BRIDGE_STREAM_UPLOAD_LIMIT, uploadRestoreMs: v.BRIDGE_UPLOAD_RESTORE_SECONDS * 1000, vault,
     backgroundMode, idleMs: idleMinutes * 60 * 1000, afterSeed,
+    releaseConfirmMaxAgeMs: v.SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES * 60 * 1000,
     minFreeBytes: Math.round(v.DISK_RESERVE_GIB * 1024 ** 3), reservePercent: v.DISK_RESERVE_PERCENT,
     maxPlaybacks: v.PLAYBACK_MAX_SESSIONS, maxPlaybacksPerCredential: v.PLAYBACK_MAX_PER_CREDENTIAL,
     playbackGraceMs: v.PLAYBACK_SESSION_GRACE_SECONDS * 1000,

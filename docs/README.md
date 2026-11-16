@@ -9,6 +9,7 @@ Se esta é sua primeira instalação, siga **[instalação](instalacao.md)** e d
 | Conhecer avisos legais, compartilhamento e limites de responsabilidade | [Avisos legais](../LEGAL.md) |
 | Comparar código, legislação e pendências de redução de risco | [Matriz de conformidade](conformidade-juridica.md) |
 | Registrar decisões de permissões e preparar o contato jurídico | [Permissões e contato](permissoes-e-contato.md) |
+| Saber quais dados ficam na instalação e quais são transmitidos | [Dados e privacidade](dados-privacidade.md) |
 | Instalar no Linux, Windows, Docker/Podman ou executar com Node | [Instalação](instalacao.md) |
 | Fazer login, instalar o addon e escolher uma fonte | [Uso](uso.md) |
 | Configurar ambiente, portas, pastas e políticas | [Configuração](configuracao.md) |
