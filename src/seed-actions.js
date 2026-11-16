@@ -81,7 +81,7 @@ async function resumeSeed(bridge, infoHash, entry, fail) {
   }
   const idle = () => {
     if (bridge.loading.has(infoHash) || (bridge.streams.get(infoHash) ?? 0) > 0 || bridge.limiter.hasKeyPrefix(`s:${infoHash}:`)
-      || bridge.limiter.hasKeyPrefix(`a:${hnr.ascIdFromPath(entry.torrentPath)}`)) throw fail(409, 'Conteúdo em uso.');
+      || bridge.limiter.hasAscSession(hnr.ascIdFromPath(entry.torrentPath))) throw fail(409, 'Conteúdo em uso.');
     const sessions = bridge.limiter.snapshot();
     if (sessions.maxSessions > 0 && sessions.active >= sessions.maxSessions) throw fail(409, 'Aguarde uma vaga de reprodução antes de verificar os arquivos.');
   };

@@ -171,6 +171,10 @@ const SCHEMA = Object.freeze([
     description: 'Depois de o tracker confirmar o seed: delete apaga os arquivos, stop encerra e preserva, keep continua semeando, manual mantém o seed até você decidir no painel.',
   },
   {
+    key: 'SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES', type: 'int', min: 0, max: 60, default: 5, unit: 'min', group: 'seed', access: 'advanced', restart: true,
+    description: 'Idade máxima da leitura do tracker aceita para parar o seed ou apagar arquivos sozinho (AFTER_SEED=delete ou stop). Mais velha que isso, o addon relê o tracker antes de liberar e, sem confirmação, mantém tudo. 0 = sempre reler.',
+  },
+  {
     key: 'BACKGROUND_COMPLETE', type: 'enum', values: ['off', 'auto'], default: 'auto', group: 'seed', access: 'editable', restart: true,
     description: 'auto baixa em segundo plano o que falta do torrent (em série, o pack todo, depois que o episódio aberto terminar) para a obrigação de seed poder ser cumprida. Em release que não é freeleech, o download conta no seu ratio.',
   },
