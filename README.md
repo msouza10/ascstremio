@@ -4,9 +4,8 @@ Addon independente para usar sua conta do Amigos Share (ASC) no Stremio, com rep
 
 **Projeto independente, sem vínculo, afiliação ou endosso do Amigos Share.** **Uma conta, uma pessoa, uma instalação.** O projeto não fornece conteúdo nem credenciais e não garante conformidade com as regras do tracker. A máquina que executa o ASCStremio baixa e compartilha os arquivos por BitTorrent; ela precisa permanecer ligada durante o seed. Não exponha os serviços HTTP à internet nem ofereça acesso a terceiros.
 
-> [!WARNING]
-> **Problema grave conhecido (em correção para a 0.5.0).**
-> - **Modo LAN (TV e celular):** a instalação em modo LAN não está funcionando de forma confiável. Até a correção, use o modo local (padrão). Acompanhe na [#120](https://github.com/msouza10/ascstremio/issues/120).
+> [!NOTE]
+> **Abrir o painel de outro computador da rede:** o painel só abre no computador do servidor, a menos que você ligue a administração pela LAN, com senha. No Windows use **Painel pela rede** no Menu Iniciar (ou na bandeja); nos demais, `npm run admin-painel -- assistente`. Detalhes em [configuração](docs/configuracao.md#administração-do-painel-pela-lan).
 
 ## O que você encontra
 
