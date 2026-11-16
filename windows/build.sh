@@ -13,6 +13,10 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 NODE_MAJOR=22
+# Hospedeiro do serviço do Windows (o node.exe sozinho não fala com o gerenciador de serviços).
+# Variante NET461: 656 KB, usa o .NET Framework que já vem no Windows 10/11. Licença MIT.
+WINSW_VERSION=v2.12.0
+WINSW_SHA256=b5066b7bbdfba1293e5d15cda3caaea88fbeab35bd5b38c41c913d492aadfc4f
 STAGE_ONLY=0; [ "${1:-}" = "--stage-only" ] && STAGE_ONLY=1
 VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' package.json | head -1)"
 OUT=dist/win; STAGE="$OUT/stage"
@@ -29,6 +33,14 @@ want="$(awk -v f="$zip" '$2==f {print $1}' "$OUT/cache/SHASUMS256.txt")"
 [ "$(sha "$OUT/cache/$zip")" = "$want" ] || { echo "SHA-256 de $zip não confere" >&2; exit 1; }
 unzip -q "$OUT/cache/$zip" -d "$OUT/cache/node-unz"
 mkdir -p "$STAGE/node"; cp "$OUT/cache/node-unz"/*/node.exe "$STAGE/node/"; rm -rf "$OUT/cache/node-unz"
+
+winsw="$OUT/cache/WinSW.NET461-$WINSW_VERSION.exe"
+[ -f "$winsw" ] && [ "$(sha "$winsw")" = "$WINSW_SHA256" ] \
+  || curl -fsSL -o "$winsw" "https://github.com/winsw/winsw/releases/download/$WINSW_VERSION/WinSW.NET461.exe"
+[ "$(sha "$winsw")" = "$WINSW_SHA256" ] || { echo "SHA-256 do WinSW não confere" >&2; exit 1; }
+# O WinSW exige o mesmo nome base para o executável e o XML.
+cp "$winsw" "$STAGE/AscStremioServico.exe"
+cp windows/servico.xml "$STAGE/AscStremioServico.xml"
 
 cp -R src package.json package-lock.json "$STAGE/app/"
 # A aplicação lê a mesma fonte ao lado do package.json, também no layout Windows.
@@ -47,7 +59,7 @@ done
 find "$STAGE/app/node_modules" -type d \( -name 'linux-*' -o -name 'darwin-*' -o -name 'android-*' \) -path '*prebuilds*' -prune -exec rm -rf {} +
 [ "$(head -c2 "$STAGE/app/node_modules/node-datachannel/build/Release/node_datachannel.node")" = "MZ" ] \
   || { echo "node-datachannel não é binário do Windows" >&2; exit 1; }
-cp windows/launcher.vbs windows/start.cmd windows/stop.cmd windows/open-panel.cmd windows/configurar.cmd windows/credenciais.cmd "$STAGE/"
+cp windows/bandeja.vbs windows/bandeja.ps1 windows/bandeja-estado.ps1 windows/parar-bandeja.cmd windows/start.cmd windows/stop.cmd windows/open-panel.cmd windows/configurar.cmd windows/credenciais.cmd "$STAGE/"
 node windows/prepare-scripts.js "$STAGE"
 cp README.md "$STAGE/LEIA-ME.md"
 cp README.md LICENSE AGENTS.md CHANGELOG.md release-please-config.json "$STAGE/"

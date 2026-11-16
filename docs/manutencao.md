@@ -84,7 +84,7 @@ O buffer guarda até 5000 entradas; os arquivos ficam em `DATA_DIR/logs/ascstrem
 | Serviço Linux | `journalctl --user -u ascstremio -f` |
 | Docker/Podman pelo script | `scripts/docker.sh logs` |
 | Compose | `docker compose logs --tail 100 -f` |
-| Windows | `%LOCALAPPDATA%\AscStremio\data\service.log` |
+| Windows | `%ProgramData%\AscStremio\data\AscStremioServico.out.log` (ou ícone da bandeja › **Ver logs**) |
 
 A redação automática não remove necessariamente dados pessoais, títulos ou identificadores. Revise antes de compartilhar.
 

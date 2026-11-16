@@ -1,0 +1,39 @@
+<!--
+  Configuração do serviço do Windows (WinSW 2.x). O build copia este arquivo ao lado do WinSW como
+  AscStremioServico.xml: o WinSW exige o mesmo nome base do executável. %BASE% é a pasta do pacote.
+
+  O serviço roda como LocalService: privilégio mínimo e sem senha guardada. Os dados ficam em
+  %ProgramData%, fora do perfil de qualquer usuário, porque o serviço sobe no boot (o seed de 72 h
+  não pode depender de alguém logado). Portas, modo LAN e demais opções vêm do settings.json e do
+  ambiente do usuário; nada disso é fixado aqui.
+-->
+<service>
+  <id>AscStremio</id>
+  <name>Amigos Share · Stremio</name>
+  <description>Addon do Stremio para o Amigos Share: ponte local, seed e painel em 127.0.0.1.</description>
+
+  <executable>%BASE%\node\node.exe</executable>
+  <arguments>--max-http-header-size=65536 src\index.js</arguments>
+  <workingdirectory>%BASE%\app</workingdirectory>
+  <env name="DATA_DIR" value="%ProgramData%\AscStremio\data"/>
+
+  <serviceaccount>
+    <domain>NT AUTHORITY</domain>
+    <user>LocalService</user>
+  </serviceaccount>
+
+  <startmode>Automatic</startmode>
+  <!-- Se o processo cair, volta sozinho; o recuo evita laço apertado quando há erro de configuração. -->
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <!-- O cofre de seed é gravado a cada minuto: parar à força perde no máximo isso. -->
+  <stoptimeout>15 sec</stoptimeout>
+
+  <logpath>%ProgramData%\AscStremio\data</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

@@ -5,8 +5,7 @@ Addon independente para usar sua conta do Amigos Share (ASC) no Stremio, com rep
 **Projeto independente, sem vínculo, afiliação ou endosso do Amigos Share.** **Uma conta, uma pessoa, uma instalação.** O projeto não fornece conteúdo nem credenciais e não garante conformidade com as regras do tracker. A máquina que executa o ASCStremio baixa e compartilha os arquivos por BitTorrent; ela precisa permanecer ligada durante o seed. Não exponha os serviços HTTP à internet nem ofereça acesso a terceiros.
 
 > [!WARNING]
-> **Problemas graves conhecidos (em correção para a 0.5.0).**
-> - **Windows:** o addon roda em segundo plano, sem ícone na bandeja, sem indicação de que está no ar e sem opção de reiniciar. Para conferir, abra o painel em `http://127.0.0.1:7020/`; para reiniciar, use "Parar serviço" e depois "Abrir painel" no Menu Iniciar. Acompanhe na [#119](https://github.com/msouza10/ascstremio/issues/119).
+> **Problema grave conhecido (em correção para a 0.5.0).**
 > - **Modo LAN (TV e celular):** a instalação em modo LAN não está funcionando de forma confiável. Até a correção, use o modo local (padrão). Acompanhe na [#120](https://github.com/msouza10/ascstremio/issues/120).
 
 ## O que você encontra
