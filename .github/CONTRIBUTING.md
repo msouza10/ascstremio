@@ -19,7 +19,7 @@ explica ambiente, verificações e empacotamento.
 ```bash
 git clone https://github.com/msouza10/ascstremio.git && cd ascstremio
 npm ci                 # Node 22+
-npm run check          # sintaxe da UI + testes (os mesmos do CI)
+npm run check          # sintaxe da UI + documentação + testes (os mesmos do CI)
 # instância de teste, sem tocar nos seus dados:
 DATA_DIR=/tmp/ascstremio PORT=18000 BRIDGE_PORT=18010 CONFIG_PORT=18020 npm start
 ```
@@ -28,7 +28,9 @@ DATA_DIR=/tmp/ascstremio PORT=18000 BRIDGE_PORT=18010 CONFIG_PORT=18020 npm star
 
 1. Crie uma branch a partir da `main` (`feat/…`, `fix/…`).
 2. Faça a mudança **com teste** em `test/` (`node:test`, sem rede e sem dados reais).
-3. Rode antes de enviar:
+3. Rode antes de enviar (o `npm run check` também confere a documentação com `scripts/check-docs.js`;
+   se falhar, corrija o texto conforme a mensagem `arquivo:linha: [regra]`, veja o
+   [guia de desenvolvimento](../docs/desenvolvimento.md#verificações)):
    ```bash
    npm run check
    scripts/check-no-secrets.sh .
@@ -45,6 +47,31 @@ DATA_DIR=/tmp/ascstremio PORT=18000 BRIDGE_PORT=18010 CONFIG_PORT=18020 npm star
 Código e comentários em português do Brasil (com acentuação), comentários explicando o *porquê*,
 aspas simples e ponto e vírgula; siga o arquivo que estiver editando. Sem dependências novas sem
 necessidade. O código precisa funcionar em Linux, Windows e contêiner.
+
+## Capturas para a apresentação
+
+As capturas em `docs/imagens/` mostram a interface real com dados fictícios. Nunca capture
+uma conta real. Antes de adicionar uma imagem, revise visualmente usuário, credenciais,
+caminhos, títulos e logs. Use PNG sem metadados textuais/EXIF, largura máxima de 1280 px,
+até 200 KiB por imagem e até 2 MiB na pasta. Toda imagem precisa de texto alternativo.
+
+Libere cada nome exato no `.gitignore` (depois de `*.png`) e em
+`scripts/documentation-files.txt`. As imagens acompanham o tarball Linux e o instalador
+Windows para manter os links relativos do README disponíveis offline; a imagem Docker
+continua sem os guias de `docs/`.
+
+Para regenerar, com Node.js 22+ e um Chrome instalado:
+
+```bash
+node scripts/demo-capturas.js
+# Em outro terminal; CHROME_BIN permite indicar o executável do Chrome:
+node scripts/capturar-telas.js dist/capturas
+```
+
+A demonstração usa as portas locais 18020 e 18022 e uma pasta temporária, sem conectar ao
+ASC ou iniciar torrents. Encerre-a com Ctrl+C. Confira as novas imagens antes de substituir
+os arquivos públicos; a captura não os sobrescreve automaticamente. Atualize a versão e a
+data indicadas no README conforme a interface capturada, sem alterar a versão do pacote.
 
 ## Releases
 

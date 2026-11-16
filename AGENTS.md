@@ -31,7 +31,7 @@ commits em português do Brasil, com acentuação.
 | `src/panel-settings.js` | assistente e página de configurações do painel: prévia/gravação via `settings.update`, estado do assistente (`wizard.json`), emissão de credencial |
 | `src/seedvault.js`, `src/hnr-guard.js` | cofre de seed e conciliação com o tracker (o tracker sempre vence) |
 | `src/safety.js` | loopback, `Host` anti-rebinding, modo contêiner, aviso de inatividade |
-| `src/passkey.js` | passkey configurada separadamente para o announce em memória; não sanitiza os `.torrent` salvos |
+| `src/passkey.js` | passkey configurada separadamente para o announce em memória; não limpa os `.torrent` salvos, que podem conter a passkey (0600; sanitização pendente, #99) |
 | `src/logger.js` | logs com redação de segredos, buffer, arquivos NDJSON, `/logs` |
 | `src/keepawake.js` | bloqueia a suspensão enquanto há seed pendente (Linux, macOS, Windows) |
 | `src/stremio-status.js` | catálogo "ASC — status" dentro do Stremio |
@@ -100,7 +100,7 @@ deixou passar um erro aqui: o botão de excluir episódio do painel respondeu 40
 rota nova não estava na lista de rotas permitidas, e só havia teste da lógica interna.
 
 1. **Vermelho.** Escreva o teste pela **porta de entrada real** e rode só ele
-   (`node --test test/arquivo.test.js`). Confira que falha pelo motivo certo (comportamento ausente,
+   (`node --test test/<arquivo>.test.js`). Confira que falha pelo motivo certo (comportamento ausente,
    não erro de digitação ou de import).
 2. **Verde.** O código mínimo para passar.
 3. **Refatorar** com os testes verdes. `npm run check` antes de commitar.
@@ -204,7 +204,7 @@ da 1.0, o maior). Exemplos: `fix(bridge): recusa Host com nome DNS`, `feat: port
   faça push forçado sem pedido explícito.
 - **Nunca edite à mão** `CHANGELOG.md`, `.release-please-manifest.json` nem a `version` do `package.json`:
   o release-please cuida.
-- Antes de commitar: `npm run check`, `scripts/check-no-secrets.sh .` e, se mexeu em scripts/workflows,
+- Antes de commitar: `npm run check`, `scripts/check-no-secrets.sh .` e, se mexeu em scripts ou workflows,
   `shellcheck` e `actionlint`. `scripts/check-commits.sh` confere os títulos (roda nos pull requests).
 - Prefira commits pequenos e focados; um assunto por commit.
 

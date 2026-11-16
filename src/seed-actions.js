@@ -40,11 +40,7 @@ async function manageSeed(bridge, infoHash, action) {
     const inspect = () => {
       const root = files.realRoot(bridge.storeDir);
       if (!paths.length || paths.some((p) => !files.inspectFile(root, p).ok)) throw fail(409, 'Não foi possível validar os arquivos para exclusão.');
-      for (const [other, otherLib] of bridge.entries) {
-        if (other === infoHash) continue;
-        const shared = new Set((otherLib.files ?? []).map((f) => files.pathKey(f.path)));
-        if (paths.some((p) => shared.has(files.pathKey(p)))) throw fail(409, 'Arquivos compartilhados com outro conteúdo não podem ser excluídos.');
-      }
+      if (files.sharedWith(bridge.entries, infoHash, paths)) throw fail(409, 'Arquivos compartilhados com outro conteúdo não podem ser excluídos.');
     };
     if (action === 'delete') inspect();
     if (torrent) {

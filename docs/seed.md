@@ -42,7 +42,7 @@ A data de login guardada pelo addon é um lembrete local: acesse o ASC no navega
 
 ## Assistir só um trecho
 
-O player pode baixar apenas as partes que usa. Para concluir o restante, abra o filme no painel e use **Concluir download em segundo plano**. A ação é explícita e pode incluir um release que não seja freeleech, com impacto no ratio.
+O player pode baixar apenas as partes que usa. Para concluir o restante, abra o filme no painel e use **Concluir download em segundo plano**. A ação é explícita e pode incluir um release que não seja freeleech, com impacto no ratio. Retomar a reprodução de um filme com dados faltando conta como iniciar um download: com o filtro "somente freeleech" ligado, o release é conferido de novo no ASC antes (veja [uso](uso.md)). Semear e regularizar uma obrigação existente não passam por essa conferência.
 
 Por padrão, a conclusão automática está ligada (`BACKGROUND_COMPLETE=auto`): baixar só parte do torrent deixa um registro `downloading` no tracker e a meta de seed só conta depois da conclusão, então o addon termina o download em prioridade baixa, sempre atrás do que você está assistindo. Num filme isso acontece depois de `BACKGROUND_IDLE_MINUTES` (10 por padrão) sem reprodução. Numa série, assim que o episódio que você abriu terminar de baixar, mesmo com o player aberto, o resto do pack entra na fila: primeiro os episódios seguintes, depois os anteriores. A verificação de espaço em disco é a mesma de sempre (reserva configurável, veja [configuração](configuracao.md#disco)): se o torrent inteiro não couber, só o que você assiste é baixado.
 
@@ -63,12 +63,14 @@ Um pack é um torrent com vários episódios. As regras abaixo valem para as aç
 
 | `AFTER_SEED` | Seed | Arquivos |
 |---|---|---|
-| `delete` (padrão) | Encerra | Apaga o armazenamento do torrent |
+| `delete` (padrão) | Encerra | Apaga o armazenamento do torrent, **salvo se outro título usa o mesmo arquivo** (veja abaixo) |
 | `stop` | Encerra | Mantém no disco |
 | `keep` | Continua | Mantém no disco |
 | `manual` | Continua até sua decisão | Mantém; você decide no painel |
 
 **Confirmação recente.** O cofre guarda para sempre que o tracker já confirmou o seed, mas isso não basta para agir sozinho. Com `AFTER_SEED=delete` ou `stop`, antes de encerrar o seed ou apagar arquivos o aplicativo confere se a leitura do tracker tem no máximo `SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES` minutos (padrão 5; `0` = sempre reler). Se for mais antiga, sem data (cofre de versão anterior) ou "do futuro" (relógio que voltou), ele relê o tracker e só prossegue se o cumprimento continuar confirmado e sem hit-and-run. Sessão expirada, tracker fora do ar, torrent sem registro, resposta incompleta ou confirmação revogada mantêm seed e arquivos, nada é gravado como liberado e o painel mostra "liberação automática aguardando confirmação recente do tracker". Falha de acesso interrompe o ciclo (nova tentativa na próxima conciliação). Reprodução, abertura ou sessão recente também adiam a liberação. Estados antigos são conservados e reconferidos: a migração não zera estatísticas nem apaga nada.
+
+**Arquivo compartilhado.** Se outro título da biblioteca usa algum dos mesmos arquivos (o mesmo pack baixado por dois releases, ou um episódio presente em dois torrents; o caminho no disco é a identidade), `AFTER_SEED=delete` não apaga nada: encerra só o seed daquele título, grava a liberação como `stop` e o painel avisa que os arquivos foram mantidos por esse motivo (o log também registra). O outro título pode ter seed obrigatório aberto ou ser algo que você ainda assiste. Se a lista de arquivos do título não estiver na biblioteca, a regra é a mesma: os arquivos ficam. É a mesma checagem da exclusão pelo painel, da retenção por orçamento e da retomada de seed.
 
 Para decidir por conteúdo, escolha `AFTER_SEED=manual` em **Configurações** e reinicie o aplicativo quando indicado. Ao confirmar o cumprimento, o painel mostra **Continuar semeando**, **Parar seed e manter arquivos** e **Excluir arquivos e parar seed** na página do filme. A confirmação do botão deixa explícito se os arquivos serão apagados. A aplicação consulta o tracker novamente antes de agir; falhas, obrigação pendente, reprodução ou sessão recente bloqueiam a ação. A decisão é persistida: o modo manual retoma o seed após reiniciar, exceto se você já decidiu parar ou excluir. Você também pode excluir depois os arquivos de um seed que já parou. Se a exclusão falhar parcialmente (por exemplo, arquivo em uso), a parada fica salva e os dados já excluídos não são baixados de novo automaticamente; você pode tentar remover o restante depois. Escolher continuar protege esse conteúdo da liberação automática de `AFTER_SEED`; a retenção por orçamento continua sendo uma operação separada, manual e confirmada.
 

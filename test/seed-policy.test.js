@@ -462,6 +462,8 @@ function bridgeLiberar(afterSeed, trackerOk, over = {}) {
     vault.setTracker(HASH, hnr.normalizeHistory({ completedAt: '2026-11-01 00:00:00', remainingSeedTime: trackerOk ? 0 : 3600 }));
   }
   const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', vault, afterSeed, adminKey: ADMIN_KEY, ...over });
+  // A liberação só apaga o que prova ser exclusivo do título: ele precisa constar na biblioteca com seus arquivos.
+  b.entries.set(HASH, { infoHash: HASH, files: [{ path: 'filme.mkv', length: 1 }] });
   const chamadas = [];
   b.client = { torrents: [{ infoHash: HASH, destroy: (opts, cb) => { chamadas.push(opts); cb(); } }] };
   return { b, vault, chamadas };

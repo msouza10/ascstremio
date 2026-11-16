@@ -22,6 +22,7 @@ const { DiskGuard, DEFAULT_RESERVE_BYTES } = require('./disk-policy');
 const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { Retention } = require('./retention-service');
+const { sharedWith } = require('./retention');
 const { manageSeed } = require('./seed-actions');
 const { excludeFile, excludeSeason, completeFiles } = require('./file-actions');
 const { verifyPack, stampOf, defaultLoadMeta } = require('./piece-check');
@@ -120,6 +121,7 @@ class Bridge {
     ascSizeHint = null, // (ascId) => bytes da listagem, para reservar espaço antes de baixar o .torrent
     ascEpisodeResolver = null, // async (ascId, season, episode) => { infoHash, fileIdx }  (/e/<id>/<T>/<E>)
     ascEpisodeSizeHint = null, // (ascId, season, episode) => bytes do episódio na listagem (0 = desconhecido)
+    ascStartGate = null, // async (ascId) => void: confirma o freeleech agora; lança com `status` se não puder autorizar novo download
     ascImdbHint = null, // (ascId) => IMDb da série que o provedor listou para o release (vínculo gravado no play)
     loadPieceMeta = null, // async (torrentPath) => { pieceLength, pieces, length, files }; injetável nos testes
   }) {
@@ -172,6 +174,7 @@ class Bridge {
     this.ascResolver = ascResolver;
     this.ascSizeHint = ascSizeHint;
     this.ascEpisodeResolver = ascEpisodeResolver;
+    this.ascStartGate = ascStartGate;
     this.ascImdbHint = ascImdbHint;
     this.ascEpisodeSizeHint = ascEpisodeSizeHint;
     // Pack: infoHash -> Map(índice do arquivo -> bytes prometidos na admissão). Só vale enquanto o
@@ -205,7 +208,9 @@ class Bridge {
     this.adminKey = adminKey;
     this.strictHost = strictHost;
     this.firstByteTimeoutMs = firstByteTimeoutMs;
-    // Credencial em memória: os .torrent em disco ficam sem token.
+    // Passkey separada, só em memória, para montar o announce do motor. Ela NÃO limpa os
+    // .torrent em disco: eles guardam os bytes recebidos do ASC (0600), possivelmente com a
+    // passkey no announce. A sanitização/migração desses arquivos ainda não existe (#99).
     this.passkey = passkey;
     this.uploadLimit = uploadLimit;
     // Teto reduzido durante reprodução (src/upload-policy.js). Inerte sem streamUploadLimit.
@@ -815,16 +820,31 @@ class Bridge {
           this.releaseBlocked.set(hash, { reason: 'o estado mudou durante a conferência no tracker', at: this.vault.now() });
           continue;
         }
+        // Apagar o armazenamento só se NENHUM outro título usa esses arquivos (mesma definição das
+        // ações individuais). O outro pode ter seed obrigatório (13.1) ou ser assistido. Sem a
+        // lista de arquivos do título não dá para provar que é só dele: mantém (fail-closed).
+        let filesKept = null;
+        if (this.afterSeed === 'delete') {
+          const paths = (this.entries.get(hash)?.files ?? []).map((f) => f.path);
+          if (!paths.length) filesKept = 'arquivos-desconhecidos';
+          else if (sharedWith(this.entries, hash, paths)) filesKept = 'arquivo-compartilhado';
+        }
+        const apagar = this.afterSeed === 'delete' && !filesKept;
         await new Promise((resolve, reject) => {
-          torrent.destroy({ destroyStore: this.afterSeed === 'delete' }, (err) => err ? reject(err) : resolve());
+          torrent.destroy({ destroyStore: apagar }, (err) => err ? reject(err) : resolve());
         });
         this.completing.delete(hash);
         this.startedAt.delete(hash);
         this.lastTick.delete(hash);
-        this.vault.markReleased(hash, this.afterSeed);
-        released.push({ infoHash: hash, name: entry.name, mode: this.afterSeed });
+        // Com arquivos mantidos o que ocorreu foi uma parada ('stop'), e é assim que o cofre registra.
+        const mode = filesKept ? 'stop' : this.afterSeed;
+        this.vault.markReleased(hash, mode, filesKept);
+        released.push({ infoHash: hash, name: entry.name, mode });
         console.log(`[liberar] limite cumprido e confirmado pelo tracker: "${String(entry.name).slice(0, 50)}"`
-          + ` (${this.afterSeed === 'delete' ? 'rede e arquivos liberados' : 'rede liberada, arquivos mantidos'})`);
+          + ` (${apagar ? 'rede e arquivos liberados' : 'rede liberada, arquivos mantidos'})`);
+        if (filesKept) {
+          log.warn(`arquivos mantidos apesar de AFTER_SEED=delete (${filesKept}): "${String(entry.name).slice(0, 50)}"`);
+        }
       } finally { this.retention.retiring.delete(hash); }
     }
     return released;
@@ -852,6 +872,23 @@ class Bridge {
   releaseBlockedNotice(hash) {
     const nome = String(this.vault.get(hash)?.name ?? hash).slice(0, 50);
     return `${nome}: liberação automática aguardando confirmação recente do tracker (${this.releaseBlockedFor(hash)?.reason}). Seed e arquivos foram mantidos.`;
+  }
+
+  // Avisa que `AFTER_SEED=delete` NÃO apagou os arquivos deste título. O motivo gravado é só o que
+  // ocorreu na liberação; o aviso reavalia o compartilhamento agora e some quando o outro título saiu
+  // da biblioteca, quando os arquivos já não estão em disco ou quando o usuário voltou a manter o
+  // seed (`keep` apaga o registro).
+  filesKeptNotice(hash) {
+    const entry = this.vault.get(hash);
+    if (!entry?.releaseFilesKept || entry.releasedAs !== 'stop' || this.diskState(hash) === 'none') return null;
+    const nome = String(entry.name ?? hash).slice(0, 50);
+    const base = `${nome}: seed encerrado, mas os arquivos foram mantidos apesar de "excluir após o seed"`;
+    if (entry.releaseFilesKept === 'arquivo-compartilhado') {
+      const paths = (this.entries.get(hash)?.files ?? []).map((f) => f.path);
+      if (!sharedWith(this.entries, hash, paths)) return null;
+      return `${base}: são compartilhados com outro título. Só poderão ser apagados quando nenhum outro título os usar.`;
+    }
+    return `${base}: não foi possível confirmar quais arquivos são só deste título.`;
   }
 
   // Confirmação do tracker utilizável agora: cumprida, sem hit-and-run e lida há no máximo
@@ -974,6 +1011,10 @@ class Bridge {
       const daysLeft = deadline === null ? null : (deadline - now) / 86_400_000;
       const warnings = entry ? hnr.warningsFor({ vault: this.vault, entry, active, now }) : [];
       const releaseBlocked = this.releaseBlockedFor(infoHash);
+      const extraWarnings = [...warnings];
+      if (releaseBlocked) extraWarnings.push(this.releaseBlockedNotice(infoHash));
+      const keptNotice = this.filesKeptNotice(infoHash);
+      if (keptNotice) extraWarnings.push(keptNotice);
       const down = torrent?.downloaded || 0;
       const up = torrent?.uploaded || 0;
       const completando = this.completing.has(infoHash) || Boolean(entry?.backgroundComplete && !completed);
@@ -1042,7 +1083,7 @@ class Bridge {
               ? null : Number((tracker.remainingMs / 3_600_000).toFixed(2)),
           }
           : null,
-        warnings: releaseBlocked ? [...warnings, this.releaseBlockedNotice(infoHash)] : warnings,
+        warnings: extraWarnings,
       };
     };
 
@@ -1179,6 +1220,10 @@ class Bridge {
     }
     for (const hash of this.releaseBlocked.keys()) if (this.releaseBlockedFor(hash)) out.push(this.releaseBlockedNotice(hash));
     for (const entry of this.vault.list()) {
+      const aviso = this.filesKeptNotice(entry.infoHash);
+      if (aviso) out.push(aviso);
+    }
+    for (const entry of this.vault.list()) {
       if (entry.completedAt && !entry.satisfiedAt && !active.has(entry.infoHash)
         && this.entries.has(entry.infoHash) && this.diskState(entry.infoHash) !== 'full') {
         out.push(`${String(entry.name).slice(0, 50)}: o arquivo não está completo em disco; não dá para semear. É preciso baixar de novo (POST /complete).`);
@@ -1205,6 +1250,18 @@ class Bridge {
     if (!local) return null;
     if (!episode) return mainVideo(local.files);
     return findEpisode(buildEpisodeIndex(local.files), episode.season, episode.episode)?.file ?? null;
+  }
+
+  // Id do release do ASC de uma entrada (arquivo asc-<id>.torrent); null para torrent de outra origem.
+  ascIdOf(entry) {
+    return /^asc-(\d{1,9})\.torrent$/.exec(path.basename(String(entry?.torrentPath ?? '')))?.[1] ?? null;
+  }
+
+  // Abrir este torrent agora iniciaria download de dados? Não, se já está no motor (ou abrindo) ou se
+  // o cofre o dá por concluído e os arquivos estão inteiros (mesma regra de admitTorrent).
+  startsNewDownload(infoHash) {
+    if (this.loading.has(infoHash) || (this.client?.torrents ?? []).some((t) => t.infoHash === infoHash)) return false;
+    return !(this.vault.get(infoHash)?.completedAt && this.diskState(infoHash) === 'full');
   }
 
   // Entrada da biblioteca de um release do ASC (arquivo asc-<id>.torrent), se já baixado.
@@ -1748,6 +1805,7 @@ class Bridge {
 
     // /a/<id>: fonte listada pelo Stremio sem .torrent local. Só o GET (o play)
     // baixa o .torrent; HEAD e sondagens nunca baixam nem anunciam.
+    let resolvedNow = false; // o resolvedor acabou de confirmar o freeleech: a trava abaixo não repete
     let seriesImdb = null; // série do episódio tocado, para vincular o pack no cofre
     if (lazy) {
       const ascId = lazy[1];
@@ -1791,6 +1849,7 @@ class Bridge {
         } finally {
           this.disk.release(holder);
         }
+        resolvedNow = true;
         // Credencial revogada (ou cliente que saiu) enquanto o .torrent era preparado: não abre o torrent.
         if (res.destroyed) return;
         lease?.rekey(`s:${infoHash}:${fileIdx}`);
@@ -1825,6 +1884,21 @@ class Bridge {
       res.writeHead(headRange ? 206 : 200, headHeaders);
       res.end();
       return;
+    }
+
+    // Abrir no motor um torrent com dados faltando começa a baixar (regra 2.7: pode contar no ratio),
+    // mesmo com o .torrent já local e sem passar pelo resolvedor. A trava confirma o freeleech agora.
+    // Torrent já aberto não é início; arquivo completo e concluído toca sem consulta.
+    const gateId = lazy ? lazy[1] : this.ascIdOf(this.entries.get(infoHash));
+    if (this.ascStartGate && gateId && !resolvedNow && this.startsNewDownload(infoHash)) {
+      try { await this.ascStartGate(gateId); } catch (err) {
+        const status = Number.isInteger(err?.status) ? err.status : 503;
+        log.warn(`play de #${gateId} recusado (${status}): ${err?.message ?? err}`);
+        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: err?.message || 'Não foi possível confirmar o freeleech; nada foi baixado.' }));
+        return;
+      }
+      if (res.destroyed) return;
     }
 
     const torrent = await this.getTorrent(infoHash, { fileIdx });
