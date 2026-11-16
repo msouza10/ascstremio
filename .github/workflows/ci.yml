@@ -168,7 +168,13 @@ jobs:
             if (-not (Test-Path (Join-Path $dir $f))) { throw "faltou $f na instalação" }
           }
           $dados = Join-Path $env:ProgramData 'AscStremio\data'
-          if (-not (Test-Path (Join-Path $dados 'marcador-migracao.txt'))) { throw 'os dados antigos não foram movidos para o ProgramData' }
+          if (-not (Test-Path (Join-Path $dados 'marcador-migracao.txt'))) {
+            Write-Host "antigo existe: $(Test-Path $antigo) ($antigo)"
+            Get-ChildItem -Force -Recurse -Depth 2 (Join-Path $env:ProgramData 'AscStremio') -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "ProgramData: $($_.FullName)" }
+            Get-ChildItem -Force -Recurse -Depth 2 (Split-Path $antigo) -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "Local: $($_.FullName)" }
+            icacls (Join-Path $env:ProgramData 'AscStremio') | Write-Host
+            throw 'os dados antigos não foram movidos para o ProgramData'
+          }
           if (Test-Path $antigo) { throw 'a pasta de dados antiga deveria ter sido movida (não copiada)' }
       - name: O serviço do Windows está instalado, automático e com a conta de baixo privilégio
         shell: pwsh
