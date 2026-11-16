@@ -22,6 +22,7 @@ const { DiskGuard, DEFAULT_RESERVE_BYTES } = require('./disk-policy');
 const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { Retention } = require('./retention-service');
+const { sharedWith } = require('./retention');
 const { manageSeed } = require('./seed-actions');
 const { excludeFile, excludeSeason, completeFiles } = require('./file-actions');
 const { verifyPack, stampOf, defaultLoadMeta } = require('./piece-check');
@@ -815,16 +816,31 @@ class Bridge {
           this.releaseBlocked.set(hash, { reason: 'o estado mudou durante a conferência no tracker', at: this.vault.now() });
           continue;
         }
+        // Apagar o armazenamento só se NENHUM outro título usa esses arquivos (mesma definição das
+        // ações individuais). O outro pode ter seed obrigatório (13.1) ou ser assistido. Sem a
+        // lista de arquivos do título não dá para provar que é só dele: mantém (fail-closed).
+        let filesKept = null;
+        if (this.afterSeed === 'delete') {
+          const paths = (this.entries.get(hash)?.files ?? []).map((f) => f.path);
+          if (!paths.length) filesKept = 'arquivos-desconhecidos';
+          else if (sharedWith(this.entries, hash, paths)) filesKept = 'arquivo-compartilhado';
+        }
+        const apagar = this.afterSeed === 'delete' && !filesKept;
         await new Promise((resolve, reject) => {
-          torrent.destroy({ destroyStore: this.afterSeed === 'delete' }, (err) => err ? reject(err) : resolve());
+          torrent.destroy({ destroyStore: apagar }, (err) => err ? reject(err) : resolve());
         });
         this.completing.delete(hash);
         this.startedAt.delete(hash);
         this.lastTick.delete(hash);
-        this.vault.markReleased(hash, this.afterSeed);
-        released.push({ infoHash: hash, name: entry.name, mode: this.afterSeed });
+        // Com arquivos mantidos o que ocorreu foi uma parada ('stop'), e é assim que o cofre registra.
+        const mode = filesKept ? 'stop' : this.afterSeed;
+        this.vault.markReleased(hash, mode, filesKept);
+        released.push({ infoHash: hash, name: entry.name, mode });
         console.log(`[liberar] limite cumprido e confirmado pelo tracker: "${String(entry.name).slice(0, 50)}"`
-          + ` (${this.afterSeed === 'delete' ? 'rede e arquivos liberados' : 'rede liberada, arquivos mantidos'})`);
+          + ` (${apagar ? 'rede e arquivos liberados' : 'rede liberada, arquivos mantidos'})`);
+        if (filesKept) {
+          log.warn(`arquivos mantidos apesar de AFTER_SEED=delete (${filesKept}): "${String(entry.name).slice(0, 50)}"`);
+        }
       } finally { this.retention.retiring.delete(hash); }
     }
     return released;
@@ -852,6 +868,19 @@ class Bridge {
   releaseBlockedNotice(hash) {
     const nome = String(this.vault.get(hash)?.name ?? hash).slice(0, 50);
     return `${nome}: liberação automática aguardando confirmação recente do tracker (${this.releaseBlockedFor(hash)?.reason}). Seed e arquivos foram mantidos.`;
+  }
+
+  // Avisa que `AFTER_SEED=delete` NÃO apagou os arquivos deste título (outro conteúdo os usa).
+  // Dura enquanto os arquivos seguem em disco e o título segue parado; ao retomar o seed
+  // (`keep`) ou excluir os arquivos, o aviso deixa de valer.
+  filesKeptNotice(hash) {
+    const entry = this.vault.get(hash);
+    if (!entry?.releaseFilesKept || entry.releasedAs !== 'stop' || this.diskState(hash) === 'none') return null;
+    const nome = String(entry.name ?? hash).slice(0, 50);
+    const motivo = entry.releaseFilesKept === 'arquivo-compartilhado'
+      ? 'os arquivos são compartilhados com outro título'
+      : 'não foi possível confirmar quais arquivos são só deste título';
+    return `${nome}: seed encerrado, mas os arquivos foram mantidos apesar de "excluir após o seed": ${motivo}. Eles só poderão ser apagados quando nenhum outro título os usar.`;
   }
 
   // Confirmação do tracker utilizável agora: cumprida, sem hit-and-run e lida há no máximo
@@ -1042,7 +1071,7 @@ class Bridge {
               ? null : Number((tracker.remainingMs / 3_600_000).toFixed(2)),
           }
           : null,
-        warnings: releaseBlocked ? [...warnings, this.releaseBlockedNotice(infoHash)] : warnings,
+        warnings: [...warnings, ...[releaseBlocked && this.releaseBlockedNotice(infoHash), this.filesKeptNotice(infoHash)].filter(Boolean)],
       };
     };
 
@@ -1178,6 +1207,10 @@ class Bridge {
       out.push(`${String(p.name).slice(0, 50)}: obrigação aberta no tracker sem .torrent local (abra o filme pelo catálogo ASC no Stremio).`);
     }
     for (const hash of this.releaseBlocked.keys()) if (this.releaseBlockedFor(hash)) out.push(this.releaseBlockedNotice(hash));
+    for (const entry of this.vault.list()) {
+      const aviso = entry.releaseFilesKept ? this.filesKeptNotice(entry.infoHash) : null;
+      if (aviso) out.push(aviso);
+    }
     for (const entry of this.vault.list()) {
       if (entry.completedAt && !entry.satisfiedAt && !active.has(entry.infoHash)
         && this.entries.has(entry.infoHash) && this.diskState(entry.infoHash) !== 'full') {
