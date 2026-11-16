@@ -72,6 +72,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Documentação coerente com o código
+        run: node scripts/check-docs.js
       - name: Auditoria de dependências (produção, com exceções justificadas)
         run: node scripts/audit-check.js
 
