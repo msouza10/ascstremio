@@ -525,3 +525,112 @@ test('rotas de alertas (webhook) e todas as /api/* ficam atrás da sessão de ad
     assert.equal(noCsrf.status, 403);
   } finally { await t.close(); }
 });
+
+// ---------------------------------------------------------------- assistente (um passo só)
+const DUAS_REDES = {
+  eth0: [{ address: '192.168.1.20', family: 'IPv4', internal: false }],
+  wlan0: [{ address: '192.168.1.21', family: 'IPv4', internal: false }],
+};
+const lerSettings = (dir) => JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8')).values;
+
+test('assistente: um passo liga modo LAN, endereço, senha gerada uma vez e a administração pela LAN', async () => {
+  const dir = tmpdir('adm-assist-');
+  const env = { DATA_DIR: dir };
+  const a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim'], { env, io: a.io, interfaces: NET }), 0, a.errs.join('\n'));
+  const v = lerSettings(dir);
+  assert.equal(v.ASCSTREMIO_MODE, 'lan');
+  assert.equal(v.LAN_ADVERTISE_HOST, '192.168.1.20');
+  assert.equal(v.CONFIG_ALLOW_LAN, true);
+  assert.equal(v.CONFIG_ADMIN_HTTP_CLEAR, true);
+  const saida = a.lines.join('\n');
+  assert.match(saida, /http:\/\/192\.168\.1\.20:7020\//, 'diz onde abrir o painel');
+  assert.match(saida, /HTTP sem criptografia/, 'avisa o risco');
+  assert.match(saida, /Reinicie o aplicativo/);
+  // A senha aparece uma vez na saída e confere com o arquivo; nunca vai para o settings.json.
+  const senha = a.lines[a.lines.findIndex((l) => /não será mostrada de novo/.test(l)) + 1];
+  assert.ok(senha && senha.length >= 20, 'senha gerada e mostrada');
+  assert.equal(await new auth.AdminCredential({ dataDir: dir }).verify(senha), true);
+  assert.ok(!fs.readFileSync(path.join(dir, 'settings.json'), 'utf8').includes(senha));
+  const b = ioOf();
+  assert.equal(await cli.run(['status', '--json'], { env, io: b.io, interfaces: NET }), 0);
+  assert.equal(JSON.parse(b.lines[0]).enabled, true);
+});
+
+test('assistente: sem --sim e sem terminal não muda nada (fail-closed)', async () => {
+  const dir = tmpdir('adm-assist-');
+  const a = ioOf();
+  assert.equal(await cli.run(['assistente'], { env: { DATA_DIR: dir }, io: a.io, interfaces: NET }), 2);
+  assert.equal(fs.existsSync(path.join(dir, 'settings.json')), false);
+  assert.equal(fs.existsSync(auth.filePath(dir)), false, 'nem senha criada');
+  const recusa = ioOf({ tty: true, confirm: async () => false });
+  assert.equal(await cli.run(['assistente'], { env: { DATA_DIR: dir }, io: recusa.io, interfaces: NET }), 0);
+  assert.equal(fs.existsSync(path.join(dir, 'settings.json')), false, 'cancelar não grava');
+});
+
+test('assistente: várias redes exigem --ip, e o IP tem de ser deste computador', async () => {
+  const dir = tmpdir('adm-assist-');
+  const env = { DATA_DIR: dir };
+  let a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim'], { env, io: a.io, interfaces: DUAS_REDES }), 1);
+  assert.match(a.errs.join('\n'), /--ip/);
+  assert.match(a.errs.join('\n'), /192\.168\.1\.20/);
+  assert.equal(fs.existsSync(path.join(dir, 'settings.json')), false, 'ambíguo: nada gravado');
+  a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim', '--ip', '10.9.9.9'], { env, io: a.io, interfaces: DUAS_REDES }), 1, 'IP que não é deste computador');
+  assert.equal(fs.existsSync(path.join(dir, 'settings.json')), false);
+  a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim', '--ip', '192.168.1.21'], { env, io: a.io, interfaces: DUAS_REDES }), 0, a.errs.join('\n'));
+  assert.equal(lerSettings(dir).LAN_ADVERTISE_HOST, '192.168.1.21');
+});
+
+test('assistente: sem rede utilizável recusa; senha existente é mantida, e --trocar gera outra', async () => {
+  const dir = tmpdir('adm-assist-');
+  const env = { DATA_DIR: dir };
+  let a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim'], { env, io: a.io, interfaces: { lo: [{ address: '127.0.0.1', family: 'IPv4', internal: true }] } }), 1);
+  assert.equal(fs.existsSync(path.join(dir, 'settings.json')), false);
+  const pw = path.join(tmpdir('adm-assist-pw-'), 'p');
+  fs.writeFileSync(pw, SENHA);
+  assert.equal(await cli.run(['definir', '--senha-arquivo', pw], { env, io: ioOf().io }), 0);
+  a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim'], { env, io: a.io, interfaces: NET }), 0, a.errs.join('\n'));
+  assert.ok(!a.lines.some((l) => /não será mostrada de novo/.test(l)), 'não gera outra senha por cima da sua');
+  assert.equal(await new auth.AdminCredential({ dataDir: dir }).verify(SENHA), true);
+  a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim', '--trocar'], { env, io: a.io, interfaces: NET }), 0, a.errs.join('\n'));
+  assert.equal(await new auth.AdminCredential({ dataDir: dir }).verify(SENHA), false, '--trocar gerou uma nova');
+});
+
+test('assistente: no contêiner recusa e não grava nada', async () => {
+  const dir = tmpdir('adm-assist-');
+  const a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim'], { env: { DATA_DIR: dir, ASCSTREMIO_CONTAINER: '1' }, io: a.io, interfaces: NET }), 1);
+  assert.match(a.errs.join('\n'), /contêiner/);
+  assert.equal(fs.existsSync(path.join(dir, 'settings.json')), false);
+  assert.equal(fs.existsSync(auth.filePath(dir)), false);
+});
+
+test('assistente: um CONFIG_BIND_ADDRESS antigo não fica apontando para outro IP (a URL informada tem de abrir)', async () => {
+  const dir = tmpdir('adm-assist-');
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 1, revision: 1, values: { CONFIG_BIND_ADDRESS: '192.168.1.20' } }));
+  const env = { DATA_DIR: dir };
+  const a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim', '--ip', '192.168.1.21'], { env, io: a.io, interfaces: DUAS_REDES }), 0, a.errs.join('\n'));
+  const snap = settings.resolve({ dataDir: dir, env, interfaces: DUAS_REDES });
+  const credential = new auth.AdminCredential({ dataDir: dir });
+  const plano = access.plan({ values: snap.values, mode: snap.mode, container: snap.container, net: snap.derived.network, credentialConfigured: credential.configured(), interfaces: DUAS_REDES, port: snap.values.CONFIG_PORT });
+  assert.equal(plano.enabled, true, plano.problems.join('; '));
+  assert.ok(plano.bind.includes('192.168.1.21'), `o painel deve escutar no IP informado (escuta em ${plano.bind})`);
+  assert.ok(!plano.bind.includes('192.168.1.20'), 'não pode sobrar o bind antigo');
+  assert.match(a.lines.join('\n'), /http:\/\/192\.168\.1\.21:7020\//);
+});
+
+test('assistente: CONFIG_BIND_ADDRESS vindo do ambiente não dá para limpar: recusa sem gravar nada', async () => {
+  const dir = tmpdir('adm-assist-');
+  const a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim', '--ip', '192.168.1.21'], { env: { DATA_DIR: dir, CONFIG_BIND_ADDRESS: '192.168.1.20' }, io: a.io, interfaces: DUAS_REDES }), 1);
+  assert.match(a.errs.join('\n'), /CONFIG_BIND_ADDRESS/);
+  assert.equal(fs.existsSync(path.join(dir, 'settings.json')), false);
+  assert.equal(fs.existsSync(auth.filePath(dir)), false, 'nenhuma senha criada');
+});

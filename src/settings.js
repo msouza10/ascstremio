@@ -548,7 +548,7 @@ function resolve({ dataDir = resolveDataDir(process.env), env = process.env, fil
   problems.push(...plan.problems);
   warnings.push(...plan.warnings);
   if (mode === 'lan') {
-    warnings.push('Modo LAN: addon e ponte escutam fora do loopback; o acesso exige a credencial de instalação (sem TLS: o token trafega em HTTP na rede local). Use só em rede doméstica confiável e para os seus próprios aparelhos; o painel continua restrito a este computador, salvo a administração pela LAN (opcional, CONFIG_ALLOW_LAN).');
+    warnings.push('Modo LAN: addon e ponte escutam fora do loopback; o acesso exige a credencial de instalação (sem TLS: o token trafega em HTTP na rede local). Use só em rede doméstica confiável e para os seus próprios aparelhos; o painel só abre neste computador, a menos que você ligue a administração pela LAN (com senha): no Windows, painel-lan.cmd (ou "Painel pela rede" no Menu Iniciar); nos demais, npm run admin-painel -- assistente.');
   }
 
   if (values.ALERTS_ENABLED === true) {

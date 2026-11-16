@@ -139,6 +139,17 @@ Consulte [segurança e rede](seguranca.md) antes de habilitar LAN. Não use essa
 
 Opcional e **desligada por padrão**. Serve para quem mantém o host num notebook ou NAS e quer abrir o painel de outro aparelho da mesma rede. Quem usa só o computador local não precisa de nada disto: o painel segue em `http://127.0.0.1:<CONFIG_PORT>`, sem senha de administração.
 
+### Em um passo: o assistente
+
+Para abrir o painel de **outro computador da mesma rede**, use o assistente. Ele liga o modo LAN, escolhe o endereço da rede (se houver mais de uma, peça `--ip`), gera uma senha de administração e a mostra **uma única vez**, e liga a administração em HTTP na rede doméstica. Pede confirmação (`sim`) e exige o aplicativo parado.
+
+- **Windows:** Menu Iniciar › Amigos Share Stremio › **Painel pela rede** (ou o item **Painel pela rede…** da bandeja; ou `painel-lan.cmd ligar`). O atalho pára o serviço, faz o ajuste, inicia de novo e cria a regra do Firewall do Windows (pede administrador): só TCP, só para o `node.exe` do programa, só rede privada e sub-rede local. `painel-lan.cmd desligar` fecha o acesso e remove a regra do painel; `status` mostra a situação; `senha` gera outra senha na hora. Se a rede estiver classificada como **Pública** no Windows, mude para **Privada**, senão a regra não vale.
+- **Linux e demais:** `npm run admin-painel -- assistente` (e reinicie o serviço). Libere a porta do painel no firewall do sistema, se houver um.
+
+Depois, em outro computador da rede, abra `http://<endereço>:<CONFIG_PORT>/` (o assistente mostra a URL) e entre com a senha. Essa senha **não** é a do ASC. O tráfego é HTTP sem criptografia: use só em rede doméstica confiável, ou o modo com proxy HTTPS abaixo. O assistente não torna a ponte nem as rotas de credencial acessíveis pela rede.
+
+Os comandos separados continuam valendo para quem quer controlar cada passo:
+
 | Variável | Padrão | Comportamento |
 |---|---|---|
 | `CONFIG_ALLOW_LAN` | `false` | Habilita a administração pela LAN. Só pelo terminal (`npm run admin-painel -- ativar`); o painel não consegue ligá-la |

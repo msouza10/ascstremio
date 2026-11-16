@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const raiz = path.join(__dirname, '..');
-const ler = (...p) => fs.readFileSync(path.join(raiz, ...p), 'utf8');
+// No Windows o Git pode entregar CRLF; os testes olham o texto, não a quebra de linha.
+const ler = (...p) => fs.readFileSync(path.join(raiz, ...p), 'utf8').replace(/\r\n/g, '\n');
 
 test('serviço do Windows: WinSW roda o Node do pacote com a conta de baixo privilégio e reinicia se cair', () => {
   const xml = ler('windows', 'servico.xml');
@@ -170,4 +171,69 @@ test('configuração do serviço: XML bem formado com uma só raiz e sem tags so
   }
   assert.deepEqual(pilha, [], 'tags sem fechar');
   assert.equal((xml.match(/<service>/g) ?? []).length, 1);
+});
+
+test('painel pela rede no Windows: atalho único que liga, desliga e mostra o status, sempre devolvendo o serviço', () => {
+  const cmd = ler('windows', 'painel-lan.cmd');
+  assert.match(cmd, /DATA_DIR=%ProgramData%\\AscStremio\\data/);
+  assert.doesNotMatch(cmd, /LOCALAPPDATA|launcher\.vbs/i);
+  // Ligar e desligar mexem na configuração: o serviço é parado antes e SEMPRE iniciado depois.
+  const bloco = (nome, prox) => cmd.slice(cmd.indexOf(`\n:${nome}\n`), cmd.indexOf(`\n:${prox}\n`));
+  const ligar = bloco('ligar', 'desligar');
+  assert.match(ligar, /call :parar/);
+  assert.match(ligar, /admin-cli\.js" assistente/);
+  assert.ok(ligar.indexOf('sc start AscStremio') > ligar.indexOf('assistente'), 'inicia o serviço depois, mesmo se o assistente falhar');
+  assert.match(ligar, /firewall-lan\.cmd" liberar painel/);
+  const desligar = bloco('desligar', 'status');
+  assert.match(desligar, /call :parar/);
+  assert.match(desligar, /admin-cli\.js" desativar --sim/);
+  assert.ok(desligar.indexOf('sc start AscStremio') > desligar.indexOf('desativar'));
+  assert.match(desligar, /firewall-lan\.cmd" remover painel/);
+  assert.match(cmd, /admin-cli\.js" status/);
+  assert.match(cmd, /admin-cli\.js" gerar --trocar/);
+  assert.match(cmd, /sc stop AscStremio/);
+  // A senha de administração nunca vai por argumento nem para arquivo.
+  assert.doesNotMatch(cmd, />\s*[^&\s]*\.(txt|log)|senha-arquivo/i);
+});
+
+test('firewall no Windows: regra só para o node.exe do serviço, rede privada e sub-rede local, com administrador', () => {
+  const cmd = ler('windows', 'firewall-lan.cmd');
+  assert.match(cmd, /net session/, 'confere se é administrador');
+  assert.match(cmd, /-Verb RunAs/, 'pede elevação quando não for');
+  assert.match(cmd, /advfirewall firewall add rule/);
+  assert.match(cmd, /advfirewall firewall delete rule/);
+  assert.match(cmd, /protocol=TCP/);
+  assert.match(cmd, /program="%NODE%"/);
+  assert.match(cmd, /remoteip=LocalSubnet/);
+  assert.match(cmd, /profile=private/);
+  assert.match(cmd, /credenciais-cli\.js porta addon/);
+  assert.match(cmd, /credenciais-cli\.js porta painel/);
+  assert.doesNotMatch(cmd, /remoteip=(any|\*)|profile=(public|any)|localport=any|action=block/i, 'nunca abre para qualquer origem');
+  assert.doesNotMatch(cmd, /LOCALAPPDATA/i);
+  // O painel só entra quando pedido (administração pela LAN ligada); base e painel têm nomes distintos.
+  assert.match(cmd, /R_PAINEL/);
+  assert.match(cmd, /liberar/);
+  assert.match(cmd, /remover/);
+});
+
+test('painel pela rede: aparece na bandeja e no Menu Iniciar e vai no pacote', () => {
+  assert.match(ler('windows', 'bandeja.ps1'), /Painel pela rede/);
+  assert.match(ler('windows', 'bandeja.ps1'), /painel-lan\.cmd/);
+  assert.match(ler('windows', 'installer.nsi'), /Painel pela rede\.lnk" "cmd\.exe" '\/k ""\$INSTDIR\\painel-lan\.cmd""'/);
+  const build = ler('windows', 'build.sh');
+  assert.match(build, /windows\/painel-lan\.cmd/);
+  assert.match(build, /windows\/firewall-lan\.cmd/);
+  // O desinstalador remove as regras de firewall que criou.
+  assert.match(ler('windows', 'installer.nsi'), /Section "Uninstall"[\s\S]*firewall-lan\.cmd" remover'/);
+});
+
+test('painel pela rede: falha ao criar a regra de firewall não é escondida (e o serviço volta de qualquer jeito)', () => {
+  const cmd = ler('windows', 'painel-lan.cmd');
+  const ligar = cmd.slice(cmd.indexOf('\n:ligar\n'), cmd.indexOf('\n:desligar\n'));
+  const iFirewall = ligar.indexOf('firewall-lan.cmd" liberar painel');
+  assert.ok(iFirewall > 0);
+  assert.ok(ligar.indexOf('sc start AscStremio') < iFirewall, 'o serviço volta antes de mexer no firewall');
+  assert.match(ligar.slice(iFirewall), /if errorlevel 1 set "RC=1"/, 'o resultado do firewall entra no código de saída');
+  const desligar = cmd.slice(cmd.indexOf('\n:desligar\n'), cmd.indexOf('\n:status\n'));
+  assert.match(desligar.slice(desligar.indexOf('firewall-lan.cmd" remover painel')), /if errorlevel 1 set "RC=1"/);
 });
