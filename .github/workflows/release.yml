@@ -151,8 +151,9 @@ jobs:
         run: |
           $exe = Get-ChildItem AscStremio-Setup-*.exe | Select-Object -First 1
           Start-Process $exe.FullName -ArgumentList '/S' -Wait
-          $dir = Join-Path $env:LOCALAPPDATA 'Programs\AscStremio'
-          Start-Process wscript.exe -ArgumentList "`"$dir\launcher.vbs`""
+          $dir = Join-Path $env:ProgramFiles 'AscStremio'
+          if ((Get-Service AscStremio).Status -ne 'Running') { Start-Sleep 5 }
+          if ((Get-Service AscStremio).Status -ne 'Running') { throw 'o serviço não está Running no Windows' }
           $ok = $false
           foreach ($i in 1..60) {
             try { if ((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7010/health -TimeoutSec 2).StatusCode -eq 200) { $ok = $true; break } } catch { Start-Sleep 1 }
