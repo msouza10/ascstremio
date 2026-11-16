@@ -286,7 +286,7 @@ Campos do JSON: `schemaVersion`, `eventId` (aleatório, não deriva de nada), `t
 
 | Variável | Padrão | Comportamento |
 |---|---|---|
-| `ASC_ONLY_FREELEECH` | `true` | `true` lista e baixa só releases freeleech (o download deles não conta no ratio, regra 2.7); `false` mostra todos e os que não são freeleech gastam ratio. Vale na hora, sem novo login |
+| `ASC_ONLY_FREELEECH` | `true` | `true` lista e baixa só releases freeleech (o download deles não conta no ratio, regra 2.7); `false` mostra todos e os que não são freeleech gastam ratio. O play confere de novo antes de iniciar o download, mas o benefício pode acabar durante a transferência e a contabilidade final é do tracker. Vale na hora, sem novo login |
 
 Precedência normal: ambiente, depois `settings.json`, depois o padrão. Valor diferente de `true`/`false` é recusado (na partida, a partida falha; no painel e na CLI, a alteração é rejeitada).
 ## Logs

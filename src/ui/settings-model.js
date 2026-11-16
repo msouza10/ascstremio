@@ -133,7 +133,7 @@
     DISK_RESERVE_PERCENT: { title: 'Reserva em % do disco', hint: 'Outra forma de reservar espaço: vale a que guardar mais. Deixe 0 para usar só os GiB.' },
     ASC_ONLY_FREELEECH: {
       title: 'Quais releases mostrar',
-      hint: 'Freeleech não gasta ratio.',
+      hint: 'Freeleech não gasta ratio. O filtro confere o release antes de iniciar um download, mas o benefício pode acabar durante a transferência; a contabilidade final é do tracker.',
       values: { true: 'Só freeleech (recomendado)', false: 'Todos (os demais gastam ratio)' },
     },
     ASCSTREMIO_MODE: { title: 'Modo de uso' },

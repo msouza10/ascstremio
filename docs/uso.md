@@ -10,7 +10,7 @@ O login salva só os cookies da sessão e a data do login, sem persistir a senha
 
 Em Descobrir → Filmes, **ASC — filmes** permite buscar no tracker. Abrir filmes ou episódios de catálogos com ID IMDb também consulta fontes ASC. A busca considera até 96 releases por consulta e oferece até doze fontes em buscas IMDb. Não há paginação online. Para séries, veja [Séries](#séries).
 
-O filtro **somente freeleech** é a opção `ASC_ONLY_FREELEECH` (regra 2.7), ligada por padrão, e não faz mais parte do login. Para mudar, abra **Configurações** (menu do painel, grupo "Conta e catálogo"; também no assistente e em `npm run configurar`): vale na hora, sem novo login nem reinício, e o catálogo e as fontes passam a refletir a troca. O filtro é conferido também no momento do play, inclusive para URLs antigas. Um release sem confirmação de freeleech não é baixado com o filtro ligado.
+O filtro **somente freeleech** é a opção `ASC_ONLY_FREELEECH` (regra 2.7), ligada por padrão, e não faz mais parte do login. Para mudar, abra **Configurações** (menu do painel, grupo "Conta e catálogo"; também no assistente e em `npm run configurar`): vale na hora, sem novo login nem reinício, e o catálogo e as fontes passam a refletir a troca. Antes de **iniciar** um download, o play lê de novo a página do release no ASC: o selo da busca e a presença do `.torrent` local não valem como confirmação. Release que deixou de ser freeleech, ou cuja página não pôde ser lida (sessão ausente, site fora do ar), não inicia download com o filtro ligado. Isso vale também para um filme com `.torrent` local e dados faltando e para episódios. Arquivo já completo e concluído no cofre toca sem consulta online. O filtro **não é uma garantia contínua**: o benefício pode acabar durante a transferência, e quem contabiliza ratio e download é sempre o tracker. Regularizar ou semear uma obrigação existente não passa por esta trava, e a exclusão manual de arquivos não muda.
 
 ## Como ler as fontes
 
@@ -74,7 +74,8 @@ A ponte serve vídeo por HTTP com suporte a `Range`, usando o motor BitTorrent l
 | Coleção de filmes, trilogia ou partes de tamanhos parecidos | Recusado no play com 422 (em séries, packs com vários episódios são o caso normal) |
 | `.iso`, BDMV e imagens de disco | Não há vídeo reproduzível pela ponte; o formato pode ser recusado antes ou durante o play |
 | Sem seeders | O play online é recusado com 503 antes do download; dados locais completos ainda podem tocar |
-| Não freeleech com filtro ativo | Recusado com 409 |
+| Não freeleech com filtro ativo, antes de iniciar o download | Recusado com 409 |
+| Freeleech não confirmável agora (sessão ou site indisponível) com filtro ativo | Recusado com 503 (401 sem sessão); nada é baixado |
 | Primeiro trecho sem chegar em 60 s | Resposta 504; veja [diagnóstico](manutencao.md#diagnóstico) |
 | Limite de reproduções simultâneas atingido (opcional) | Resposta 429 com `Retry-After`; veja [reproduções simultâneas](configuracao.md#reproduções-simultâneas) |
 

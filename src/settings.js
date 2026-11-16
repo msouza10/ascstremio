@@ -62,7 +62,7 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'ASC_ONLY_FREELEECH', type: 'bool', default: true, group: 'conta', access: 'editable', restart: false,
-    description: 'true (padrão) lista e baixa só releases freeleech: o download deles não conta no ratio. false mostra todos os releases e o download dos que não são freeleech gasta ratio. Vale na hora, sem novo login.',
+    description: 'true (padrão) lista e só inicia download de releases freeleech (conferido de novo no play, inclusive com o .torrent já local e dados faltando): o download deles não conta no ratio. O benefício pode acabar durante a transferência e a contabilidade final é do tracker. false mostra todos os releases e o download dos que não são freeleech gasta ratio. Vale na hora, sem novo login.',
   },
   {
     key: 'DATA_DIR', type: 'path', default: null, group: 'caminhos', access: 'readonly', envOnly: true, restart: true, risky: true,

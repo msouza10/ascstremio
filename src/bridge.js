@@ -121,6 +121,7 @@ class Bridge {
     ascSizeHint = null, // (ascId) => bytes da listagem, para reservar espaço antes de baixar o .torrent
     ascEpisodeResolver = null, // async (ascId, season, episode) => { infoHash, fileIdx }  (/e/<id>/<T>/<E>)
     ascEpisodeSizeHint = null, // (ascId, season, episode) => bytes do episódio na listagem (0 = desconhecido)
+    ascStartGate = null, // async (ascId) => void: confirma o freeleech agora; lança com `status` se não puder autorizar novo download
     ascImdbHint = null, // (ascId) => IMDb da série que o provedor listou para o release (vínculo gravado no play)
     loadPieceMeta = null, // async (torrentPath) => { pieceLength, pieces, length, files }; injetável nos testes
   }) {
@@ -173,6 +174,7 @@ class Bridge {
     this.ascResolver = ascResolver;
     this.ascSizeHint = ascSizeHint;
     this.ascEpisodeResolver = ascEpisodeResolver;
+    this.ascStartGate = ascStartGate;
     this.ascImdbHint = ascImdbHint;
     this.ascEpisodeSizeHint = ascEpisodeSizeHint;
     // Pack: infoHash -> Map(índice do arquivo -> bytes prometidos na admissão). Só vale enquanto o
@@ -1250,6 +1252,18 @@ class Bridge {
     return findEpisode(buildEpisodeIndex(local.files), episode.season, episode.episode)?.file ?? null;
   }
 
+  // Id do release do ASC de uma entrada (arquivo asc-<id>.torrent); null para torrent de outra origem.
+  ascIdOf(entry) {
+    return /^asc-(\d{1,9})\.torrent$/.exec(path.basename(String(entry?.torrentPath ?? '')))?.[1] ?? null;
+  }
+
+  // Abrir este torrent agora iniciaria download de dados? Não, se já está no motor (ou abrindo) ou se
+  // o cofre o dá por concluído e os arquivos estão inteiros (mesma regra de admitTorrent).
+  startsNewDownload(infoHash) {
+    if (this.loading.has(infoHash) || (this.client?.torrents ?? []).some((t) => t.infoHash === infoHash)) return false;
+    return !(this.vault.get(infoHash)?.completedAt && this.diskState(infoHash) === 'full');
+  }
+
   // Entrada da biblioteca de um release do ASC (arquivo asc-<id>.torrent), se já baixado.
   entryByAscId(ascId) {
     const suffix = `asc-${ascId}.torrent`;
@@ -1791,6 +1805,7 @@ class Bridge {
 
     // /a/<id>: fonte listada pelo Stremio sem .torrent local. Só o GET (o play)
     // baixa o .torrent; HEAD e sondagens nunca baixam nem anunciam.
+    let resolvedNow = false; // o resolvedor acabou de confirmar o freeleech: a trava abaixo não repete
     let seriesImdb = null; // série do episódio tocado, para vincular o pack no cofre
     if (lazy) {
       const ascId = lazy[1];
@@ -1834,6 +1849,7 @@ class Bridge {
         } finally {
           this.disk.release(holder);
         }
+        resolvedNow = true;
         // Credencial revogada (ou cliente que saiu) enquanto o .torrent era preparado: não abre o torrent.
         if (res.destroyed) return;
         lease?.rekey(`s:${infoHash}:${fileIdx}`);
@@ -1868,6 +1884,21 @@ class Bridge {
       res.writeHead(headRange ? 206 : 200, headHeaders);
       res.end();
       return;
+    }
+
+    // Abrir no motor um torrent com dados faltando começa a baixar (regra 2.7: pode contar no ratio),
+    // mesmo com o .torrent já local e sem passar pelo resolvedor. A trava confirma o freeleech agora.
+    // Torrent já aberto não é início; arquivo completo e concluído toca sem consulta.
+    const gateId = lazy ? lazy[1] : this.ascIdOf(this.entries.get(infoHash));
+    if (this.ascStartGate && gateId && !resolvedNow && this.startsNewDownload(infoHash)) {
+      try { await this.ascStartGate(gateId); } catch (err) {
+        const status = Number.isInteger(err?.status) ? err.status : 503;
+        log.warn(`play de #${gateId} recusado (${status}): ${err?.message ?? err}`);
+        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: err?.message || 'Não foi possível confirmar o freeleech; nada foi baixado.' }));
+        return;
+      }
+      if (res.destroyed) return;
     }
 
     const torrent = await this.getTorrent(infoHash, { fileIdx });
