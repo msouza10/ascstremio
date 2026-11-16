@@ -55,6 +55,24 @@ tools/
 *.pdf
 *.har
 
+# Capturas públicas revisadas; liberar somente nomes exatos.
+!docs/imagens/
+docs/imagens/*
+!docs/imagens/login-claro.png
+!docs/imagens/login-escuro.png
+!docs/imagens/logs-claro.png
+!docs/imagens/logs-escuro.png
+!docs/imagens/painel-claro.png
+!docs/imagens/painel-escuro.png
+!docs/imagens/torrent-claro.png
+!docs/imagens/torrent-escuro.png
+!docs/imagens/wizard-instalar-claro.png
+!docs/imagens/wizard-instalar-escuro.png
+!docs/imagens/wizard-seed-claro.png
+!docs/imagens/wizard-seed-escuro.png
+!docs/imagens/wizard-uso-claro.png
+!docs/imagens/wizard-uso-escuro.png
+
 # --- build e ambiente -------------------------------------------------------
 node_modules/
 dist/
