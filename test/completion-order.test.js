@@ -25,6 +25,12 @@ test('filme iniciado no meio termina à frente e depois busca o início', () => 
   assert.deepEqual(completionPlan(torrent, {}, { fileIdx: 0, start: 60 }), [[6, 9], [0, 5]]);
 });
 
+test('arquivo atual vazio ou posição inválida cai na fila do torrent inteiro, sem intervalo negativo', () => {
+  const torrent = { files: [{ length: 0 }, { length: 100 }], pieces: new Array(10), pieceLength: 10 };
+  assert.deepEqual(completionPlan(torrent, {}, { fileIdx: 0, start: 0 }), [[0, 9]]);
+  assert.deepEqual(completionPlan(torrent, {}, { fileIdx: 7, start: 0 }), [[0, 9]]);
+});
+
 test('ordena temporadas e episódios numericamente, preservando índices físicos', () => {
   const files = ['S02E01', 'S01E10', 'S01E02', 'S01E01'].map((id, index) => ({ index, path: `${id}.mkv`, length: 10, isVideo: true }));
   const torrent = { files, pieces: new Array(4), pieceLength: 10 };

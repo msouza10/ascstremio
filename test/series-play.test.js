@@ -596,3 +596,17 @@ for (const [nome, preparar] of [
     assert.ok(!ctx.vault.get(HASH).backgroundComplete);
   });
 }
+
+test('falha ao reorganizar a conclusão não derruba a reprodução nem o timer', async () => {
+  const ctx = packAberto({ streams: 0 });
+  const torrent = ctx.b.client.torrents[0];
+  ctx.b.completing.add(HASH);
+  // Seleção de peças recusada pelo motor (por exemplo, torrent destruído no meio do pedido).
+  torrent.select = () => { throw new Error('invalid selection'); };
+  const res = await getComPack(ctx);
+  assert.equal(res.statusCode, 206, 'a conclusão é otimização: o vídeo continua');
+  // O timer de 30 s também não pode lançar: uma exceção ali encerra o processo inteiro.
+  ctx.b.completing.delete(HASH);
+  assert.doesNotThrow(() => ctx.b.completionTick());
+  assert.equal(ctx.b.completing.has(HASH), false, 'sem seleção feita, a conclusão não é dada como ativa');
+});

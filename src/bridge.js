@@ -699,7 +699,14 @@ class Bridge {
       }
       if (entry?.noSpaceWarned) entry.noSpaceWarned = false;
 
-      selectCompletion(torrent, completionPlan(torrent, this.entries.get(torrent.infoHash), this.playbackPositions.get(torrent)));
+      // Uma recusa do motor num torrent não pode abortar os demais nem derrubar o processo (o
+      // timer não tem quem capture); sem seleção feita, a conclusão não é dada como ativa.
+      try {
+        selectCompletion(torrent, completionPlan(torrent, this.entries.get(torrent.infoHash), this.playbackPositions.get(torrent)));
+      } catch (err) {
+        console.warn(`[conclusão] não foi possível selecionar "${String(torrent.name).slice(0, 40)}": ${err.message}`);
+        continue;
+      }
       this.completing.add(torrent.infoHash);
       this.vault.setBackground(torrent.infoHash, true);
       console.log(`[conclusão] baixando o restante em segundo plano: ${String(torrent.name).slice(0, 50)}`);
@@ -1921,10 +1928,16 @@ class Bridge {
     const iterator = stream[Symbol.asyncIterator]();
 
     this.playbackPositions.set(torrent, { fileIdx, start });
-    if (this.completing.has(infoHash)) {
-      selectCompletion(torrent, completionPlan(torrent, this.entries.get(infoHash), { fileIdx, start }));
-    } else {
-      this.completionTick();
+    // A fila de conclusão é só otimização: se o motor recusar a seleção (torrent destruído no meio
+    // do pedido, por exemplo), o vídeo continua e o próximo GET ou o timer tentam de novo.
+    try {
+      if (this.completing.has(infoHash)) {
+        selectCompletion(torrent, completionPlan(torrent, this.entries.get(infoHash), { fileIdx, start }));
+      } else {
+        this.completionTick();
+      }
+    } catch (err) {
+      log.warn(`conclusão: não foi possível reorganizar a fila de ${short(infoHash)}: ${err.message}`);
     }
 
     let first;

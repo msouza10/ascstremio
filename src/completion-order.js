@@ -7,7 +7,8 @@ function completionPlan(torrent, entry, position) {
   const count = torrent.pieces?.length ?? 0;
   if (!count) return [];
   const files = torrent.files ?? [];
-  if (!position || !files[position.fileIdx] || !(torrent.pieceLength > 0)) return [[0, count - 1]];
+  // Sem posição utilizável (nem arquivo atual com bytes) vale o torrent inteiro, na ordem física.
+  if (!position || !(files[position.fileIdx]?.length > 0) || !(torrent.pieceLength > 0)) return [[0, count - 1]];
   const { fileIdx, start } = position;
   const episodes = buildEpisodeIndex(entry?.files ?? []).episodes
     .sort((a, b) => a.season - b.season || a.episode - b.episode);
