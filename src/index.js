@@ -30,7 +30,7 @@ const { AdminCredential } = require('./admin-auth');
 const { AlertManager, configFromValues, OBSERVE_INTERVAL_MS } = require('./alerts');
 
 // Onde ficam passkey, sessão, cofre, logs, .torrent e cache. Fora do código para
-// sobreviver a atualizações (instalador, contêiner, Windows em %LOCALAPPDATA%).
+// sobreviver a atualizações (instalador, contêiner, Windows em %ProgramData%).
 const DATA_DIR = settings.resolveDataDir(process.env);
 
 // Chave das URLs de stream: aleatória, guardada em DATA_DIR (0600) para sobreviver a reinícios.

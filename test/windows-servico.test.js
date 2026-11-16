@@ -80,7 +80,7 @@ test('atalhos do Windows controlam o serviço (sc) e usam os dados em ProgramDat
   assert.match(ler('windows', 'parar-bandeja.cmd'), /bandeja\.ps1/);
   for (const nome of ['start.cmd', 'stop.cmd', 'open-panel.cmd', 'configurar.cmd', 'credenciais.cmd', 'parar-bandeja.cmd']) {
     const txt = ler('windows', nome);
-    assert.doesNotMatch(txt, /launcher\.vbs|LOCALAPPDATA/i, `${nome} ainda aponta para o modelo antigo`);
+    assert.doesNotMatch(txt, /launcher\.vbs|LOCALAPPDATA|service\.log/i, `${nome} ainda aponta para o modelo antigo`);
   }
   for (const nome of ['open-panel.cmd', 'configurar.cmd', 'credenciais.cmd']) {
     assert.match(ler('windows', nome), /DATA_DIR=%ProgramData%\\AscStremio\\data/, nome);

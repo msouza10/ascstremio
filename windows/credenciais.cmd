@@ -18,7 +18,7 @@ rem A CLI fala com a ponte: garante que o serviço está de pé e espera ela res
 powershell -NoProfile -Command "try{(Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:%PORTA%/health)|Out-Null;exit 0}catch{exit 1}" || call "%HERE%start.cmd"
 powershell -NoProfile -Command "foreach($i in 1..60){try{(Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:%PORTA%/health)|Out-Null;exit 0}catch{Start-Sleep 1}};exit 1"
 if errorlevel 1 (
-  echo A ponte nao respondeu. Veja %DATA_DIR%\service.log e tente de novo.
+  echo A ponte nao respondeu. Veja %DATA_DIR%\AscStremioServico.out.log e tente de novo.
   set "RC=1"
   goto :fim
 )
