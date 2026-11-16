@@ -174,7 +174,7 @@ function createPanelSettings({ dataDir, bootEnv, running, applyLive = () => fals
 
   function restartHint(snapshot) {
     if (snapshot.container) return 'No contêiner: scripts/docker.sh run (ou docker compose restart ascstremio).';
-    if (process.platform === 'win32') return 'No Windows: feche o AscStremio (ícone da bandeja) e abra de novo pelo atalho.';
+    if (process.platform === 'win32') return 'No Windows: clique com o botão direito no ícone da bandeja e escolha Reiniciar.';
     return 'No Linux com serviço: systemctl --user restart ascstremio. Sem serviço: pare o npm start (Ctrl+C) e rode de novo.';
   }
 
