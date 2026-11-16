@@ -45,7 +45,9 @@ function completionPlan(torrent, entry, position) {
 
 const activePlans = new WeakMap();
 
-function selectCompletion(torrent, plan) {
+// `onFail(err)`: chamado se o motor recusar uma etapa depois da primeira (fora do try do chamador),
+// para a ponte soltar o estado de "concluindo" e o timer recomeçar a fila.
+function selectCompletion(torrent, plan, onFail) {
   // O WebTorrent mescla até intervalos adjacentes. Selecionar todos de uma vez perde a ordem;
   // portanto só liberamos a próxima etapa quando TODAS as peças da atual estão verificadas.
   const state = {};
@@ -83,6 +85,7 @@ function selectCompletion(torrent, plan) {
         } catch (err) {
           activePlans.delete(torrent);
           console.warn(`[conclusão] fila interrompida: ${err.message}`);
+          onFail?.(err);
         }
       });
     });

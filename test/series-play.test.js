@@ -633,6 +633,29 @@ test('falha ao selecionar não derruba a reprodução nem o timer, e o timer ten
   assert.equal(ctx.b.completing.has(HASH), false, 'sem seleção de fundo, deixa o timer recomeçar');
 });
 
+test('falha numa etapa posterior da fila libera o estado da ponte para o timer recomeçar', async (t) => {
+  const ctx = packAberto({ streams: 0, baixado: [0, 10 * GB, 0] });
+  const torrent = ctx.b.client.torrents[0];
+  t.mock.method(console, 'warn', () => {});
+  const verificadas = new Set();
+  let notifica;
+  let recusa = false;
+  torrent.bitfield = { get: (i) => verificadas.has(i) };
+  torrent.deselect = () => {};
+  torrent.select = (from, to, p, notify) => { if (recusa) throw new Error('invalid selection'); notifica = notify; };
+  ctx.b.completionTick(1e6);
+  assert.equal(ctx.b.completing.has(HASH), true);
+  // A etapa atual termina e o motor recusa a próxima, já na microtarefa (fora de qualquer try do chamador).
+  for (let i = 10; i <= 19; i += 1) verificadas.add(i);
+  recusa = true;
+  notifica();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ctx.b.completing.has(HASH), false, 'sem seleção de fundo ativa, o timer pode recomeçar');
+  recusa = false;
+  ctx.b.completionTick(2e6);
+  assert.equal(ctx.b.completing.has(HASH), true);
+});
+
 test('falha numa etapa posterior da fila (microtarefa) não vira exceção não capturada', async () => {
   const { selectCompletion } = require('../src/completion-order');
   const verificadas = new Set();

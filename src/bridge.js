@@ -722,7 +722,8 @@ class Bridge {
       // Uma recusa do motor num torrent não pode abortar os demais nem derrubar o processo (o
       // timer não tem quem capture); sem seleção feita, a conclusão não é dada como ativa.
       try {
-        selectCompletion(torrent, completionPlan(torrent, this.entries.get(torrent.infoHash), this.playbackPositions.get(torrent)));
+        selectCompletion(torrent, completionPlan(torrent, this.entries.get(torrent.infoHash), this.playbackPositions.get(torrent)),
+          () => this.completing.delete(torrent.infoHash));
       } catch (err) {
         console.warn(`[conclusão] não foi possível selecionar "${String(torrent.name).slice(0, 40)}": ${err.message}`);
         continue;
@@ -1954,7 +1955,8 @@ class Bridge {
     // otimização: se o motor recusar a seleção (torrent destruído no meio do pedido), o vídeo segue.
     try {
       if (this.completing.has(infoHash)) {
-        selectCompletion(torrent, completionPlan(torrent, this.entries.get(infoHash), { fileIdx, start }));
+        selectCompletion(torrent, completionPlan(torrent, this.entries.get(infoHash), { fileIdx, start }),
+          () => this.completing.delete(infoHash));
       }
     } catch (err) {
       // A reorganização remove as seleções de fundo antes de criar a nova: com falha no meio o
