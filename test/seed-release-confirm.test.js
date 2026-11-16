@@ -178,6 +178,22 @@ test('sessão de reprodução recente (do vídeo ou da fonte /a/) adia a libera�
   }
 });
 
+test('sessão de OUTRO título cujo id só começa igual (a:1000 vs a:100) não adia a liberação', async () => {
+  const s = setup();
+  s.b.limiter.acquire('cred', 'a:1000');
+  const r = await s.liberar();
+  assert.equal(r.length, 1, 'o id 1000 não é o id 100');
+  assert.deepEqual(s.chamadas.map((c) => c.destroyStore), [true]);
+});
+
+test('sessão de um episódio do mesmo pack (e:<id>:T:E) adia a liberação', async () => {
+  const s = setup();
+  s.b.limiter.acquire('cred', 'e:100:1:2');
+  assert.deepEqual(await s.liberar(), []);
+  assert.equal(s.asc.consultas.length, 0);
+  assert.equal(s.chamadas.length, 0);
+});
+
 test('escolha individual keep/stop feita durante a consulta ao tracker vence a liberação automática', async () => {
   for (const escolha of ['keep', 'stop']) {
     const s = setup();
@@ -261,4 +277,20 @@ test('com limite 0 até a confirmação de agora é relida', async () => {
   const r = await s.liberar();
   assert.equal(s.asc.consultas.length, 1);
   assert.equal(r.length, 1);
+});
+
+test('o aviso de "aguardando confirmação" some assim que o usuário resolve o caso, sem esperar a próxima passada', async () => {
+  const aviso = /aguardando.*tracker/i;
+  const mostra = (s) => s.b.snapshot(s.clock.t).titles.find((t) => t.infoHash === HASH);
+  const s = setup();
+  s.asc.falha = new Error('fora do ar');
+  await s.liberar();
+  assert.ok(mostra(s).warnings.some((w) => aviso.test(w)), 'pré-condição: há aviso');
+  s.vault.setSeedChoice(HASH, 'keep'); // o usuário decidiu manter
+  assert.equal(mostra(s).releaseBlocked, null);
+  assert.equal(mostra(s).warnings.some((w) => aviso.test(w)), false);
+  assert.equal(s.b.hnrWarnings(s.clock.t).some((w) => aviso.test(w)), false);
+  // Ao voltar atrás, o motivo volta a valer: a próxima passada decide de novo.
+  s.vault.setSeedChoice(HASH, null);
+  assert.ok(mostra(s).warnings.some((w) => aviso.test(w)));
 });

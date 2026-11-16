@@ -790,11 +790,7 @@ class Bridge {
     const released = [];
     this.releaseBlocked = new Map();
     if (['keep', 'manual'].includes(this.afterSeed) || !this.client) return released;
-    const busy = (hash) => {
-      const ascId = hnr.ascIdFromPath(this.vault.get(hash)?.torrentPath);
-      return this.loading.has(hash) || (this.streams.get(hash) ?? 0) > 0 || this.limiter.hasKeyPrefix(`s:${hash}:`)
-        || Boolean(ascId && this.limiter.hasKeyPrefix(`a:${ascId}`));
-    };
+    const busy = (hash) => this.releaseBusy(hash);
     for (const torrent of [...this.client.torrents]) {
       const hash = torrent.infoHash;
       const entry = this.vault.get(hash);
@@ -834,9 +830,28 @@ class Bridge {
     return released;
   }
 
+  // Conteúdo em uso agora (abrindo, com stream ou com sessão recente de reprodução).
+  releaseBusy(hash) {
+    const ascId = hnr.ascIdFromPath(this.vault.get(hash)?.torrentPath);
+    return this.loading.has(hash) || (this.streams.get(hash) ?? 0) > 0 || this.limiter.hasKeyPrefix(`s:${hash}:`)
+      || Boolean(ascId && this.limiter.hasAscSession(ascId));
+  }
+
+  // O adiamento só vale enquanto a liberação automática ainda decide o caso. Se o usuário já escolheu
+  // keep/stop, se o título foi liberado ou saiu do motor, o aviso gravado na última passada (que só
+  // roda de hora em hora) ficou velho e não pode continuar no painel.
+  releaseBlockedFor(hash) {
+    const blocked = this.releaseBlocked.get(hash);
+    if (!blocked) return null;
+    const entry = this.vault.get(hash);
+    if (!entry || entry.releasedAs || entry.seedChoice === 'keep' || entry.seedChoice === 'stop') return null;
+    if (!this.client?.torrents.some((t) => t.infoHash === hash)) return null;
+    return blocked;
+  }
+
   releaseBlockedNotice(hash) {
     const nome = String(this.vault.get(hash)?.name ?? hash).slice(0, 50);
-    return `${nome}: liberação automática aguardando confirmação recente do tracker (${this.releaseBlocked.get(hash).reason}). Seed e arquivos foram mantidos.`;
+    return `${nome}: liberação automática aguardando confirmação recente do tracker (${this.releaseBlockedFor(hash)?.reason}). Seed e arquivos foram mantidos.`;
   }
 
   // Confirmação do tracker utilizável agora: cumprida, sem hit-and-run e lida há no máximo
@@ -958,6 +973,7 @@ class Bridge {
       const deadline = entry ? this.vault.deadlineMs(infoHash) : null;
       const daysLeft = deadline === null ? null : (deadline - now) / 86_400_000;
       const warnings = entry ? hnr.warningsFor({ vault: this.vault, entry, active, now }) : [];
+      const releaseBlocked = this.releaseBlockedFor(infoHash);
       const down = torrent?.downloaded || 0;
       const up = torrent?.uploaded || 0;
       const completando = this.completing.has(infoHash) || Boolean(entry?.backgroundComplete && !completed);
@@ -998,7 +1014,7 @@ class Bridge {
         backgroundComplete: Boolean(entry?.backgroundComplete),
         ...(isPackEntry(lib) ? { episodes: this.episodeStates(lib, torrent, entry?.excluded), excluded: entry?.excluded ?? [] } : {}),
         released: entry?.releasedAs ?? null,
-        releaseBlocked: this.releaseBlocked.get(infoHash) ? { reason: this.releaseBlocked.get(infoHash).reason, at: new Date(this.releaseBlocked.get(infoHash).at).toISOString() } : null,
+        releaseBlocked: releaseBlocked ? { reason: releaseBlocked.reason, at: new Date(releaseBlocked.at).toISOString() } : null,
         seedChoice: entry?.seedChoice ?? null,
         progress: torrent ? Number((torrent.progress || 0).toFixed(4)) : (completed ? 1 : 0),
         downloaded: down,
@@ -1026,8 +1042,7 @@ class Bridge {
               ? null : Number((tracker.remainingMs / 3_600_000).toFixed(2)),
           }
           : null,
-        warnings: this.releaseBlocked.has(infoHash)
-          ? [...warnings, this.releaseBlockedNotice(infoHash)] : warnings,
+        warnings: releaseBlocked ? [...warnings, this.releaseBlockedNotice(infoHash)] : warnings,
       };
     };
 
@@ -1162,7 +1177,7 @@ class Bridge {
       if (p.local) continue;
       out.push(`${String(p.name).slice(0, 50)}: obrigação aberta no tracker sem .torrent local (abra o filme pelo catálogo ASC no Stremio).`);
     }
-    for (const hash of this.releaseBlocked.keys()) out.push(this.releaseBlockedNotice(hash));
+    for (const hash of this.releaseBlocked.keys()) if (this.releaseBlockedFor(hash)) out.push(this.releaseBlockedNotice(hash));
     for (const entry of this.vault.list()) {
       if (entry.completedAt && !entry.satisfiedAt && !active.has(entry.infoHash)
         && this.entries.has(entry.infoHash) && this.diskState(entry.infoHash) !== 'full') {
