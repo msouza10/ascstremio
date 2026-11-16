@@ -374,10 +374,10 @@ jobs:
           # 1) Regras de firewall: só o node.exe do pacote, TCP, rede privada e sub-rede local.
           $r = Invoke-Atalho 'firewall-lan.cmd' 'liberar painel'
           if ($r.Codigo -ne 0) { throw "firewall-lan liberar falhou ($($r.Codigo)): $($r.Saida) $($r.Erro)" }
-          $base = (netsh advfirewall firewall show rule name="Amigos Share Stremio (LAN)" | Out-String)
+          $base = (netsh advfirewall firewall show rule name="Amigos Share Stremio (LAN)" verbose | Out-String)
           foreach ($esperado in '7000,7010', 'LocalSubnet', 'Allow', 'TCP', 'node.exe') { if ($base -notmatch [regex]::Escape($esperado)) { throw "regra base sem '$esperado':`n$base" } }
           if ($base -match 'Public') { throw "a regra não pode valer para rede pública:`n$base" }
-          $painelRegra = (netsh advfirewall firewall show rule name="Amigos Share Stremio (painel LAN)" | Out-String)
+          $painelRegra = (netsh advfirewall firewall show rule name="Amigos Share Stremio (painel LAN)" verbose | Out-String)
           if ($painelRegra -notmatch '7020') { throw "regra do painel sem a porta 7020:`n$painelRegra" }
           $r = Invoke-Atalho 'firewall-lan.cmd' 'remover painel'
           if ($r.Codigo -ne 0) { throw 'firewall-lan remover painel falhou' }
