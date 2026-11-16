@@ -387,33 +387,34 @@ function packAberto({ baixado = [0, 0, 0], abertos = [1], streams = 1, ...over }
   const selecoes = [];
   const files = PACK.files.map((f, i) => ({ length: f.length, downloaded: baixado[i] ?? 0, select: (p) => selecoes.push(['arquivo', i, p]) }));
   b.client.torrents.push({ infoHash: HASH, name: 'Pack', ready: true, done: false, length: 30 * GB, downloaded: GB,
-    pieces: new Array(10), progress: 0.03, files, select: (...a) => selecoes.push(['torrent', ...a]) });
+    pieces: new Array(31), pieceLength: GB, progress: 0.03, files, select: (...a) => selecoes.push(['torrent', ...a.slice(0, 3)]) });
+  b.playbackPositions.set(b.client.torrents[0], { fileIdx: abertos.at(-1), start: 0 });
   b.startedAt.set(HASH, 0);
   b.packFiles.set(HASH, new Map(abertos.map((i) => [i, 10 * GB])));
   if (streams) b.streams.set(HASH, streams);
   return { b, vault, selecoes };
 }
 
-test('pack: com o episódio aberto ainda baixando e o player aberto, não completa o pack', () => {
+test('pack: busca completar o torrent mesmo com o episódio e o player abertos', () => {
   const { b, selecoes } = packAberto({ baixado: [0, 4 * GB, 0] });
   b.completionTick(1e6);
-  assert.deepEqual(selecoes, []);
+  assert.deepEqual(selecoes, [['torrent', 10, 19, 0]]);
 });
 
 test('pack: episódio aberto inteiro em disco começa o resto do pack mesmo com o player aberto', () => {
   const { b, vault, selecoes } = packAberto({ baixado: [0, 10 * GB, 0] });
   b.completionTick(1e6);
-  // aberto = 1: os seguintes primeiro (2 e o banner 3), depois os anteriores (0), tudo em prioridade baixa
-  assert.deepEqual(selecoes, [['arquivo', 2, 0], ['arquivo', 3, 0], ['arquivo', 0, 0]]);
+  // Inclui o atual: uma lacuna anterior ao seek também precisa ser concluída.
+  assert.deepEqual(selecoes, [['torrent', 10, 19, 0]]);
   assert.equal(vault.get(HASH).backgroundComplete, true);
   b.completionTick(2e6);
-  assert.equal(selecoes.length, 3, 'não repete');
+  assert.equal(selecoes.length, 1, 'não repete');
 });
 
 test('pack: abrir um episódio adiante completa os anteriores depois do atual', () => {
   const { b, selecoes } = packAberto({ baixado: [0, 0, 10 * GB], abertos: [2] });
   b.completionTick(1e6);
-  assert.deepEqual(selecoes.map(([, i]) => i), [3, 0, 1], 'depois do atual (só o banner), depois os anteriores em ordem');
+  assert.deepEqual(selecoes, [['torrent', 20, 29, 0]]);
 });
 
 test('pack: sem episódio pronto e parado, a conclusão automática completa pela ociosidade', () => {
@@ -542,3 +543,56 @@ test('o tracker dizendo "baixando" (parcial) nunca vira obrigação cumprida por
   assert.equal(s.tracker.satisfied, false);
   assert.equal(vault.get(HASH).satisfiedAt ?? null, null);
 });
+
+test('GET com Range reorganiza a conclusão ao começar no meio e ao fazer seek', async () => {
+  const { b, vault, selecoes } = packAberto({ streams: 0 });
+  const torrent = b.client.torrents[0];
+  torrent.files = [0, 1, 2].map((i) => video3(i, Buffer.from('0123456789')));
+  torrent.files.push({ length: 1, path: 'capa.jpg' });
+  torrent.pieces = new Array(31);
+  torrent.pieceLength = 1;
+  torrent.length = 31;
+  torrent.downloaded = 0;
+  b.getTorrent = async () => torrent;
+  const removed = [];
+  torrent.deselect = (...args) => removed.push(args);
+  for (const [range, expected] of [['bytes=6-9', 16], ['bytes=2-5', 12]]) {
+    const res = resposta();
+    await b.handle(pedido('GET', `/s/${HASH}/1`, { range }), res);
+    assert.equal(res.statusCode, 206);
+    assert.equal(selecoes.at(-1)[1], expected, 'a fila acompanha a nova posição');
+    assert.equal(selecoes.at(-1)[2], 19, 'busca o restante do arquivo mesmo com Range curto');
+  }
+  assert.equal(removed.length, 2, 'substitui as seleções de fundo, sem acumular a posição anterior');
+  assert.equal(vault.get(HASH).backgroundComplete, true);
+  assert.equal(b.streams.get(HASH), 0);
+});
+
+// Interação com o que a main já decidiu (#114): a conclusão agora começa no GET de vídeo, então as
+// escolhas do usuário que seguram a conclusão automática precisam valer também nesse caminho.
+async function getComPack(ctx) {
+  const torrent = ctx.b.client.torrents[0];
+  torrent.files = [0, 1, 2].map((i) => video3(i, Buffer.from('0123456789')));
+  torrent.pieces = new Array(30);
+  torrent.pieceLength = 1;
+  ctx.b.getTorrent = async () => torrent;
+  const res = resposta();
+  await ctx.b.handle(pedido('GET', `/s/${HASH}/1`, { range: 'bytes=2-5' }), res);
+  return res;
+}
+
+for (const [nome, preparar] of [
+  ['exclusão de um episódio', ({ vault }) => vault.setExcluded(HASH, 2, true)],
+  ['escolha de baixar só parte do pack', ({ b }) => b.partialScope.set(HASH, new Set([1]))],
+  ['espaço insuficiente para o restante', null],
+]) {
+  test(`GET de vídeo não inicia a conclusão automática com ${nome}`, async () => {
+    const ctx = packAberto({ streams: 0, ...(preparar ? {} : { freeSpace: () => 5 }) });
+    preparar?.(ctx);
+    const res = await getComPack(ctx);
+    assert.equal(res.statusCode, 206, 'a reprodução segue');
+    assert.deepEqual(ctx.selecoes, [], 'nada além do streaming foi selecionado');
+    assert.equal(ctx.b.completing.has(HASH), false);
+    assert.ok(!ctx.vault.get(HASH).backgroundComplete);
+  });
+}

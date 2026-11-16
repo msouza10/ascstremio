@@ -350,7 +350,7 @@ function bridgeBg(vault, over = {}) {
     backgroundMode: 'auto', idleMs: 10 * MIN, minFreeBytes: 1000, freeSpace: () => 1e12, ...over });
   const selecoes = [];
   const t = { infoHash: HASH, name: 'Filme', ready: true, done: false, length: 5000, downloaded: 1000,
-    pieces: new Array(10), progress: 0.2, select: (...a) => selecoes.push(a) };
+    pieces: new Array(10), progress: 0.2, select: (...a) => selecoes.push(a.slice(0, 3)) };
   b.client = { torrents: [t] };
   b.entries.set(HASH, { infoHash: HASH, freeleech: true });
   b.startedAt.set(HASH, 0);
@@ -368,7 +368,7 @@ test('auto: freeleech parado há mais que o limite é concluído, com prioridade
   assert.equal(selecoes.length, 1);
 });
 
-test('auto: não conclui com player assistindo, antes do limite ou com modo off', () => {
+test('auto: busca concluir durante reprodução e sem esperar ociosidade; off mantém a escolha', () => {
   const novo = (over, ajuste) => {
     const vault = new SeedVault({ file: tmpFile() });
     vault.markSeen(HASH, {});
@@ -377,8 +377,8 @@ test('auto: não conclui com player assistindo, antes do limite ou com modo off'
     r.b.completionTick(11 * MIN);
     return r.selecoes.length;
   };
-  assert.equal(novo({}, ({ b }) => b.streams.set(HASH, 1)), 0, 'stream aberto');
-  assert.equal(novo({}, ({ b }) => b.lastStreamEnd.set(HASH, 5 * MIN)), 0, 'parou há 6 min');
+  assert.equal(novo({}, ({ b }) => b.streams.set(HASH, 1)), 1, 'stream aberto: seleção de fundo');
+  assert.equal(novo({}, ({ b }) => b.lastStreamEnd.set(HASH, 5 * MIN)), 1, 'sem esperar ociosidade');
   assert.equal(novo({ backgroundMode: 'off' }), 0, 'modo off');
   assert.equal(novo({}, ({ b }) => b.lastStreamEnd.set(HASH, 0)), 1, 'controle: parado há 11 min');
 });

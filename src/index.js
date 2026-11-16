@@ -187,7 +187,7 @@ async function main() {
   gravaPeers();
   setInterval(gravaPeers, 60_000).unref();
   if (backgroundMode === 'auto') {
-    console.log(`[conclusão] automática: o torrent inteiro é concluído em segundo plano (série: com o episódio aberto pronto; demais: parados há ${idleMinutes} min)`);
+    console.log('[conclusão] automática: busca completar o torrent inteiro durante a reprodução, priorizando o trecho atual e os episódios seguintes antes do que ficou para trás');
   }
 
   const library = await loadLibrary(torrentDir);
