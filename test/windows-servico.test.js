@@ -237,3 +237,14 @@ test('painel pela rede: falha ao criar a regra de firewall não é escondida (e 
   const desligar = cmd.slice(cmd.indexOf('\n:desligar\n'), cmd.indexOf('\n:status\n'));
   assert.match(desligar.slice(desligar.indexOf('firewall-lan.cmd" remover painel')), /if errorlevel 1 set "RC=1"/);
 });
+
+test('streaming na rede (TV e celular) tem atalho próprio de firewall, sem ligar a administração do painel', () => {
+  const nsi = ler('windows', 'installer.nsi');
+  // Só addon e ponte: "liberar" sem o argumento "painel".
+  assert.match(nsi, /Liberar addon na rede \(firewall\)\.lnk" "cmd\.exe" '\/k ""\$INSTDIR\\firewall-lan\.cmd" liberar"'/);
+  assert.doesNotMatch(nsi, /firewall-lan\.cmd" liberar painel/, 'o instalador nunca libera o painel por conta própria');
+  const instalacao = ler('docs', 'instalacao.md');
+  const secao = instalacao.slice(instalacao.indexOf('### Windows em rede'), instalacao.indexOf('## Pelo código: Linux e macOS'));
+  assert.match(secao, /Liberar addon na rede/);
+  assert.match(secao, /não é preciso ligar o painel pela rede|sem ligar a administração do painel/i);
+});

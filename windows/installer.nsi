@@ -110,6 +110,7 @@ Section "Instalar"
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Abrir painel.lnk" "$INSTDIR\open-panel.cmd" "" "$INSTDIR\node\node.exe"
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Bandeja.lnk" "wscript.exe" '"$INSTDIR\bandeja.vbs"'
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Obter URL do addon.lnk" "cmd.exe" '/c ""$INSTDIR\credenciais.cmd""'
+  CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Liberar addon na rede (firewall).lnk" "cmd.exe" '/k ""$INSTDIR\firewall-lan.cmd" liberar"'
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Painel pela rede.lnk" "cmd.exe" '/k ""$INSTDIR\painel-lan.cmd""'
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Configuração.lnk" "cmd.exe" '/k ""$INSTDIR\configurar.cmd""'
   CreateShortcut "$SMPROGRAMS\Amigos Share Stremio\Pasta de dados.lnk" "$R9\AscStremio\data"

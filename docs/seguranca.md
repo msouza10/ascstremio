@@ -32,7 +32,7 @@ Ainda assim, mantenha as publicações HTTP no loopback do host e não conecte a
 
 O serviço roda como `NT AUTHORITY\LocalService` (privilégio mínimo, sem senha guardada). A pasta `%ProgramData%\AscStremio` não herda o acesso amplo do ProgramData: só SYSTEM, administradores, `LocalService` e quem instalou leem passkey, sessão e cofre. Usuários comuns podem iniciar, parar e consultar **só** este serviço; não alteram a configuração dele nem leem os dados (o CI confere isso com uma conta sem privilégio). Qualquer usuário local interativo pode parar o serviço, o que não apaga nada, mas interrompe o seed. O limite conhecido: quem instala por outra conta de administrador no UAC não recebe a ACL de dados.
 
-O instalador **não** abre o firewall. A regra de entrada (`firewall-lan.cmd`) só é criada quando você liga o **Painel pela rede**: TCP, só o `node.exe` do pacote, só rede privada ou de domínio e só a sub-rede local; o painel (porta própria) entra apenas com a administração pela LAN ligada. O desinstalador remove as regras.
+O instalador **não** abre o firewall. As regras de entrada (`firewall-lan.cmd`) só existem se você pedir: **Liberar addon na rede (firewall)** cria uma regra só para o addon e a ponte (TV e celular, sem painel); **Painel pela rede** liga a administração e acrescenta a porta do painel. Ambas valem só para o `node.exe` do pacote, TCP, rede privada ou de domínio e sub-rede local. O desinstalador remove as regras.
 
 ## Credenciais de instalação do addon
 
