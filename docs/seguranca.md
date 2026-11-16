@@ -28,6 +28,12 @@ O addon e as URLs de vídeo exigem uma credencial de instalação revogável (ve
 Ainda assim, mantenha as publicações HTTP no loopback do host e não conecte a instância a redes com contêineres não confiáveis: o token protege a administração, não o restante da ponte. 
 **TV e celular só precisam do streaming.** Para assistir em outro aparelho basta alcançar o addon (`7000`) e a ponte (`7010`) com uma credencial própria; o painel (`7020`) e a administração não são necessários e devem continuar locais. Não publique o painel nem ative a administração pela LAN para "resolver" a TV. Em instalação nativa use `ASCSTREMIO_MODE=lan` com `LAN_ADVERTISE_HOST` e uma credencial por aparelho. No contêiner o Compose publica só no loopback do host: trocar `127.0.0.1` por outro IP nas linhas 7000/7010 expõe a ponte, que não tem usuário nem TLS, a toda a rede desse IP, e exige informar `ADDON_PUBLIC_URL` e `BRIDGE_PUBLIC_URL`. Esse caminho não é isolado pelo programa (o token administrativo protege só as rotas administrativas) e só vale em rede doméstica confiável; nunca altere a linha do painel.
 
+## Windows: serviço, dados e firewall
+
+O serviço roda como `NT AUTHORITY\LocalService` (privilégio mínimo, sem senha guardada). A pasta `%ProgramData%\AscStremio` não herda o acesso amplo do ProgramData: só SYSTEM, administradores, `LocalService` e quem instalou leem passkey, sessão e cofre. Usuários comuns podem iniciar, parar e consultar **só** este serviço; não alteram a configuração dele nem leem os dados (o CI confere isso com uma conta sem privilégio). Qualquer usuário local interativo pode parar o serviço, o que não apaga nada, mas interrompe o seed. O limite conhecido: quem instala por outra conta de administrador no UAC não recebe a ACL de dados.
+
+O instalador **não** abre o firewall. A regra de entrada (`firewall-lan.cmd`) só é criada quando você liga o **Painel pela rede**: TCP, só o `node.exe` do pacote, só rede privada ou de domínio e só a sub-rede local; o painel (porta própria) entra apenas com a administração pela LAN ligada. O desinstalador remove as regras.
+
 ## Credenciais de instalação do addon
 
 Cada instalação do addon no Stremio (por exemplo, o computador e a TV) usa uma credencial própria, com nome e revogação individual. O modo local não muda de natureza: no mesmo computador, uma credencial só.

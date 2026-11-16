@@ -36,6 +36,9 @@ O download do torrent usa a sessão do site e preserva os bytes recebidos, que p
 | `src/addon.js`, `src/asc-provider.js` | Catálogos, busca e fontes; resolução online sob demanda |
 | `src/asc-client.js` | Login, cookies, serialização de consultas, download e leitura da atividade/conta |
 | `src/library.js` | Leitura da biblioteca e seleção do vídeo principal |
+| `src/episodes.js` | Identidade de episódios a partir dos nomes dos arquivos de um torrent (episódio avulso, temporada, série completa) |
+| `src/file-state.js`, `src/piece-check.js` | Estado por arquivo (`completo`, `provável`, `em parte`, `não baixado`) e conferência por peças, sem o motor, contra o `.torrent` |
+| `src/file-actions.js`, `src/disk-policy.js` | Baixar e excluir por episódio ou temporada, e a política de disco que vale para todo novo download |
 | `src/bridge.js` | Motor BitTorrent, streaming Range, conclusão, retomada e liberação |
 | `src/seedvault.js`, `src/hnr-guard.js` | Persistência e conciliação das obrigações; tracker prevalece |
 | `src/config-server.js`, `src/ui/` | Painel, login, monitor e logs; frontend em JavaScript puro |
@@ -43,7 +46,7 @@ O download do torrent usa a sessão do site e preserva os bytes recebidos, que p
 | `src/passkey.js`, `src/safety.js` | Credenciais do announce, interfaces de escuta e salvaguardas de rede |
 | `src/logger.js`, `src/keepawake.js` | Logs redigidos e bloqueio de suspensão |
 
-Os servidores ficam disponíveis antes da retomada dos torrents, pois verificar arquivos grandes pode demorar. SIGINT/SIGTERM fecham os servidores e param a ponte; o launcher Windows tem uma estratégia diferente, descrita em [instalação](instalacao.md).
+Os servidores ficam disponíveis antes da retomada dos torrents, pois verificar arquivos grandes pode demorar. SIGINT/SIGTERM fecham os servidores e param a ponte; no Windows o programa roda como serviço e é parado pelo gerenciador de serviços (veja [Windows](#windows)).
 
 ## Ponte HTTP
 
@@ -75,7 +78,9 @@ Rotas relativas a `http://127.0.0.1:7020`. Todas exigem Host exato; as ações P
 | `POST /api/login` | Login com `username` e `password` (`onlyFreeleech`, se vier, é ignorado: o filtro é a configuração `ASC_ONLY_FREELEECH`) |
 | `POST /api/verify` | Confirma sessão existente |
 | `POST /api/logout` | Remove sessão local |
-| `POST /api/complete` | Conclusão com `infoHash`; exige sessão confirmada |
+| `POST /api/complete` | Conclusão com `infoHash`; com `file` ou `season` conclui só esse episódio ou temporada de um pack; exige sessão confirmada |
+| `POST /api/exclude` | Exclui um episódio (`file`) ou uma temporada (`season`) de um pack, com as garantias de seed; exige sessão confirmada |
+| `POST /api/verify-pieces` | Confere por peças, sem o motor, os episódios de um pack; exige sessão confirmada |
 | `GET /api/logs` | Consulta filtrada e paginada de logs |
 | `GET /api/logs/files` | Lista arquivos de log |
 | `GET /api/logs/download` | Exporta seleção; `formato=ndjson` seleciona NDJSON |
@@ -91,6 +96,15 @@ Todas as rotas ficam sob o prefixo da credencial: `/<credencial>/manifest.json`,
 O SDK Stremio fornece manifesto, catálogos, metadados e fontes. `/status/poster/<id>.svg` gera os cartões do monitor para identificadores existentes no estado atual. IDs IMDb de filmes e identificadores locais são convertidos pelos provedores; aceitar o formato de um episódio no parser não implica suporte online a séries.
 
 As fontes da ponte usam `behaviorHints.notWebReady` para o cliente escolher uma reprodução compatível. Não há conversão para magnet público, descoberta pública nem reprodução BitTorrent delegada ao motor do Stremio.
+
+## Windows
+
+No Windows o programa não é um processo oculto: é um **serviço do Windows** (`AscStremio`) hospedado pelo WinSW, mais uma bandeja por usuário.
+
+- **Serviço:** o WinSW (`AscStremioServico.exe`, versão e SHA-256 fixados em `windows/build.sh`) roda o `node.exe` do pacote com `--max-http-header-size=65536`, na conta `NT AUTHORITY\LocalService`, com início automático e reinício se cair (`windows/servico.xml`). Sobe no boot, sem ninguém logado, então o seed não depende de sessão.
+- **Dados:** `%ProgramData%\AscStremio\data`, com ACL só para SYSTEM, administradores, `LocalService` e quem instalou. O instalador pede administrador, instala em `%ProgramFiles%\AscStremio` e **move** a pasta do modelo antigo (`%LOCALAPPDATA%`), sem copiar. Usuários comuns recebem só o direito de iniciar e parar este serviço.
+- **Bandeja:** `bandeja.ps1` (PowerShell + `NotifyIcon`, sem binário novo) mostra online, iniciando ou parado pelo `/health` e pelo estado do serviço; `bandeja-estado.ps1` guarda a lógica de estado, que o CI exercita com `-SomenteEstado`. Fala só com `127.0.0.1` e nunca lê credencial.
+- **Painel pela rede e firewall:** `painel-lan.cmd` para o serviço, liga ou desliga a administração pela LAN (`admin-painel assistente`) e inicia de novo; `firewall-lan.cmd` cria a regra de entrada só para o `node.exe`, TCP, rede privada e sub-rede local.
 
 ## Persistência e fronteiras
 

@@ -9,13 +9,15 @@ Addon independente para usar sua conta do Amigos Share (ASC) no Stremio, com rep
 
 ## O que você encontra
 
-- Busca de filmes no ASC e fontes com informações de qualidade, áudio, tamanho e freeleech.
+- Busca de filmes e séries no ASC e fontes com informações de qualidade, áudio, tamanho e freeleech.
+- Séries: episódios avulsos, temporadas e packs, com o estado de cada episódio no painel, download e exclusão por episódio ou temporada e conferência por peças.
 - Reprodução sob demanda: listar fontes não baixa o `.torrent` nem entra no swarm.
 - Painel local para acompanhar conta, downloads, espaço em disco, seed e logs.
 - Retomada de torrents pendentes e conciliação com o tracker, que decide se o seed foi cumprido.
-- Instalação Linux, Docker/Podman e Windows; execução manual com Node.js 22 ou superior.
+- Instalação Linux, Docker/Podman e Windows (serviço do Windows que sobe com o computador, com ícone na bandeja); execução manual com Node.js 22 ou superior.
+- Painel que também abre em outros computadores da rede, com senha, quando você liga essa opção.
 
-A integração online cobre **filmes com um vídeo principal**. Coleções com vídeos de tamanhos parecidos e imagens de disco não são reproduzidas. Veja [compatibilidade e funcionamento das fontes](docs/uso.md).
+A integração online cobre **filmes com um vídeo principal** e **séries** (episódios avulsos, temporadas e packs). Coleções de filmes com vídeos de tamanhos parecidos e imagens de disco não são reproduzidas. Veja [compatibilidade e funcionamento das fontes](docs/uso.md).
 
 ## Comece aqui
 
