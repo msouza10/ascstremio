@@ -59,7 +59,7 @@ done
 find "$STAGE/app/node_modules" -type d \( -name 'linux-*' -o -name 'darwin-*' -o -name 'android-*' \) -path '*prebuilds*' -prune -exec rm -rf {} +
 [ "$(head -c2 "$STAGE/app/node_modules/node-datachannel/build/Release/node_datachannel.node")" = "MZ" ] \
   || { echo "node-datachannel não é binário do Windows" >&2; exit 1; }
-cp windows/bandeja.vbs windows/bandeja.ps1 windows/parar-bandeja.cmd windows/start.cmd windows/stop.cmd windows/open-panel.cmd windows/configurar.cmd windows/credenciais.cmd "$STAGE/"
+cp windows/bandeja.vbs windows/bandeja.ps1 windows/bandeja-estado.ps1 windows/parar-bandeja.cmd windows/start.cmd windows/stop.cmd windows/open-panel.cmd windows/configurar.cmd windows/credenciais.cmd "$STAGE/"
 node windows/prepare-scripts.js "$STAGE"
 cp README.md "$STAGE/LEIA-ME.md"
 cp README.md LICENSE AGENTS.md CHANGELOG.md release-please-config.json "$STAGE/"

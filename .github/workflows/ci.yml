@@ -265,6 +265,84 @@ jobs:
           if ((Get-Content $logServico -Raw -ErrorAction SilentlyContinue) -match [regex]::Escape($tok)) { throw 'token apareceu no log do serviço' }
           $code = (Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 10).StatusCode
           if ($code -ne 200) { throw "addon com credencial -> $code" }
+          # --- Robustez do serviço ---
+          # 1) As portas HTTP só escutam em 127.0.0.1 (invariante de segurança; o modo LAN não está ligado).
+          $escutas = @(Get-NetTCPConnection -State Listen -LocalPort 7000,7010,7020 -ErrorAction Stop)
+          if ($escutas.Count -lt 3) { throw "esperava as portas 7000, 7010 e 7020 escutando; achei $($escutas.Count)" }
+          $fora = @($escutas | Where-Object { $_.LocalAddress -ne '127.0.0.1' })
+          if ($fora.Count) { throw "porta HTTP fora do loopback: $(($fora | ForEach-Object { "$($_.LocalAddress):$($_.LocalPort)" }) -join ', ')" }
+          # 2) A recuperação automática está configurada no gerenciador de serviços (não só no XML).
+          $falha = (sc.exe qfailure AscStremio | Out-String)
+          if ($falha -notmatch 'RESTART') { throw "o serviço não tem reinício em caso de falha:`n$falha" }
+          # 3) O estado que a bandeja mostra, pelo mesmo código e no PowerShell 5.1 que ela usa.
+          function Estado-Bandeja { (powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dir 'bandeja.ps1') -SomenteEstado | Select-Object -First 1) }
+          if ((Estado-Bandeja) -ne 'online') { throw "bandeja deveria ver online, viu '$(Estado-Bandeja)'" }
+          # 4) Parada limpa: o serviço pára, não sobra processo nem porta, e a bandeja vê 'parado'.
+          Stop-Service AscStremio -Force
+          if ((Get-Service AscStremio).Status -ne 'Stopped') { throw 'o serviço não parou' }
+          if ((Estado-Bandeja) -ne 'parado') { throw "bandeja deveria ver parado, viu '$(Estado-Bandeja)'" }
+          $sobrou = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.ExecutablePath -like "$dir\node\*" })
+          if ($sobrou.Count) { throw 'sobrou node.exe do serviço depois de parar' }
+          if (Get-NetTCPConnection -State Listen -LocalPort 7000,7010,7020 -ErrorAction SilentlyContinue) { throw 'porta do serviço ainda aberta depois de parar' }
+          Start-Service AscStremio
+          if (-not (Esperar-Ponte)) { Get-Content $logServico -ErrorAction SilentlyContinue | Select-Object -Last 40; throw 'a ponte não voltou depois de parar e iniciar' }
+          if ((Estado-Bandeja) -ne 'online') { throw "bandeja deveria ver online de novo, viu '$(Estado-Bandeja)'" }
+          # 5) A credencial emitida sobrevive ao reinício.
+          if ((Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 10).StatusCode -ne 200) { throw 'a credencial não sobreviveu ao reinício' }
+          # 6) Atualizar por cima (mesmo instalador, serviço rodando): credencial e dados ficam, a bandeja é uma só.
+          $setup = Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'AscStremio-Setup-*.exe') | Select-Object -First 1
+          $inst2 = Start-Process $setup.FullName -ArgumentList '/S' -PassThru
+          if (-not $inst2.WaitForExit(300000)) { $inst2.Kill(); throw 'a atualização por cima excedeu 5 minutos' }
+          if ($inst2.ExitCode -ne 0) { throw "atualização por cima saiu com código $($inst2.ExitCode)" }
+          if ((Get-Service AscStremio).Status -ne 'Running') { Start-Sleep 5 }
+          if ((Get-Service AscStremio).Status -ne 'Running') { throw 'o serviço não está Running depois de atualizar por cima' }
+          if (-not (Esperar-Ponte)) { Get-Content $logServico -ErrorAction SilentlyContinue | Select-Object -Last 40; throw 'a ponte não voltou depois de atualizar por cima' }
+          if ((Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 10).StatusCode -ne 200) { throw 'a credencial se perdeu ao atualizar por cima' }
+          if (-not (Test-Path (Join-Path $env:ProgramData 'AscStremio\data\marcador-migracao.txt'))) { throw 'os dados se perderam ao atualizar por cima' }
+          Start-Sleep 8
+          $bandejas2 = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*bandeja.ps1*' })
+          if ($bandejas2.Count -ne 1) { throw "depois de atualizar deveria haver 1 bandeja, há $($bandejas2.Count)" }
+      - name: Usuário comum controla só o serviço e não lê os dados
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          # Conta local sem privilégio, criada só para este teste e removida no fim.
+          $senha = 'Tst-' + [guid]::NewGuid().ToString('N') + 'aA1!'
+          $seg = ConvertTo-SecureString $senha -AsPlainText -Force
+          $pasta = 'C:\ascteste'
+          New-Item -ItemType Directory -Force $pasta | Out-Null
+          try {
+            New-LocalUser -Name ascteste -Password $seg -PasswordNeverExpires -AccountNeverExpires | Out-Null
+            Add-LocalGroupMember -Group Users -Member ascteste
+            icacls $pasta /grant 'ascteste:(OI)(CI)M' | Out-Null
+            Set-Content -Path (Join-Path $pasta 'teste.ps1') -Value @'
+          $r = New-Object System.Collections.Generic.List[string]
+          sc.exe stop AscStremio | Out-Null;  $r.Add("parar=$LASTEXITCODE")
+          foreach ($i in 1..30) { if ((Get-Service AscStremio).Status -eq 'Stopped') { break }; Start-Sleep 1 }
+          $r.Add("parado=$((Get-Service AscStremio).Status)")
+          sc.exe start AscStremio | Out-Null; $r.Add("iniciar=$LASTEXITCODE")
+          # Não pode mexer na configuração do serviço nem ler os dados da conta.
+          sc.exe config AscStremio start= disabled | Out-Null; $r.Add("config=$LASTEXITCODE")
+          try { Get-Content (Join-Path $env:ProgramData 'AscStremio\data\admin-key') -ErrorAction Stop | Out-Null; $r.Add('ler_admin_key=PERMITIDO') } catch { $r.Add('ler_admin_key=NEGADO') }
+          try { Get-ChildItem (Join-Path $env:ProgramData 'AscStremio\data') -ErrorAction Stop | Out-Null; $r.Add('listar_dados=PERMITIDO') } catch { $r.Add('listar_dados=NEGADO') }
+          Set-Content -Path 'C:\ascteste\saida.txt' -Value $r
+          '@
+            $cred = [pscredential]::new("$env:COMPUTERNAME\ascteste", $seg)
+            Start-Process powershell.exe -Credential $cred -LoadUserProfile -WorkingDirectory $pasta -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $pasta 'teste.ps1')
+            if (-not (Test-Path (Join-Path $pasta 'saida.txt'))) { throw 'o usuário comum não conseguiu rodar o teste' }
+            $saida = Get-Content (Join-Path $pasta 'saida.txt')
+            $saida | ForEach-Object { Write-Host $_ }
+            foreach ($esperado in 'parar=0','parado=Stopped','iniciar=0','config=5','ler_admin_key=NEGADO','listar_dados=NEGADO') {
+              if ($saida -notcontains $esperado) { throw "esperava '$esperado' para o usuário comum" }
+            }
+          } finally {
+            Remove-LocalUser -Name ascteste -ErrorAction SilentlyContinue
+            Remove-Item -Recurse -Force $pasta -ErrorAction SilentlyContinue
+          }
+          # O serviço volta ao ar (ele foi parado e iniciado por esse usuário).
+          $ok = $false
+          foreach ($i in 1..90) { try { if ((Invoke-WebRequest -UseBasicParsing http://127.0.0.1:7010/health -TimeoutSec 2).StatusCode -eq 200) { $ok = $true; break } } catch { Start-Sleep 1 } }
+          if (-not $ok) { throw 'a ponte não voltou depois do teste do usuário comum' }
       - name: Para e desinstala
         shell: pwsh
         run: |

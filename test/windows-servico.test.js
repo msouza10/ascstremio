@@ -42,7 +42,7 @@ test('build do instalador embute o WinSW com versão e SHA-256 fixados', () => {
 });
 
 test('bandeja do Windows: instância única, estados, menu em português e só fala com 127.0.0.1', () => {
-  const ps = ler('windows', 'bandeja.ps1');
+  const ps = ler('windows', 'bandeja.ps1') + '\n' + ler('windows', 'bandeja-estado.ps1');
   // Só o código conta nas checagens de segredo: o cabeçalho explica o que a bandeja NÃO faz.
   const codigo = ps.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
   assert.match(ps, /Mutex/, 'uma só bandeja por usuário');
@@ -119,4 +119,55 @@ test('instalador do Windows: serviço, administrador, ACL dos dados e migração
   // O registro de desinstalação agora é da máquina (HKLM); do HKCU só se remove a chave do modelo antigo.
   assert.doesNotMatch(nsi, /WriteReg\w+ HKCU/);
   assert.match(nsi, /DeleteRegKey HKCU/);
+});
+
+test('bandeja do Windows: a lógica de estado é separada e o modo -SomenteEstado dispensa a interface', () => {
+  const ui = ler('windows', 'bandeja.ps1');
+  const estado = ler('windows', 'bandeja-estado.ps1');
+  assert.match(ui, /^\s*param\(\s*\[switch\]\$SomenteEstado\s*\)/m);
+  assert.match(ui, /bandeja-estado\.ps1/);
+  // O modo de teste imprime o estado e sai antes de criar mutex, ícone ou qualquer janela.
+  const iSomente = ui.indexOf('if ($SomenteEstado)');
+  assert.ok(iSomente > 0, 'falta o desvio do modo -SomenteEstado');
+  for (const marca of ['Add-Type', 'Mutex', 'NotifyIcon']) {
+    assert.ok(ui.indexOf(marca) > iSomente, `${marca} deve vir depois do desvio de -SomenteEstado`);
+  }
+  for (const funcao of ['Obter-Porta', 'Saude-Ok', 'Obter-Estado']) {
+    assert.match(estado, new RegExp(`function ${funcao}\\b`), funcao);
+    assert.doesNotMatch(ui, new RegExp(`function ${funcao}\\b`), `${funcao} só existe no módulo de estado`);
+  }
+  assert.match(ler('windows', 'build.sh'), /windows\/bandeja-estado\.ps1/);
+});
+
+// O makensis não roda no desenvolvimento local: um rótulo mal escrito só apareceria no CI.
+test('instalador do Windows: todo salto (Goto, IfFileExists, IfErrors, StrCmp) aponta para um rótulo que existe', () => {
+  const linhas = ler('windows', 'installer.nsi').split('\n').map((l) => l.replace(/;.*$/, '').trim());
+  const rotulos = new Set(linhas.map((l) => /^([A-Za-z_]\w*):$/.exec(l)?.[1]).filter(Boolean));
+  const destino = (t) => t !== undefined && !/^(0|[+-]\d+)$/.test(t) && !t.startsWith('$') && !t.startsWith('"');
+  const saltos = [];
+  for (const l of linhas) {
+    let m;
+    if ((m = /^Goto\s+(\S+)/.exec(l))) saltos.push(m[1]);
+    else if ((m = /^IfFileExists\s+(?:"[^"]*"|\S+)\s+(\S+)\s+(\S+)/.exec(l))) saltos.push(m[1], m[2]);
+    else if ((m = /^IfErrors\s+(\S+)\s+(\S+)/.exec(l))) saltos.push(m[1], m[2]);
+    else if ((m = /^StrCmp\s+\S+\s+\S+\s+(\S+)(?:\s+(\S+))?/.exec(l))) saltos.push(m[1], m[2]);
+  }
+  const alvos = saltos.filter(destino);
+  assert.ok(alvos.length >= 8, 'o teste deveria enxergar os saltos do instalador');
+  for (const a of alvos) assert.ok(rotulos.has(a), `salto para rótulo inexistente: ${a}`);
+  // Rótulo repetido faz o makensis falhar.
+  const todos = linhas.map((l) => /^([A-Za-z_]\w*):$/.exec(l)?.[1]).filter(Boolean);
+  assert.equal(new Set(todos).size, todos.length, 'rótulo duplicado');
+});
+
+test('configuração do serviço: XML bem formado com uma só raiz e sem tags soltas', () => {
+  const xml = ler('windows', 'servico.xml').replace(/<!--[\s\S]*?-->/g, '');
+  const pilha = [];
+  for (const [, fecha, nome, autofecha] of xml.matchAll(/<(\/?)([A-Za-z][\w-]*)[^>]*?(\/?)>/g)) {
+    if (autofecha) continue;
+    if (!fecha) pilha.push(nome);
+    else assert.equal(pilha.pop(), nome, `tag </${nome}> fora de ordem`);
+  }
+  assert.deepEqual(pilha, [], 'tags sem fechar');
+  assert.equal((xml.match(/<service>/g) ?? []).length, 1);
 });

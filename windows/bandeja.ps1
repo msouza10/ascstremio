@@ -1,11 +1,19 @@
 # Bandeja do Amigos Share · Stremio: mostra se o serviço do Windows está no ar e dá o menu para
 # abrir o painel, iniciar, reiniciar e parar. Roda por usuário (iniciada no login), oculta e só
 # fala com 127.0.0.1. Não lê credencial, passkey nem token, e não baixa nem executa nada de fora.
+param([switch]$SomenteEstado)
 $ErrorActionPreference = 'Stop'
 $aqui = Split-Path -Parent $MyInvocation.MyCommand.Path
 $servico = 'AscStremio'
 $dados = Join-Path $env:ProgramData 'AscStremio\data'
 $env:DATA_DIR = $dados
+
+. (Join-Path $aqui 'bandeja-estado.ps1')
+$portaPonte = Obter-Porta 'ponte'
+$portaPainel = Obter-Porta 'painel'
+
+# Modo de teste (CI): imprime online, iniciando, parado ou ausente e sai, sem criar ícone nem janela.
+if ($SomenteEstado) { Write-Output (Obter-Estado); exit 0 }
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -14,44 +22,6 @@ Add-Type -AssemblyName System.Drawing
 $criou = $false
 $mutex = New-Object System.Threading.Mutex($true, 'Local\AscStremioBandeja', [ref]$criou)
 if (-not $criou) { exit 0 }
-
-# Porta efetiva (ambiente > settings.json > padrão), pela mesma CLI que os atalhos usam.
-function Obter-Porta([string]$qual) {
-    $padrao = if ($qual -eq 'painel') { 7020 } else { 7010 }
-    try {
-        Push-Location (Join-Path $aqui 'app')
-        $argumentos = @('src\credenciais-cli.js', 'porta')
-        if ($qual -eq 'painel') { $argumentos += 'painel' }
-        $saida = & (Join-Path $aqui 'node\node.exe') @argumentos 2>$null
-        Pop-Location
-        $n = 0
-        if ([int]::TryParse([string]($saida | Select-Object -First 1), [ref]$n) -and $n -gt 0 -and $n -lt 65536) { return $n }
-    } catch { try { Pop-Location } catch { } }
-    return $padrao
-}
-
-$portaPonte = Obter-Porta 'ponte'
-$portaPainel = Obter-Porta 'painel'
-
-function Saude-Ok {
-    try {
-        $req = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$portaPonte/health")
-        $req.Timeout = 1500
-        $req.ReadWriteTimeout = 1500
-        $resp = $req.GetResponse()
-        $ok = ([int]$resp.StatusCode -eq 200)
-        $resp.Close()
-        return $ok
-    } catch { return $false }
-}
-
-function Obter-Estado {
-    $s = Get-Service -Name $servico -ErrorAction SilentlyContinue
-    if (-not $s) { return 'ausente' }
-    if ($s.Status -eq 'Running') { if (Saude-Ok) { return 'online' } else { return 'iniciando' } }
-    if ($s.Status -eq 'StartPending' -or $s.Status -eq 'ContinuePending') { return 'iniciando' }
-    return 'parado'
-}
 
 # Ícones desenhados em código (círculo colorido): sem arquivo binário no pacote.
 function Novo-Icone([System.Drawing.Color]$cor) {
