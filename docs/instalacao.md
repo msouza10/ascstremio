@@ -197,6 +197,14 @@ O Menu Iniciar recebe atalhos para abrir o painel, abrir a bandeja, abrir a past
 
 O instalador não é assinado; o SmartScreen pode mostrar um aviso. A porta de peers pode provocar uma solicitação do firewall. Os serviços HTTP permanecem em loopback. Parar o serviço encerra o processo à força; o cofre é salvo a cada minuto. A CI possui teste de instalação silenciosa e inicialização em Windows; isso não comprova compatibilidade de reprodução com todos os players e codecs.
 
+### Windows em rede (TV, celular e o painel pela rede)
+
+**Só assistir em outro aparelho (TV, celular):** escolha o modo LAN em `configurar.cmd` e emita uma credencial por aparelho (**Obter URL do addon**). O firewall do Windows bloqueia a entrada por padrão e, para um serviço, em geral não aparece o aviso de liberação que um programa aberto por você mostraria. Rode **Liberar addon na rede (firewall)** no Menu Iniciar (pede administrador): ela cria uma regra só para o addon e a ponte, TCP, rede privada e sub-rede local. Não é preciso ligar o painel pela rede, e o painel continua só no computador do servidor.
+
+**Abrir o painel em outro computador da rede:** é uma escolha à parte, com senha. Use **Painel pela rede** (Menu Iniciar ou bandeja), que liga a administração, mostra a senha uma única vez e libera também a porta do painel. Isso passa a exigir a senha até no acesso local e é HTTP sem criptografia: só em rede doméstica confiável. Detalhes e riscos em [configuração](configuracao.md#administração-do-painel-pela-lan).
+
+Em ambos os casos, se a rede estiver como *Pública* no Windows, mude para *Privada* nas configurações de rede.
+
 ## Pelo código: Linux e macOS
 
 Na pasta do repositório, com Node.js 22+ e npm:

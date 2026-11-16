@@ -6,7 +6,7 @@ Com a instalação concluída, faça login no painel **http://127.0.0.1:7020/** 
 
 O login salva só os cookies da sessão e a data do login, sem persistir a senha do formulário. Se a sessão expirar, conecte novamente. Desafios do site e autenticação adicional podem exigir ação no navegador; o programa não tenta contorná-los. Sair pelo painel remove a sessão local, mas não encerra outras sessões no site nem torrents ativos.
 
-Em Descobrir → Filmes, **ASC — filmes** permite buscar no tracker. Abrir filmes de catálogos com ID IMDb também consulta fontes ASC. A busca considera até 96 releases por consulta e oferece até doze fontes em buscas IMDb. Não há paginação online nem seleção de episódios de packs.
+Em Descobrir → Filmes, **ASC — filmes** permite buscar no tracker. Abrir filmes ou episódios de catálogos com ID IMDb também consulta fontes ASC. A busca considera até 96 releases por consulta e oferece até doze fontes em buscas IMDb. Não há paginação online. Para séries, veja [Séries](#séries).
 
 O filtro **somente freeleech** é a opção `ASC_ONLY_FREELEECH` (regra 2.7), ligada por padrão, e não faz mais parte do login. Para mudar, abra **Configurações** (menu do painel, grupo "Conta e catálogo"; também no assistente e em `npm run configurar`): vale na hora, sem novo login nem reinício, e o catálogo e as fontes passam a refletir a troca. O filtro é conferido também no momento do play, inclusive para URLs antigas. Um release sem confirmação de freeleech não é baixado com o filtro ligado.
 
@@ -25,6 +25,40 @@ As bandeiras derivam dos selos do ASC e do idioma original obtido na página de 
 
 Releases com seeders e sem imagem de disco aparecem primeiro; maior número de seeders tem preferência e freeleech desempata. ISO e fontes sem seeders continuam visíveis no fim.
 
+## Séries
+
+Abra um episódio no Stremio (Descobrir → Séries). As fontes vêm dos releases do ASC e se dividem em três tipos, que o nome da fonte deixa claro:
+
+| Tipo | Como aparece | O que baixa ao tocar |
+|---|---|---|
+| Episódio avulso | 📺 Episódio avulso | só aquele arquivo |
+| Temporada completa | 📦 Temporada N completa | só o episódio escolhido (mais a borda de peça vizinha) |
+| Série completa ou pacote de episódios | 📚 Série completa, 📦 Pacote de episódios | só o episódio escolhido |
+
+Em packs a descrição separa o tamanho do pacote inteiro do tamanho do episódio (`💾 Pacote: 20 GB`, `▶ Este episódio: 2 GB`), porque o custo de ratio e de seed é do pacote. `ℹ A confirmar ao tocar` indica um release que ainda não foi lido por completo; a confirmação acontece no play. O play baixa só o episódio escolhido. Com a conclusão automática ligada (`BACKGROUND_COMPLETE=auto`, o padrão), o resto do pack entra na fila em segundo plano quando esse episódio termina de baixar ([seed](seed.md#assistir-só-um-trecho)); com `off`, só quando você pede. O próximo episódio da mesma temporada é encadeado pelo Stremio.
+
+### Estado por episódio e ações no painel
+
+Na página do pack (`/filmes/<infoHash>`) a lista **Episódios** mostra o que há em disco, arquivo por arquivo:
+
+| Estado | Significado |
+|---|---|
+| completo | todas as peças do episódio foram verificadas (pelo motor aberto ou pela conferência por peças) |
+| provável (não verificado) | o arquivo parece cheio em disco, mas nada provou isso; **nunca** conta como completo |
+| em parte | há dados, mas faltam peças |
+| não baixado | nada em disco |
+
+Ações, por episódio e por temporada:
+
+- **Baixar** (episódio ou temporada) baixa só o escolhido, em segundo plano, **sem** concluir o pack nem abrir a obrigação de seed; o resto não é baixado sozinho enquanto você mantiver essa escolha.
+- **Baixar o que falta** devolve ao pack o que você excluiu e conclui o download em segundo plano. Isso abre a obrigação de seed (72 h ou ratio 1.0), como qualquer conclusão.
+- **Excluir** (episódio ou temporada) apaga só esses arquivos, nunca o pack inteiro. A regra está em [seed](seed.md#séries-e-packs-baixar-e-excluir-por-episódio).
+- **Verificar peças** confere, sem o motor e lendo o disco, os episódios que só estão como *provável*. Os que passam viram *completo* até o arquivo mudar; depois de reiniciar a conferência é refeita. Packs muito grandes podem levar minutos, e um erro de "arquivos abertos demais" (503) significa que o sistema limitou os descritores: tente de novo.
+
+### Séries sem o ASC (offline)
+
+Se você já tocou um episódio de um pack **para aquela série**, o addon grava esse vínculo no cofre. Com o ASC indisponível, os episódios desse pack que estão **completos e conferidos por peças** aparecem como `📁 Local` com `SxxExx`, e tocam direto pela ponte. Episódios só *prováveis*, excluídos ou de packs nunca tocados para a série não são oferecidos. Packs tocados antes da 0.5.0 só ganham o vínculo ao serem tocados de novo. Vale só para packs; episódios avulsos seguem a regra de filmes.
+
 ## O que acontece ao reproduzir
 
 Listar fontes consulta metadados, mas não baixa o `.torrent` nem anuncia no swarm. O primeiro `GET` da reprodução baixa o torrent e abre a ponte. Sondagens `HEAD` não baixam nem anunciam. O início pode demorar enquanto o arquivo é obtido, verificado e os peers respondem.
@@ -35,7 +69,7 @@ A ponte serve vídeo por HTTP com suporte a `Range`, usando o motor BitTorrent l
 |---|---|
 | Filme com um vídeo principal | Reproduz o arquivo selecionado |
 | Filme e extras pequenos | Aceito se o vídeo principal representar pelo menos 70% da soma dos vídeos e for pelo menos quatro vezes o segundo vídeo |
-| Coleção, trilogia ou partes de tamanhos parecidos | Recusado no play com 422 |
+| Coleção de filmes, trilogia ou partes de tamanhos parecidos | Recusado no play com 422 (em séries, packs com vários episódios são o caso normal) |
 | `.iso`, BDMV e imagens de disco | Não há vídeo reproduzível pela ponte; o formato pode ser recusado antes ou durante o play |
 | Sem seeders | O play online é recusado com 503 antes do download; dados locais completos ainda podem tocar |
 | Não freeleech com filtro ativo | Recusado com 409 |
@@ -53,7 +87,7 @@ Os caminhos abaixo são relativos a `http://127.0.0.1:7020`. São páginas locai
 | `/avisos-legais` | Aviso integral em texto, com versão, disponível offline e antes do login; também há links no cabeçalho e no assistente |
 | `/` | Avisos, indicadores, obrigações, downloads, tráfego e conta |
 | `/filmes` | Biblioteca por situação, busca e andamento |
-| `/filmes/<infoHash>` | Seed, prazo, dados do tracker e ação de concluir download |
+| `/filmes/<infoHash>` | Seed, prazo, dados do tracker e ação de concluir download; em packs, os episódios por arquivo com baixar, excluir e verificar peças |
 | `/trafego` | Download/upload e composição do disco; gráfico com tabela equivalente |
 | `/logs` | Logs ao vivo, filtros, arquivos e exportação |
 | `/conta` | Sessão, conta ASC, serviço e resumo das regras |
@@ -72,6 +106,8 @@ A página **Configurações** usa a mesma validação da partida e do terminal: 
 **Concluir download em segundo plano** pede confirmação e baixa o restante do torrent. Isso consome disco/rede e, ao completar, abre a obrigação de seed. Consulte [seed](seed.md) antes de confirmar.
 
 ### Administração pela LAN (opcional)
+
+Para abrir o painel de outro computador da rede, ligue-o em um passo: no Windows, **Painel pela rede** (Menu Iniciar ou bandeja); nos demais, `npm run admin-painel -- assistente`. O passo a passo, os riscos e o firewall estão em [configuração](configuracao.md#administração-do-painel-pela-lan).
 
 Por padrão o painel abre só em `http://127.0.0.1:7020/`. Se você habilitou a [administração pela LAN](configuracao.md#administração-do-painel-pela-lan), abra o endereço configurado de outro aparelho (por exemplo `http://192.168.1.20:7020/`): aparece primeiro a tela **Entrar como administrador**, com a senha de administração definida no terminal (não é a do ASC). Depois disso o login do ASC e o painel funcionam como de costume. Enquanto a opção estiver ativa a senha também é pedida em `127.0.0.1`. O botão **Sair da administração** encerra a sessão; ela expira sozinha por inatividade. Perdeu a senha: no terminal do host, `npm run admin-painel -- definir --trocar` (ou `remover`).
 
@@ -97,7 +133,7 @@ Se o site estiver fora do ar, a rede cair ou a sessão expirar, a busca por IMDb
 
 A biblioteca local lê `.torrent` em `DATA_DIR/torrents`; sua presença não significa que o vídeo esteja baixado ou que seja freeleech. Não compartilhe esses arquivos ou importe credenciais alheias.
 
-`DEMO_MODE=true npm start` adiciona uma fonte externa para **Big Buck Bunny (2008)**. Ela depende de um servidor público e não valida login, tracker privado, seed ou reprodução pela ponte. A integração online continua voltada a filmes, mesmo que o parser aceite identificadores de episódios.
+`DEMO_MODE=true npm start` adiciona uma fonte externa para **Big Buck Bunny (2008)**. Ela depende de um servidor público e não valida login, tracker privado, seed ou reprodução pela ponte. A fonte de demonstração é só de filme; séries usam os releases reais do ASC.
 
 Para consultar ou mudar portas, modo local/LAN e políticas sem o painel, use a [configuração pelo terminal](configuracao.md#configuração-pelo-terminal).
 

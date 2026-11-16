@@ -12,7 +12,7 @@ Antes de atualizar ou mover uma instalação, identifique o `DATA_DIR` e verifiq
 | Compose com imagem GHCR | `docker compose pull` e `docker compose up -d`; preserve o volume. Se fixou uma tag, altere-a para a versão desejada |
 | Compose com build local | `docker compose up -d --build`; preserve o volume |
 | `scripts/docker.sh` | Pare com `scripts/docker.sh stop`, execute `scripts/docker.sh build` e depois `scripts/docker.sh run`; preserve o volume |
-| Windows | Pare pelo atalho e execute o instalador da versão desejada; os dados ficam fora da pasta do programa |
+| Windows | Execute o instalador da versão desejada por cima (pede administrador). Ele para a bandeja e o serviço, troca os arquivos, instala o serviço de novo e inicia; credenciais e dados em `%ProgramData%\AscStremio` são preservados |
 
 **Faça o [backup](#backup-e-restauração) dos dados antes de atualizar.** Quem vem de uma versão anterior à 0.2.0 precisa emitir uma credencial (`credenciais garantir`) e reinstalar o addon no Stremio com a URL nova: a chave única antiga (`bridge-key`) deixou de valer. Os dados e o seed não são afetados. Depois de atualizar, confirme a versão e o estado do serviço no painel e nos logs.
 
@@ -72,6 +72,14 @@ A ponte **só observa** a reprodução; ela não altera leitura antecipada, buff
 
 Só há números: nenhum infoHash, caminho, nome de arquivo, IP, credencial ou passkey vai ao snapshot nem ao log. Os contadores valem desde a partida do processo, não são persistidos e reiniciam junto com ele. O benchmark offline e o critério para propor ajustes estão em [desenvolvimento](desenvolvimento.md#medir-a-reprodução-benchmark-offline).
 
+## Serviço do Windows
+
+- **Estado:** o ícone da bandeja (verde, amarelo, vermelho) ou `sc query AscStremio`; o serviço também aparece em `services.msc` como *Amigos Share · Stremio*, em início automático.
+- **Reiniciar, parar, iniciar:** menu da bandeja, ou `sc stop AscStremio` e `sc start AscStremio`. Não pedem administrador. Se o processo cair, o serviço volta sozinho (10, 30 e 60 segundos).
+- **Logs:** `%ProgramData%\AscStremio\data\AscStremioServico.out.log` (saída), `.err.log` (erros) e `.wrapper.log` (o hospedeiro do serviço); o log do próprio programa fica em `logs\` na mesma pasta.
+- **Firewall:** só há regra de entrada se você ligou o **Painel pela rede** (`firewall-lan.cmd`); ela vale para rede privada. Se a rede estiver como *Pública*, mude para *Privada*.
+- **Não sobe depois de atualizar:** veja o `.wrapper.log`; reinstalar por cima do mesmo instalador é seguro.
+
 ## Logs
 
 Abra **http://127.0.0.1:7020/logs** mesmo quando o login no ASC estiver falhando. É possível filtrar por nível, fonte, período e texto, acompanhar novas entradas e exportar texto/NDJSON ou arquivos diários.
@@ -98,7 +106,7 @@ A redação automática não remove necessariamente dados pessoais, títulos ou 
 | Sem fontes ASC | Sessão confirmada, filme compatível, filtro freeleech e disponibilidade da busca; consulte os logs |
 | Catálogo de status não aparece | `STATUS_CATALOG`, credencial emitida sem `--status` e manifesto guardado pelo Stremio; remova e reinstale o addon |
 | Addon ou vídeo dão 403 depois de atualizar | A chave única antiga `bridge-key` não vale mais; emita uma credencial (`credenciais garantir`) e reinstale o addon com a URL nova |
-| `UND_ERR_HEADERS_OVERFLOW` | Execute por `npm start` ou com a opção de cabeçalhos prevista no launcher; não use `node src/index.js` isoladamente |
+| `UND_ERR_HEADERS_OVERFLOW` | Execute por `npm start` ou com a opção de cabeçalhos (no Windows, o `servico.xml` já a passa); não use `node src/index.js` isoladamente |
 | Torrent sem peers | Passkey carregada, peers disponíveis, rede e acesso ao tracker; login no site não substitui passkey |
 | Play retorna 409 | Filtro freeleech ou política de seed, conforme a rota e a mensagem |
 | Play retorna 422 | Release sem vídeo principal elegível ou imagem de disco |

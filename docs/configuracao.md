@@ -27,7 +27,7 @@ Regras que valem para qualquer origem:
 - Serviço Linux: edite `DATA_DIR/service.env`, uma variável por linha, e reinicie `ascstremio.service`.
 - Compose: use `environment` no serviço; recrie o contêiner para aplicar mudanças. Um `.env` do Compose só interpola o YAML quando referenciado.
 - `scripts/docker.sh run` repassa diretamente apenas `AFTER_SEED` e `LOG_LEVEL`, além dos padrões da imagem; outras opções exigem ajustar a invocação ou usar Compose.
-- Windows: não há carregamento de `service.env` pelo launcher; configure o ambiente herdado pelo processo e reinicie-o.
+- Windows: o serviço não lê `service.env`. Use `configurar.cmd` (grava `settings.json` em `%ProgramData%\AscStremio\data`) ou variáveis de ambiente da máquina, e reinicie o serviço pela bandeja.
 
 ## Configuração pelo painel
 

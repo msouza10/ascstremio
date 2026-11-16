@@ -48,6 +48,17 @@ Por padrão, a conclusão automática está ligada (`BACKGROUND_COMPLETE=auto`):
 
 O custo no ratio é seu: em release que não é freeleech, baixar o torrent inteiro conta no download da conta (regra 2.7), e o addon apenas registra o aviso no log. `BACKGROUND_COMPLETE=off` volta a só concluir quando você pede. Completar abre a obrigação de seed (72 h ou ratio 1.0); não é uma opção para evitar a conclusão.
 
+## Séries e packs: baixar e excluir por episódio
+
+Um pack é um torrent com vários episódios. As regras abaixo valem para as ações da lista **Episódios** na página do pack ([uso](uso.md#séries)).
+
+- **Assistir parte não cria obrigação.** O tracker registra o torrent como `downloading` e a meta de 72 h só conta depois que o torrent inteiro está concluído e no motor. O relógio de seed (`Bridge.seedTick`) só avança com o torrent inteiro no motor.
+- **Baixar um episódio ou uma temporada** (conclusão parcial) baixa só os arquivos escolhidos. Não abre nem quita a obrigação de seed do pack, e o pack fica fora da conclusão automática: o resto não é baixado sozinho. Enquanto o download parcial estiver pendente, o computador não suspende (`KEEP_AWAKE`). **Limite atual:** essa escolha não é gravada; se o aplicativo reiniciar, a conclusão automática do pack inteiro (`BACKGROUND_COMPLETE=auto`) volta a valer.
+- **Baixar o que falta** (ou **Concluir download em segundo plano**) pede o pack inteiro. Aí sim abre a obrigação de 72 h ou ratio 1.0, como em qualquer conclusão.
+- **Excluir um episódio ou uma temporada** nunca encerra o seed nem apaga arquivo antes de o **tracker** confirmar. Se o pack nunca foi concluído, não há obrigação e a exclusão é liberada. Se foi concluído, só é permitido depois de o tracker confirmar o cumprimento, lendo de novo no momento, e é recusado com hit-and-run registrado ou sem resposta do tracker. Arquivos compartilhados com outro torrent e caminhos inseguros são recusados. A escolha fica no cofre: a conclusão não baixa de novo o que você excluiu, e **Baixar o que falta** desfaz.
+- **Verificar peças** só lê o disco e confere o SHA-1 contra o `.torrent`; não anuncia nada nem mexe no seed.
+- **Em aberto:** o que o tracker faz com um parcial quando os 12 dias vencem não está confirmado com a staff ([#109](https://github.com/msouza10/ascstremio/issues/109)). O projeto trata parcial como sem obrigação, conforme a regra 13.1 ("depois de concluir").
+
 ## O que acontece depois do cumprimento
 
 | `AFTER_SEED` | Seed | Arquivos |
@@ -59,7 +70,7 @@ O custo no ratio é seu: em release que não é freeleech, baixar o torrent inte
 
 Para decidir por conteúdo, escolha `AFTER_SEED=manual` em **Configurações** e reinicie o aplicativo quando indicado. Ao confirmar o cumprimento, o painel mostra **Continuar semeando**, **Parar seed e manter arquivos** e **Excluir arquivos e parar seed** na página do filme. A confirmação do botão deixa explícito se os arquivos serão apagados. A aplicação consulta o tracker novamente antes de agir; falhas, obrigação pendente, reprodução ou sessão recente bloqueiam a ação. A decisão é persistida: o modo manual retoma o seed após reiniciar, exceto se você já decidiu parar ou excluir. Você também pode excluir depois os arquivos de um seed que já parou. Se a exclusão falhar parcialmente (por exemplo, arquivo em uso), a parada fica salva e os dados já excluídos não são baixados de novo automaticamente; você pode tentar remover o restante depois. Escolher continuar protege esse conteúdo da liberação automática de `AFTER_SEED`; a retenção por orçamento continua sendo uma operação separada, manual e confirmada.
 
-Excluir afeta os arquivos listados pelo torrent inteiro, não apenas o vídeo em reprodução; não há exclusão por episódio. Arquivos compartilhados com outro torrent ou caminhos inseguros são recusados; cofre, credenciais e `.torrent` são preservados.
+Em **filmes**, excluir afeta os arquivos listados pelo torrent inteiro, não apenas o vídeo em reprodução. Em **packs de série** é possível excluir só um episódio ou uma temporada, com as regras da seção seguinte. Arquivos compartilhados com outro torrent ou caminhos inseguros são recusados; cofre, credenciais e `.torrent` são preservados.
 
 Reabrir um filme cujos dados foram apagados baixa novamente e pode criar nova obrigação. O aplicativo tenta avisar nas fontes. Não apague manualmente cache, cofre ou torrents pendentes para liberar espaço: isso remove meios de cumprir o seed, sem cancelar a cobrança no ASC.
 
@@ -79,4 +90,4 @@ No sucesso, a escolha vira **Manter semeando** e vale após reiniciar. Tocar o f
 
 `KEEP_AWAKE=auto` tenta impedir suspensão enquanto há seed pendente ou download. Usa `systemd-inhibit` no Linux, `caffeinate` no macOS e PowerShell no Windows. O bloqueio depende do sistema e termina com o processo; ele não impede desligamento, queda de energia ou interrupção da rede.
 
-No contêiner, cuide da energia do hospedeiro. No Windows, o comando de parar encerra o processo à força, e a contagem local pode perder o intervalo desde o último salvamento. O prazo do tracker continua correndo com o programa parado.
+No contêiner, cuide da energia do hospedeiro. No Windows, parar o serviço encerra o processo à força, e a contagem local pode perder o intervalo desde o último salvamento. Como o serviço sobe com o computador, o seed volta sozinho depois de um reinício, sem ninguém logado. O prazo do tracker continua correndo com o programa parado.

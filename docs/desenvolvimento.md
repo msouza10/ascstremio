@@ -59,13 +59,13 @@ scripts/smoke-install.sh dist
 
 O endereço acima é apenas exemplo: substitua pelo destino real para distribuir. O script gera tarball versionado, cópia `latest`, hashes e instalador remoto. `--windows` também chama o build do instalador, e `--docker` constrói/exporta a imagem. Essas opções podem baixar dependências e precisam das ferramentas correspondentes.
 
-O Windows usa NSIS (`makensis`), Node oficial com hash conferido e dependências nativas win32-x64. `windows/build.sh --stage-only` prepara a árvore sem compilar o instalador. Não use `--ignore-scripts` na instalação de dependências dessa distribuição.
+O Windows usa NSIS (`makensis`), Node oficial com hash conferido, o WinSW (versão e SHA-256 fixados em `windows/build.sh`; para atualizar, mude `WINSW_VERSION` e `WINSW_SHA256` e rode o build) e dependências nativas win32-x64. `windows/build.sh --stage-only` prepara a árvore sem compilar o instalador. Não use `--ignore-scripts` na instalação de dependências dessa distribuição.
 
 A imagem é validada com `scripts/smoke-container.sh <imagem>`. Os testes de fumaça Linux/contêiner usam portas 17000–17020 para evitar a instalação principal. Não execute fumaça em uma pasta de dados real.
 
 ## CI e release
 
-A CI testa Ubuntu e Windows com Node 22 e 24, scripts/workflows, segredos, auditoria, pacote Linux, imagem e instalador Windows. O teste Windows instala em silêncio, inicia e consulta os servidores. Esses testes não usam o tracker real nem validam codecs do player.
+A CI testa Ubuntu e Windows com Node 22 e 24, scripts/workflows, segredos, auditoria, pacote Linux, imagem e instalador Windows. O teste Windows instala em silêncio como administrador e confere a migração dos dados, o serviço (automático, `LocalService`, ACL), a bandeja, o reinício, a recuperação de queda, as portas só em `127.0.0.1`, a parada limpa, a atualização por cima, um usuário comum (controla o serviço, não lê os dados), o firewall e o painel pela rede, e a desinstalação. Esses testes não usam o tracker real nem validam codecs do player.
 
 Os títulos seguem o [padrão de commits](../.github/COMMIT_CONVENTION.md) em português. `feat` sobe a versão menor em 0.x; `fix`, `perf` e `security` sobem a correção. Consulte AGENTS para os demais tipos e quebras de compatibilidade.
 
