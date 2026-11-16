@@ -1,5 +1,6 @@
 LEGAL.md
 docs/README.md
+docs/terceiros.md
 docs/conformidade-juridica.md
 docs/permissoes-e-contato.md
 docs/dados-privacidade.md

@@ -37,6 +37,7 @@ while IFS= read -r doc; do
   mkdir -p "dist/stage/$NAME/$(dirname "$doc")"
   cp "$doc" "dist/stage/$NAME/$doc"
 done < scripts/documentation-files.txt
+node scripts/license-inventory.js . "dist/stage/$NAME/THIRD-PARTY-INVENTORY.json"
 cp -R test dist/stage/"$NAME"/
 find dist/stage -name '__pycache__' -prune -exec rm -rf {} +
 

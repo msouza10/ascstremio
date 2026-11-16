@@ -20,3 +20,5 @@ Se esta é sua primeira instalação, siga **[instalação](instalacao.md)** e d
 | Desenvolver, validar documentação e gerar uma distribuição | [Desenvolvimento e releases](desenvolvimento.md) |
 
 As regras de contribuição e os invariantes do projeto ficam em [AGENTS.md](../AGENTS.md); o histórico de versões fica em [CHANGELOG.md](../CHANGELOG.md).
+
+- [Componentes e materiais de terceiros](terceiros.md): inventários por formato e revisões pendentes.

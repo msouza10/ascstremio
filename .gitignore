@@ -39,6 +39,7 @@ tools/
 !.github/*.md
 !CLAUDE.md
 !docs/README.md
+!docs/terceiros.md
 !docs/instalacao.md
 !docs/configuracao.md
 !docs/uso.md
