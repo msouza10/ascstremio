@@ -54,3 +54,20 @@ A issue #103 continua responsável pela revisão humana de termos e permissões,
 composição dos binários e validação dos artefatos reais de Linux, Windows e
 Docker. Alterar dependências exige regenerar os inventários e conferir os avisos;
 não se altera `LICENSE` nem a versão manualmente para essa atualização.
+
+## Fontes públicas conferidas em 16/11/2026
+
+- A [documentação oficial do SDK Stremio](https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/advanced.md#getting-metadata-from-cinemeta)
+  descreve consultas ao Cinemeta. `src/addon.js` repassa a URL de poster recebida;
+  `src/providers/amigos-share.js` consulta nomes. Isso não demonstra licença geral
+  para redistribuir imagens. Os [termos Stremio](https://www.stremio.com/tos),
+  com data efetiva de 30/08/2020, devem integrar a revisão de alcance da integração.
+- A [página oficial de Big Buck Bunny](https://peach.blender.org/about/)
+  identifica a obra sob [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/),
+  com atribuição, e distingue logos/marcas e materiais de capa/disco. A URL da
+  amostra no código usa um bucket Google: a licença da obra não comprova a
+  integridade nem os créditos dessa cópia específica. Conferir a cópia e sua
+  atribuição antes de considerá-la validada.
+
+Essas fontes identificam evidências para revisão; não encerram as pendências de
+permissão, composição dos artefatos ou análise qualificada da issue #103.
