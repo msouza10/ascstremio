@@ -187,6 +187,43 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return stream ? [stream] : [];
   }
 
+  // Regra 2.7: com o filtro "somente freeleech" ligado, a decisão de INICIAR download vale pela
+  // página do release lida agora. Nem o estado da busca (o benefício pode ter acabado depois dela)
+  // nem a existência do .torrent local provam freeleech. Resultado negativo ou consulta impossível
+  // recusam (fail-closed); consultas simultâneas do mesmo release dividem uma leitura só. O
+  // benefício ainda pode mudar durante a transferência: isto protege só o início.
+  const freeleechChecks = new Map(); // id -> Promise<boolean|null>
+  function freeleechNow(id) {
+    let task = freeleechChecks.get(id);
+    if (!task) {
+      task = asc.history(id).then((page) => (typeof page?.freeleech === 'boolean' ? page.freeleech : null));
+      freeleechChecks.set(id, task);
+      const forget = () => freeleechChecks.delete(id);
+      task.then(forget, forget);
+    }
+    return task;
+  }
+
+  async function confirmFreeleech(id) {
+    if (!asc.onlyFreeleech) return;
+    let freeleech;
+    try { freeleech = await freeleechNow(id); } catch (error) {
+      log.warn(`freeleech do release #${id} não confirmado: ${error?.message ?? error}`);
+      throw httpError(asc.connected === false ? 401 : 503, 'Não foi possível confirmar agora se o release ainda é freeleech; nada foi baixado. Tente de novo.');
+    }
+    if (freeleech === null) throw httpError(503, 'Não foi possível confirmar agora se o release ainda é freeleech; nada foi baixado. Tente de novo.');
+    if (!freeleech) throw httpError(409, 'Este release não é freeleech e o filtro "somente freeleech" está ligado.');
+  }
+
+  // .torrent já local: só dados completos E concluídos no cofre dispensam a consulta (o tamanho
+  // aparente sozinho engana: arquivo esparso de streaming). Faltando dados, tocar baixa o resto.
+  function dataComplete(local) {
+    return bridge.diskState?.(local.infoHash) === 'full' && Boolean(bridge.vault?.get?.(local.infoHash)?.completedAt);
+  }
+  async function confirmBeforeLocalPlay(id, local) {
+    if (!dataComplete(local)) await confirmFreeleech(id);
+  }
+
   // Chamado pela ponte no primeiro GET de /a/<id>: baixa o .torrent, confere e
   // registra na biblioteca. Devolve onde tocar. Erros levam `status` HTTP.
   function resolve(rawId) {
@@ -201,12 +238,13 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     if (noSeeders) return Promise.reject(httpError(503, 'Este release está sem seeders agora; escolha outra fonte.'));
     if (local) {
       const main = mainVideo(local.files);
-      if (main) return Promise.resolve({ infoHash: local.infoHash, fileIdx: main.index });
+      if (main) return confirmBeforeLocalPlay(id, local).then(() => ({ infoHash: local.infoHash, fileIdx: main.index }));
       unsupported.add(id);
       return Promise.reject(httpError(422, whyNoMain(local)));
     }
 
     let task = prepared.get(id);
+    const reused = Boolean(task);
     if (!task) {
       task = (async () => {
         const entry = await prepareEntry(id, known);
@@ -226,7 +264,8 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
       // Falha não fica em cache (tenta de novo no próximo play); sucesso fica.
       task.catch(() => prepared.delete(id));
     }
-    return task;
+    // Preparo já feito (entrada que saiu da biblioteca, por exemplo): reabrir também é novo download.
+    return reused ? confirmFreeleech(id).then(() => task) : task;
   }
 
   // Baixa o .torrent do release e o lê, UMA vez por release: filme e episódios compartilham este
@@ -240,11 +279,9 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
         // Regra 2.7: com o filtro "somente freeleech" ligado, nunca baixa de release que não seja.
         let freeleech = known ? known.freeleech === true : null;
         if (asc.onlyFreeleech) {
-          if (freeleech === null) {
-            const page = await asc.history(id);
-            freeleech = page.freeleech === true;
-          }
-          if (!freeleech) throw httpError(409, 'Este release não é freeleech e o filtro "somente freeleech" está ligado.');
+          // Sempre a página de agora: `known` vem da busca e pode estar velho.
+          await confirmFreeleech(id);
+          freeleech = true;
         }
 
         log.info(`play: baixando o .torrent do release #${id} sob demanda`);
@@ -306,7 +343,9 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
       return Promise.reject(httpError(503, 'Este release está sem seeders agora; escolha outra fonte.'));
     }
     if (local) {
-      try { return Promise.resolve(pickEpisode(local, season, episode, expected)); } catch (error) { return Promise.reject(error); }
+      let chosen;
+      try { chosen = pickEpisode(local, season, episode, expected); } catch (error) { return Promise.reject(error); }
+      return confirmBeforeLocalPlay(id, local).then(() => chosen);
     }
     // Falta de episódio num release NÃO o marca como `unsupported`: o pack serve a outros episódios.
     return prepareEntry(id, known).then((entry) => {
@@ -586,6 +625,8 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
   return {
     sizeOf,
     episodeSizeOf,
+    // Trava de novo download para a ponte (GET com .torrent local): ver confirmFreeleech.
+    confirmFreeleech: (rawId) => confirmFreeleech(String(rawId)),
     imdbOf(rawId) { return seriesRows.get(String(rawId))?.imdbId ?? null; },
     resolveEpisode,
     async catalog(query) { return (await search(query)).map(meta); },

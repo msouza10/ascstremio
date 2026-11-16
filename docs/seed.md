@@ -42,7 +42,7 @@ A data de login guardada pelo addon é um lembrete local: acesse o ASC no navega
 
 ## Assistir só um trecho
 
-O player pode baixar apenas as partes que usa. Para concluir o restante, abra o filme no painel e use **Concluir download em segundo plano**. A ação é explícita e pode incluir um release que não seja freeleech, com impacto no ratio.
+O player pode baixar apenas as partes que usa. Para concluir o restante, abra o filme no painel e use **Concluir download em segundo plano**. A ação é explícita e pode incluir um release que não seja freeleech, com impacto no ratio. Retomar a reprodução de um filme com dados faltando conta como iniciar um download: com o filtro "somente freeleech" ligado, o release é conferido de novo no ASC antes (veja [uso](uso.md)). Semear e regularizar uma obrigação existente não passam por essa conferência.
 
 Por padrão, a conclusão automática está ligada (`BACKGROUND_COMPLETE=auto`): baixar só parte do torrent deixa um registro `downloading` no tracker e a meta de seed só conta depois da conclusão, então o addon termina o download em prioridade baixa, sempre atrás do que você está assistindo. Num filme isso acontece depois de `BACKGROUND_IDLE_MINUTES` (10 por padrão) sem reprodução. Numa série, assim que o episódio que você abriu terminar de baixar, mesmo com o player aberto, o resto do pack entra na fila: primeiro os episódios seguintes, depois os anteriores. A verificação de espaço em disco é a mesma de sempre (reserva configurável, veja [configuração](configuracao.md#disco)): se o torrent inteiro não couber, só o que você assiste é baixado.
 

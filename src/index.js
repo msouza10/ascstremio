@@ -243,6 +243,7 @@ async function main() {
   const remote = createAscProvider(asc, bridge, torrentDir, { cache: metaCache });
   // O .torrent de uma fonte só é baixado quando o player pede o vídeo (GET em /a/<id>).
   bridge.ascResolver = (ascId) => remote.resolve(ascId);
+  bridge.ascStartGate = (ascId) => remote.confirmFreeleech(ascId);
   bridge.ascSizeHint = (ascId) => remote.sizeOf(ascId);
   bridge.ascEpisodeResolver = (ascId, season, episode) => remote.resolveEpisode(ascId, season, episode);
   bridge.ascImdbHint = (ascId) => remote.imdbOf(ascId);
