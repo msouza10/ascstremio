@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/msouza10/ascstremio/compare/v0.5.0...v0.6.0) (2026-11-16)
+
+
+### Novidades
+
+* **painel:** abre o painel pela rede em um passo, com firewall no Windows ([#124](https://github.com/msouza10/ascstremio/issues/124)) ([0af5776](https://github.com/msouza10/ascstremio/commit/0af5776a0c13d67d547cd010b9788c69e637de64))
+* **windows:** atalho de firewall só do addon e guias atualizados ([#126](https://github.com/msouza10/ascstremio/issues/126)) ([e5d05f6](https://github.com/msouza10/ascstremio/commit/e5d05f6ae93da03cf986283ae80a3ac88aa1fd77))
+
 ## [0.5.0](https://github.com/msouza10/ascstremio/compare/v0.4.0...v0.5.0) (2026-11-16)
 
 
