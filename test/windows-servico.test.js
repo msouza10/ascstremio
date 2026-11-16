@@ -226,3 +226,14 @@ test('painel pela rede: aparece na bandeja e no Menu Iniciar e vai no pacote', (
   // O desinstalador remove as regras de firewall que criou.
   assert.match(ler('windows', 'installer.nsi'), /Section "Uninstall"[\s\S]*firewall-lan\.cmd" remover'/);
 });
+
+test('painel pela rede: falha ao criar a regra de firewall não é escondida (e o serviço volta de qualquer jeito)', () => {
+  const cmd = ler('windows', 'painel-lan.cmd');
+  const ligar = cmd.slice(cmd.indexOf('\n:ligar\n'), cmd.indexOf('\n:desligar\n'));
+  const iFirewall = ligar.indexOf('firewall-lan.cmd" liberar painel');
+  assert.ok(iFirewall > 0);
+  assert.ok(ligar.indexOf('sc start AscStremio') < iFirewall, 'o serviço volta antes de mexer no firewall');
+  assert.match(ligar.slice(iFirewall), /if errorlevel 1 set "RC=1"/, 'o resultado do firewall entra no código de saída');
+  const desligar = cmd.slice(cmd.indexOf('\n:desligar\n'), cmd.indexOf('\n:status\n'));
+  assert.match(desligar.slice(desligar.indexOf('firewall-lan.cmd" remover painel')), /if errorlevel 1 set "RC=1"/);
+});

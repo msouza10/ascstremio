@@ -610,3 +610,27 @@ test('assistente: no contêiner recusa e não grava nada', async () => {
   assert.equal(fs.existsSync(path.join(dir, 'settings.json')), false);
   assert.equal(fs.existsSync(auth.filePath(dir)), false);
 });
+
+test('assistente: um CONFIG_BIND_ADDRESS antigo não fica apontando para outro IP (a URL informada tem de abrir)', async () => {
+  const dir = tmpdir('adm-assist-');
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 1, revision: 1, values: { CONFIG_BIND_ADDRESS: '192.168.1.20' } }));
+  const env = { DATA_DIR: dir };
+  const a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim', '--ip', '192.168.1.21'], { env, io: a.io, interfaces: DUAS_REDES }), 0, a.errs.join('\n'));
+  const snap = settings.resolve({ dataDir: dir, env, interfaces: DUAS_REDES });
+  const credential = new auth.AdminCredential({ dataDir: dir });
+  const plano = access.plan({ values: snap.values, mode: snap.mode, container: snap.container, net: snap.derived.network, credentialConfigured: credential.configured(), interfaces: DUAS_REDES, port: snap.values.CONFIG_PORT });
+  assert.equal(plano.enabled, true, plano.problems.join('; '));
+  assert.ok(plano.bind.includes('192.168.1.21'), `o painel deve escutar no IP informado (escuta em ${plano.bind})`);
+  assert.ok(!plano.bind.includes('192.168.1.20'), 'não pode sobrar o bind antigo');
+  assert.match(a.lines.join('\n'), /http:\/\/192\.168\.1\.21:7020\//);
+});
+
+test('assistente: CONFIG_BIND_ADDRESS vindo do ambiente não dá para limpar: recusa sem gravar nada', async () => {
+  const dir = tmpdir('adm-assist-');
+  const a = ioOf();
+  assert.equal(await cli.run(['assistente', '--sim', '--ip', '192.168.1.21'], { env: { DATA_DIR: dir, CONFIG_BIND_ADDRESS: '192.168.1.20' }, io: a.io, interfaces: DUAS_REDES }), 1);
+  assert.match(a.errs.join('\n'), /CONFIG_BIND_ADDRESS/);
+  assert.equal(fs.existsSync(path.join(dir, 'settings.json')), false);
+  assert.equal(fs.existsSync(auth.filePath(dir)), false, 'nenhuma senha criada');
+});

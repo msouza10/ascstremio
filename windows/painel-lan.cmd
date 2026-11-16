@@ -45,7 +45,10 @@ call :parar || exit /b 1
 "%NODE%" "%HERE%app\src\admin-cli.js" assistente %RESTO%
 set "RC=%ERRORLEVEL%"
 sc start AscStremio >nul
-if "%RC%"=="0" call "%HERE%firewall-lan.cmd" liberar painel
+if "%RC%"=="0" (
+  call "%HERE%firewall-lan.cmd" liberar painel
+  if errorlevel 1 set "RC=1"
+)
 exit /b %RC%
 
 :desligar
@@ -53,7 +56,10 @@ call :parar || exit /b 1
 "%NODE%" "%HERE%app\src\admin-cli.js" desativar --sim
 set "RC=%ERRORLEVEL%"
 sc start AscStremio >nul
-if "%RC%"=="0" call "%HERE%firewall-lan.cmd" remover painel
+if "%RC%"=="0" (
+  call "%HERE%firewall-lan.cmd" remover painel
+  if errorlevel 1 set "RC=1"
+)
 if "%RC%"=="0" echo O modo LAN do addon continua; para voltar ao modo local use configurar.cmd (modo local).
 exit /b %RC%
 

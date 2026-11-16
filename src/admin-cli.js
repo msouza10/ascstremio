@@ -202,12 +202,12 @@ async function run(args, { env = process.env, io = defaultIo(), interfaces } = {
       }
       const temSenha = d.credential.configured();
       const gerarSenha = !temSenha || Boolean(flags.trocar);
-      const changes = { ASCSTREMIO_MODE: 'lan', LAN_ADVERTISE_HOST: ip, CONFIG_ALLOW_LAN: true, CONFIG_ADMIN_HTTP_CLEAR: true, CONFIG_PUBLIC_URL: null };
-      // Confere as pré-condições com os valores propostos ANTES de gravar qualquer coisa.
-      const simulado = settings.resolve({
-        dataDir: d.ctx.dataDir, interfaces,
-        env: { ...d.ctx.env, ASCSTREMIO_MODE: 'lan', LAN_ADVERTISE_HOST: ip, CONFIG_ALLOW_LAN: 'true', CONFIG_ADMIN_HTTP_CLEAR: 'true' },
-      });
+      // CONFIG_BIND_ADDRESS antigo prevalece sobre o endereço anunciado: limpa, para o painel escutar no IP informado.
+      const changes = { ASCSTREMIO_MODE: 'lan', LAN_ADVERTISE_HOST: ip, CONFIG_ALLOW_LAN: true, CONFIG_ADMIN_HTTP_CLEAR: true, CONFIG_PUBLIC_URL: null, CONFIG_BIND_ADDRESS: null };
+      // Confere as pré-condições com EXATAMENTE os valores que serão gravados (prévia sem gravar).
+      const simulado = settings.update({
+        dataDir: d.ctx.dataDir, env: d.ctx.env, changes, expectedRevision: d.snap.revision, interfaces, dryRun: true,
+      }).snapshot;
       const pre = access.plan({
         values: simulado.values, mode: simulado.mode, container: simulado.container, net: simulado.derived.network,
         credentialConfigured: true, interfaces: interfaces ?? null, port: simulado.values.CONFIG_PORT,
