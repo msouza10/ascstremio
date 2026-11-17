@@ -92,7 +92,11 @@
     if (!indo) return false;
     const req = pedido(indo.action, infoHash);
     aplicar(indo);
-    try { aplicar(concluido(indo, await call(req.route, req.body))); } catch (err) { aplicar(falhou(indo, err)); }
+    // Só a chamada ao servidor entra no try: um erro ao redesenhar o sucesso não pode virar "falhou"
+    // com a ação já concluída (quem tentasse de novo repetiria a exclusão ou o download).
+    let res; let erro; let deuErro = false;
+    try { res = await call(req.route, req.body); } catch (err) { erro = err; deuErro = true; }
+    aplicar(deuErro ? falhou(indo, erro) : concluido(indo, res));
     return true;
   }
 
@@ -126,7 +130,6 @@
     }));
     const livre = !st.action;
     return {
-      visivel: eps.length > 0,
       temporadas: out,
       restaurar: grupos.some((x) => x.falta) && !completing && livre
         ? botao('Baixar o que falta', 'download', { kind: 'restore' }, 'Baixa o que falta do torrent com prioridade baixa e traz de volta os episódios que você excluiu.', false) : null,

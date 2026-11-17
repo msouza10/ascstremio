@@ -213,8 +213,17 @@ test('executar: clique duplo ou sem ação escolhida não chama o servidor', asy
 
 test('executar: uma ação desconhecida não deixa o card ocupado', async () => {
   const estados = [];
-  await assert.rejects(M.executar({ action: { kind: 'qualquer' }, busy: false, result: '' }, HASH, async () => ({}), (s) => estados.push(s)));
+  await assert.rejects(M.executar({ action: { kind: 'qualquer' }, busy: false, result: '' }, HASH, async () => ({}), (s) => estados.push(s)), /ação desconhecida/);
   assert.deepEqual(estados, [], 'o pedido é montado antes de ocupar');
+});
+
+test('executar: erro ao desenhar o sucesso não vira "falhou" (o servidor já concluiu a ação)', async () => {
+  const estados = [];
+  const st = M.escolher(M.estadoInicial(), { kind: 'exclude', file: 0, tag: 'S01E01' });
+  const aplicar = (s) => { estados.push(s); if (estados.length === 2) throw new Error('falha ao redesenhar'); };
+  await assert.rejects(M.executar(st, HASH, async () => ({ message: 'Episódio excluído.' }), aplicar), /redesenhar/);
+  assert.equal(estados.length, 2, 'não tenta aplicar uma falha que não houve');
+  assert.equal(estados[1].result, 'Episódio excluído.');
 });
 
 const ep = (index, season, episode, state, extra = {}) => ({ index, season, episode, state, excluded: false, ...extra });
@@ -223,7 +232,6 @@ const livre = M.estadoInicial();
 test('plano: pack de uma temporada não tem cabeçalho de temporada e liga o excluir pela regra do tracker', () => {
   const t = titulo({ episodes: [ep(0, 1, 1, 'completo'), ep(1, 1, 2, 'ausente')] });
   const p = M.plano(t, livre);
-  assert.equal(p.visivel, true);
   assert.equal(p.temporadas.length, 1);
   assert.equal(p.temporadas[0].cabecalho, false);
   const [e1, e2] = p.temporadas[0].episodios;
@@ -285,9 +293,10 @@ test('plano: com pedido em andamento todos os botões ficam desabilitados; com c
   assert.equal(aberto.verificar.desabilitado, false);
 });
 
-test('plano: sem episódios o card fica oculto', () => {
-  assert.equal(M.plano(titulo({ episodes: [] }), livre).visivel, false);
-  assert.equal(M.plano({}, livre).visivel, false);
+test('plano: sem episódios não há temporada nem botão', () => {
+  for (const t of [titulo({ episodes: [] }), {}]) {
+    assert.deepEqual(M.plano(t, livre), { temporadas: [], restaurar: null, verificar: null });
+  }
 });
 
 test('views.js só aplica o plano e o fluxo do modelo (sem decidir botão nem montar pedido)', () => {
