@@ -84,12 +84,15 @@ test('WinSW: avisos de log4net e YamlDotNet vêm da tag oficial, com SHA-256 fix
   assert.match(build, /\$YAMLDOTNET_LICENSE_SHA256.*\|\| \{ echo .*não confere.*exit 1/);
   assert.match(build, /THIRD-PARTY-WinSW\.txt/);
   // O agregado só é escrito depois das três conferências (o build usa set -e e cada uma sai com exit 1).
-  assert.ok(build.lastIndexOf('YAMLDOTNET_LICENSE_SHA256') < build.indexOf('> "$STAGE/THIRD-PARTY-WinSW.txt"'),
-    'o agregado deve ser montado depois das conferências');
+  const agregado = build.indexOf('> "$STAGE/THIRD-PARTY-WinSW.txt"');
+  for (const nome of ['LOG4NET_LICENSE_SHA256', 'LOG4NET_NOTICE_SHA256', 'YAMLDOTNET_LICENSE_SHA256']) {
+    assert.ok(build.lastIndexOf(`$${nome}`) < agregado, `${nome} deve ser conferido antes de montar o agregado`);
+  }
   // As versões citadas no guia continuam coerentes com o que o build baixa.
   const guia = ler('docs', 'terceiros.md');
-  assert.ok(guia.includes('log4net'), 'docs/terceiros.md cita log4net');
-  assert.ok(guia.includes('YamlDotNet'), 'docs/terceiros.md cita YamlDotNet');
+  assert.ok(guia.includes('log4net` 2.0.12'), 'docs/terceiros.md cita log4net 2.0.12');
+  assert.ok(guia.includes('YamlDotNet` 8.1.2'), 'docs/terceiros.md cita YamlDotNet 8.1.2');
+  assert.ok(guia.includes('`rel/2.0.12`') && guia.includes('`v8.1.2`'), 'docs/terceiros.md cita as tags');
 });
 
 test('fumaça confere os avisos no artefato real (imagem e instalador)', () => {
@@ -97,8 +100,12 @@ test('fumaça confere os avisos no artefato real (imagem e instalador)', () => {
   for (const arquivo of ['/app/LICENSE', '/app/LEGAL.md', '/app/THIRD-PARTY-INVENTORY.json']) {
     assert.ok(ler('scripts', 'smoke-container.sh').includes(arquivo), arquivo);
   }
+  // Âncora no laço de avisos do passo de instalação, não em qualquer menção no arquivo.
   const ci = ler('.github', 'workflows', 'ci.yml');
-  for (const arquivo of ['docs\\terceiros.md', 'THIRD-PARTY-WinSW.txt', 'WinSW-LICENSE.txt', 'app\\THIRD-PARTY-INVENTORY.json']) {
-    assert.ok(ci.includes(arquivo), `ci.yml não confere ${arquivo} na instalação`);
+  const laco = linhas(ci).find((l) => l.includes('foreach ($f in') && l.includes('THIRD-PARTY-WinSW.txt'));
+  assert.ok(laco, 'ci.yml: laço que confere os avisos na instalação do Windows');
+  for (const arquivo of ['docs\\terceiros.md', 'THIRD-PARTY-WinSW.txt', 'WinSW-LICENSE.txt', 'app\\THIRD-PARTY-INVENTORY.json', 'node\\LICENSE', 'LICENSE']) {
+    assert.ok(laco.includes(`'${arquivo}'`), `ci.yml não confere ${arquivo} na instalação`);
   }
+  assert.match(ci, /\.Length -eq 0\) \{ throw "aviso de terceiros ausente ou vazio/);
 });
