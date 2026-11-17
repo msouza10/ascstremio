@@ -83,7 +83,59 @@
   // Há episódio cujo tamanho só "parece" cheio? Com o motor aberto o estado já vem das peças.
   const podeVerificar = (eps, flags = {}) => !flags.verified && Array.isArray(eps) && eps.some((e) => e.state === 'provavel');
 
-  const api = { podeVerificar, tag, acaoExcluir, estadoInicial, escolher, cancelar, confirmar, mensagem, concluido, falhou, pedido, temporadas, descricao };
+  // Fluxo do "Confirmar": monta o pedido ANTES de ocupar (ação desconhecida não deixa o card preso),
+  // ocupa, chama o servidor e sempre termina liberado, com sucesso ou erro. `aplicar` recebe cada
+  // estado novo (o DOM só redesenha); `call(route, body)` é a chamada autenticada do painel.
+  // Devolve false quando não havia o que confirmar (clique duplo ou nenhuma ação escolhida).
+  async function executar(st, infoHash, call, aplicar) {
+    const indo = confirmar(st);
+    if (!indo) return false;
+    const req = pedido(indo.action, infoHash);
+    aplicar(indo);
+    try { aplicar(concluido(indo, await call(req.route, req.body))); } catch (err) { aplicar(falhou(indo, err)); }
+    return true;
+  }
+
+  // O que o card mostra: quais botões existem, em que ordem, e se estão habilitados. O DOM só desenha.
+  // Cada botão: { rotulo, icone, acao, titulo, desabilitado }. `completing` (conclusão em segundo
+  // plano) esconde todo download, e "Excluir" segue a regra do tracker (fail-closed) em `acaoExcluir`.
+  function plano(t, st) {
+    const eps = Array.isArray(t?.episodes) ? t.episodes : [];
+    const completing = t?.state === 'completing';
+    const acao = acaoExcluir(t);
+    const botao = (rotulo, icone, a, titulo, off) => ({ rotulo, icone, acao: a, titulo, desabilitado: st.busy || off });
+    const excluir = (a, permitidaTitulo) => botao('Excluir', acao.permitida ? 'trash-2' : 'clock', a, acao.permitida ? permitidaTitulo : acao.motivo, !acao.permitida);
+    const grupos = temporadas(eps);
+    const out = grupos.map((ts) => ({
+      season: ts.season,
+      cabecalho: grupos.length > 1,
+      baixar: ts.falta && !completing
+        ? botao('Baixar temporada', 'download', { kind: 'completeSeason', season: ts.season }, `Baixa só os episódios da temporada ${ts.season}.`, false) : null,
+      excluir: ts.podeExcluir
+        ? { ...excluir({ kind: 'excludeSeason', season: ts.season }, `Excluir os arquivos da temporada ${ts.season}`), rotulo: 'Excluir temporada' } : null,
+      episodios: ts.episodes.map((e) => {
+        const tg = tag(e);
+        return {
+          ep: e, tag: tg,
+          baixar: e.state !== 'completo' && !completing
+            ? botao('Baixar', 'download', { kind: 'completeFile', file: e.index, tag: tg }, `Baixa só ${tg} em segundo plano.`, false) : null,
+          excluir: e.state !== 'ausente' && !e.excluded
+            ? excluir({ kind: 'exclude', file: e.index, tag: tg }, `Excluir o arquivo de ${tg}`) : null,
+        };
+      }),
+    }));
+    const livre = !st.action;
+    return {
+      visivel: eps.length > 0,
+      temporadas: out,
+      restaurar: grupos.some((x) => x.falta) && !completing && livre
+        ? botao('Baixar o que falta', 'download', { kind: 'restore' }, 'Baixa o que falta do torrent com prioridade baixa e traz de volta os episódios que você excluiu.', false) : null,
+      verificar: livre && podeVerificar(eps)
+        ? botao('Verificar peças', 'shield-check', { kind: 'verify' }, 'Confere por peças, no disco, os episódios que só parecem completos.', false) : null,
+    };
+  }
+
+  const api = { podeVerificar, tag, acaoExcluir, estadoInicial, escolher, cancelar, confirmar, mensagem, concluido, falhou, pedido, temporadas, descricao, executar, plano };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.EpisodesModel = api;
 })();
