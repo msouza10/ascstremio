@@ -18,7 +18,7 @@ bad=0
 report() { echo "BLOQUEADO: $1"; bad=1; }
 
 # git quando existir (respeita .gitignore); senão, a árvore sem node_modules/dist.
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then files="$(git ls-files --cached --others --exclude-standard)"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then files="$(git -c core.quotepath=off ls-files --cached --others --exclude-standard)"
 else files="$(find . -type f -not -path './node_modules/*' -not -path './dist/*' -not -path './.git/*' | sed 's#^\./##')"; fi
 
 echo "$files" | grep -E '(^|/)private/' | grep -q . && report "arquivos dentro de private/"
@@ -49,23 +49,36 @@ IMG_MAX_BYTES=204800
 IMG_MAX_TOTAL=2097152
 IMG_MAX_WIDTH=1280
 # Número (decimal) de n bytes do arquivo a partir de um deslocamento: big-endian ou little-endian.
+IMG_MAX_CHUNKS=1000 # capturas reais têm poucas dezenas; o teto evita varrer arquivo hostil
+# Os campos e a largura saem do próprio arquivo (sem ImageMagick), sempre falhando fechado: leitura
+# que falha devolve -1 e o chamador trata o arquivo como inválido.
 img_uint() { # arquivo deslocamento n endian(be|le)
-  local bytes b v=0
-  bytes="$(od -An -v -tu1 -j "$2" -N "$3" "$1")"
-  if [ "$4" = le ]; then bytes="$(tr ' ' '\n' <<< "$bytes" | sed '/^$/d' | tac | tr '\n' ' ')"; fi
-  for b in $bytes; do v=$((v * 256 + b)); done
+  local bytes v=0 i
+  local -a arr
+  bytes="$(od -An -v -tu1 -j "$2" -N "$3" "$1")" || { echo -1; return; }
+  read -ra arr <<< "$bytes"
+  [ "${#arr[@]}" -eq "$3" ] || { echo -1; return; }
+  if [ "$4" = le ]; then
+    for ((i = ${#arr[@]} - 1; i >= 0; i--)); do v=$((v * 256 + arr[i])); done
+  else
+    for ((i = 0; i < ${#arr[@]}; i++)); do v=$((v * 256 + arr[i])); done
+  fi
   echo "$v"
 }
 img_tag() { LC_ALL=C dd if="$1" bs=1 skip="$2" count=4 2>/dev/null; } # 4 caracteres ASCII
-# Percorre os blocos e escreve "ok:<largura>" ou "meta:<tipo>" ou "invalido".
-img_scan() { # arquivo
-  local f="$1" size off len tag w=0
-  size="$(wc -c < "$f")"
+# Percorre os blocos e escreve "ok:<largura>", "meta:<tipo>" ou "invalido".
+img_scan() { # arquivo tamanho
+  local f="$1" size="$2" off len tag w=0 n=0 maxw=0 v
   if [ "$size" -ge 33 ] && [ "$(od -An -v -tx1 -N8 "$f" | tr -d ' \n')" = 89504e470d0a1a0a ]; then
+    # O primeiro bloco precisa ser o IHDR (13 bytes): dele vem a largura.
+    [ "$(img_tag "$f" 12)" = IHDR ] && [ "$(img_uint "$f" 8 4 be)" -eq 13 ] || { echo invalido; return; }
     w="$(img_uint "$f" 16 4 be)"; off=8
-    while [ "$off" -lt "$size" ]; do
+    [ "$w" -gt 0 ] || { echo invalido; return; }
+    while [ "$off" -lt "$size" ] && [ "$n" -lt "$IMG_MAX_CHUNKS" ]; do
+      n=$((n + 1))
       [ $((off + 12)) -le "$size" ] || { echo invalido; return; }
       len="$(img_uint "$f" "$off" 4 be)"; tag="$(img_tag "$f" $((off + 4)))"
+      [ "$len" -ge 0 ] || { echo invalido; return; }
       case "$tag" in tEXt|iTXt|zTXt|eXIf) echo "meta:$tag"; return ;; esac
       off=$((off + len + 12))
       if [ "$tag" = IEND ]; then [ "$off" -eq "$size" ] && echo "ok:$w" || echo invalido; return; fi
@@ -74,13 +87,24 @@ img_scan() { # arquivo
   fi
   if [ "$size" -ge 20 ] && [ "$(img_tag "$f" 0)" = RIFF ] && [ "$(img_tag "$f" 8)" = WEBP ]; then
     off=12
-    while [ "$off" -lt "$size" ]; do
+    while [ "$off" -lt "$size" ] && [ "$n" -lt "$IMG_MAX_CHUNKS" ]; do
+      n=$((n + 1))
       [ $((off + 8)) -le "$size" ] || { echo invalido; return; }
       tag="$(img_tag "$f" "$off")"; len="$(img_uint "$f" $((off + 4)) 4 le)"
-      case "$tag" in 'EXIF'|'XMP ') echo "meta:$tag"; return ;; esac
+      [ "$len" -ge 0 ] || { echo invalido; return; }
+      case "$tag" in
+        'EXIF'|'XMP ') echo "meta:$tag"; return ;;
+        VP8X) v="$(img_uint "$f" $((off + 12)) 3 le)"; [ "$v" -ge 0 ] && w=$((v + 1)) || w=0 ;;
+        VP8L) v="$(img_uint "$f" $((off + 9)) 4 le)"; [ "$v" -ge 0 ] && w=$(((v & 16383) + 1)) || w=0 ;;
+        'VP8 ') v="$(img_uint "$f" $((off + 14)) 2 le)"; [ "$v" -ge 0 ] && w=$((v & 16383)) || w=0 ;;
+        *) w=0 ;;
+      esac
+      [ "$w" -le "$maxw" ] || maxw="$w"
       off=$((off + 8 + len + (len % 2)))
     done
-    [ "$off" -le $((size + 1)) ] && echo "ok:0" || echo invalido; return
+    # Fim exato do arquivo (o último bloco de tamanho ímpar leva 1 byte de enchimento) e largura conhecida.
+    { [ "$off" -eq "$size" ] || [ "$off" -eq $((size + 1)) ]; } && [ "$maxw" -gt 0 ] && echo "ok:$maxw" || echo invalido
+    return
   fi
   echo invalido
 }
@@ -92,19 +116,14 @@ while IFS= read -r file; do
     *.png|*.webp) ;;
     *) report "imagem com extensão fora de png/webp: $file"; continue ;;
   esac
-  bytes="$(wc -c < "$file")"; img_total=$((img_total + bytes))
-  [ "$bytes" -le "$IMG_MAX_BYTES" ] || report "imagem acima de 200 KiB: $file"
-  result="$(img_scan "$file")"
+  bytes="$(wc -c < "$file")" || { report "imagem ilegível: $file"; continue; }
+  img_total=$((img_total + bytes))
+  # Acima do limite não vale a pena varrer os blocos (e arquivo hostil não trava a barreira).
+  [ "$bytes" -le "$IMG_MAX_BYTES" ] || { report "imagem acima de 200 KiB: $file"; continue; }
+  result="$(img_scan "$file" "$bytes")"
   case "$result" in
     meta:*) report "imagem com metadados (${result#meta:}): $file" ;;
-    ok:*)
-      width="${result#ok:}"
-      # PNG traz a largura no cabeçalho; WebP depende do identify, quando existir.
-      if [ "$width" -eq 0 ] && command -v identify >/dev/null 2>&1; then
-        width="$(identify -format '%w' "${file}[0]" 2>/dev/null || echo 0)"
-        [ "$width" -gt 0 ] 2>/dev/null || report "imagem ilegível ao medir a largura: $file"
-      fi
-      [ "$width" -le "$IMG_MAX_WIDTH" ] 2>/dev/null || report "imagem acima de 1280 px de largura: $file" ;;
+    ok:*) [ "${result#ok:}" -le "$IMG_MAX_WIDTH" ] || report "imagem acima de 1280 px de largura: $file" ;;
     *) report "imagem ilegível ou inválida (PNG/WebP esperado): $file" ;;
   esac
 done <<< "$files"

@@ -124,3 +124,58 @@ test('barreira de imagens barra arquivo que não é PNG/WebP de verdade', opcoes
   assert.equal(r.status, 1, r.saida);
   assert.match(r.saida, /ilegível|inválid/);
 });
+
+// WebP com cabeçalho VP8X (largura/altura em 3 bytes little-endian, menos 1): a largura vem do
+// próprio arquivo, sem depender do ImageMagick.
+function webpVp8x(largura, altura = 8) {
+  const dados = Buffer.alloc(10);
+  dados.writeUIntLE(largura - 1, 4, 3); dados.writeUIntLE(altura - 1, 7, 3);
+  const cab = Buffer.alloc(8); cab.write('VP8X', 0, 'ascii'); cab.writeUInt32LE(dados.length, 4);
+  const corpo = Buffer.concat([Buffer.from('WEBP'), cab, dados]);
+  const riff = Buffer.alloc(8); riff.write('RIFF', 0, 'ascii'); riff.writeUInt32LE(corpo.length, 4);
+  return Buffer.concat([riff, corpo]);
+}
+
+test('largura de WebP é lida do cabeçalho (VP8X e VP8L), sem depender do identify', opcoes, (t) => {
+  const webp = 'docs/imagens/painel-claro.webp';
+  assert.equal(varrer(t, { [webp]: webpVp8x(1280) }).status, 0);
+  const larga = varrer(t, { [webp]: webpVp8x(5000) });
+  assert.equal(larga.status, 1, larga.saida);
+  assert.match(larga.saida, /1280 px/);
+  // VP8L: 14 bits de largura menos 1, logo após o byte de assinatura 0x2f.
+  const vp8l = Buffer.from(WEBP_1X1);
+  vp8l.writeUInt16LE(4999, 21); // largura 5000 (14 bits baixos)
+  const l = varrer(t, { [webp]: vp8l });
+  assert.equal(l.status, 1, l.saida);
+  assert.match(l.saida, /1280 px/);
+});
+
+test('PNG sem IHDR no início ou com largura 0 é inválido', opcoes, (t) => {
+  const semIhdr = png();
+  semIhdr.write('XXXX', 12, 'ascii');
+  const a = varrer(t, { [PNG]: semIhdr });
+  assert.equal(a.status, 1, a.saida);
+  const b = varrer(t, { [PNG]: png({ largura: 0 }) });
+  assert.equal(b.status, 1, b.saida);
+});
+
+test('PNG com blocos demais é recusado sem varrer tudo (limite de blocos)', opcoes, (t) => {
+  const muitos = png({ extras: Array.from({ length: 1500 }, () => chunk('prVt', Buffer.alloc(0))) });
+  const r = varrer(t, { [PNG]: muitos });
+  assert.equal(r.status, 1, r.saida);
+  assert.match(r.saida, /inválid|ilegível/);
+});
+
+test('nome com acento em docs/imagens não escapa da barreira', opcoes, (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'asc-imagens-git-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(temp, 'docs', 'imagens'), { recursive: true });
+  fs.mkdirSync(path.join(temp, 'scripts'));
+  fs.copyFileSync(barrier, path.join(temp, 'scripts', 'check-no-secrets.sh'));
+  fs.writeFileSync(path.join(temp, 'scripts', 'documentation-files.txt'), '');
+  fs.writeFileSync(path.join(temp, 'docs', 'imagens', 'ação.gif'), png());
+  // Dentro de um repositório Git, os nomes não ASCII saem entre aspas, com escapes octais.
+  assert.equal(spawnSync('git', ['init', '-q'], { cwd: temp }).status, 0);
+  const r = spawnSync('bash', [path.join(temp, 'scripts', 'check-no-secrets.sh'), temp], { encoding: 'utf8' });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+});
