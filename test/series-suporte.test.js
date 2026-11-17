@@ -213,10 +213,23 @@ test('sem nenhuma fonte tocável o aviso é essencial: diz quantos releases e po
 
 test('o aviso abre o painel quando o status está liberado e o site do ASC quando não está', async () => {
   const dados = { rows: [row(1, 'Show Completo')], files: { 1: lista('Raiz/EP01/ep01.mkv') } };
+  // Com o status liberado o alerta de risco (se houver) vem primeiro; o aviso fica por último.
   const com = await pedir(montar({ ...dados, panel: true }), 1, 1);
   assert.equal(avisos(com).at(-1).externalUrl, 'http://127.0.0.1:7020/');
   const sem = await pedir(montar(dados), 1, 1);
   assert.equal(avisos(sem)[0].externalUrl, 'https://amigos-share.club/');
+});
+
+test('motivos diferentes viram linhas diferentes no mesmo item', async () => {
+  const ctx = montar({
+    rows: [row(1, 'Show Completo'), row(2, 'Show Temporada 1 Full Disc')],
+    files: { 1: lista('Raiz/EP01/ep01.mkv'), 2: lista('Show.iso') },
+  });
+  const streams = await pedir(ctx, 1, 1);
+  assert.equal(streams.length, 1);
+  assert.match(streams[0].description, /2 releases/);
+  assert.match(streams[0].description, /• nomes dos arquivos/);
+  assert.match(streams[0].description, /• imagem ou estrutura de disco/);
 });
 
 test('release de outra temporada ou episódio (excluído pelo nome) nunca gera aviso', async () => {

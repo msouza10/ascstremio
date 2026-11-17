@@ -214,7 +214,10 @@ function createAddon({ provider = amigosShare, demo = false, library = [], local
         if (remote?.lookup) {
           // Com o ASC indisponível, `lookup` cai para os arquivos locais completos e diz por quê.
           const { streams, offline, notice } = await remote.lookup(video);
-          const shown = offline ? [...offlineNotice(offline, streams.length), ...streams] : notice ? [unsupportedNotice(notice), ...streams] : streams;
+          // `notice` só vem sem fontes tocáveis e sem `offline`: um aviso por vez.
+          let shown = streams;
+          if (offline) shown = [...offlineNotice(offline, streams.length), ...streams];
+          else if (notice) shown = [unsupportedNotice(notice), ...streams];
           return { streams: withAlert(shown), cacheMaxAge: 0 };
         }
         const streams = remote ? await remote.findStreams(video) : await provider.findStreams(video, { library: currentLibrary(), urlFor, humanSize });
