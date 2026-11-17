@@ -145,7 +145,7 @@ Se o site estiver fora do ar, a rede cair ou a sessão expirar, a busca por IMDb
 
 A biblioteca local lê `.torrent` em `DATA_DIR/torrents`; sua presença não significa que o vídeo esteja baixado ou que seja freeleech. Não compartilhe esses arquivos ou importe credenciais alheias.
 
-`DEMO_MODE=true npm start` adiciona uma fonte externa para **Big Buck Bunny (2008)**. Ela depende de um servidor público e não valida login, tracker privado, seed ou reprodução pela ponte. A fonte de demonstração é só de filme; séries usam os releases reais do ASC. Atribuição do filme: "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org", licença [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); o vídeo não faz parte deste repositório (detalhes e pendências em [terceiros](terceiros.md#atribuições-exigidas)).
+`DEMO_MODE=true npm start` adiciona uma fonte externa para **Big Buck Bunny (2008)**. Ela vem da Wikimedia Commons (servidor público de terceiros) e não valida login, tracker privado, seed ou reprodução pela ponte. A fonte de demonstração é só de filme; séries usam os releases reais do ASC. Atribuição do filme: "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org", licença [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); o vídeo não faz parte deste repositório (detalhes e pendências em [terceiros](terceiros.md#atribuições-exigidas)).
 
 Para consultar ou mudar portas, modo local/LAN e políticas sem o painel, use a [configuração pelo terminal](configuracao.md#configuração-pelo-terminal).
 
