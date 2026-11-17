@@ -532,55 +532,40 @@
       // "completo" vem das peças verificadas (motor aberto); "provável" é só o espaço alocado em disco.
       const label = { completo: 'completo', provavel: 'provável (não verificado)', parcial: 'em parte', ausente: 'não baixado' };
       clear(epsList); clear(epsBar); clear(epsPanel);
-      // A regra de exclusão é a mesma do servidor (src/file-actions.js): só depois de o tracker confirmar
-      // o seed. Desabilitado, o botão fica visível com o motivo, em vez de sumir sem explicar.
-      const acao = EM.acaoExcluir(t);
-      const completing = t.state === 'completing';
-      const small = (text, iconName, kind, title, off) => {
-        const b = el('button', 'btn btn-ghost btn-sm btn-icon');
-        b.type = 'button'; b.disabled = ep.busy || off; b.title = title;
-        b.append(icon(iconName), document.createTextNode(text));
-        b.addEventListener('click', () => epSet(EM.escolher(ep, kind)));
-        return b;
+      // Quais botões existem e se estão habilitados vem de EM.plano (testado no Node); a regra de
+      // exclusão é a mesma do servidor (src/file-actions.js). Desabilitado, o botão fica visível com o
+      // motivo, em vez de sumir sem explicar. Aqui só se desenha.
+      const plano = EM.plano(t, ep);
+      const botao = (b, cls) => {
+        const btn = el('button', `btn ${cls} btn-sm btn-icon`);
+        btn.type = 'button'; btn.disabled = b.desabilitado; btn.title = b.titulo;
+        btn.append(icon(b.icone), document.createTextNode(b.rotulo));
+        btn.addEventListener('click', () => epSet(EM.escolher(ep, b.acao)));
+        return btn;
       };
-      const temporadas = EM.temporadas(eps);
-      for (const ts of temporadas) {
-        if (temporadas.length > 1) {
+      const small = (b) => botao(b, 'btn-ghost');
+      for (const ts of plano.temporadas) {
+        if (ts.cabecalho) {
           const head = el('div', 'row');
           const dd = el('dd', '');
-          if (ts.falta && !completing) dd.append(small('Baixar temporada', 'download', { kind: 'completeSeason', season: ts.season }, `Baixa só os episódios da temporada ${ts.season}.`, false), document.createTextNode(' '));
-          if (ts.podeExcluir) dd.append(small('Excluir temporada', acao.permitida ? 'trash-2' : 'clock', { kind: 'excludeSeason', season: ts.season }, acao.permitida ? `Excluir os arquivos da temporada ${ts.season}` : acao.motivo, !acao.permitida));
+          if (ts.baixar) dd.append(small(ts.baixar), document.createTextNode(' '));
+          if (ts.excluir) dd.append(small(ts.excluir));
           head.append(el('dt', '', `Temporada ${ts.season}`), dd);
           epsList.append(head);
         }
-        for (const e of ts.episodes) {
+        for (const pe of ts.episodios) {
+          const e = pe.ep;
           const row = el('div', 'row');
           const detail = e.state === 'parcial' ? ` · ${fmtBytes(e.onDisk)} de ${fmtBytes(e.length)}` : ` · ${fmtBytes(e.length)}`;
           const dd = el('dd', '', e.excluded ? `excluído por você${detail}` : `${label[e.state] ?? e.state}${detail}`);
-          const tag = EM.tag(e);
-          if (e.state !== 'completo' && !completing) dd.append(document.createTextNode(' '), small('Baixar', 'download', { kind: 'completeFile', file: e.index, tag }, `Baixa só ${tag} em segundo plano.`, false));
-          if (e.state !== 'ausente' && !e.excluded) dd.append(document.createTextNode(' '), small('Excluir', acao.permitida ? 'trash-2' : 'clock', { kind: 'exclude', file: e.index, tag }, acao.permitida ? `Excluir o arquivo de ${tag}` : acao.motivo, !acao.permitida));
-          row.append(el('dt', '', tag), dd);
+          if (pe.baixar) dd.append(document.createTextNode(' '), small(pe.baixar));
+          if (pe.excluir) dd.append(document.createTextNode(' '), small(pe.excluir));
+          row.append(el('dt', '', pe.tag), dd);
           epsList.append(row);
         }
       }
-      const falta = temporadas.some((x) => x.falta);
-      if (falta && !completing && !ep.action) {
-        const b = el('button', 'btn btn-outline btn-sm btn-icon');
-        b.type = 'button'; b.disabled = ep.busy;
-        b.title = 'Baixa o que falta do torrent com prioridade baixa e traz de volta os episódios que você excluiu.';
-        b.append(icon('download'), document.createTextNode('Baixar o que falta'));
-        b.addEventListener('click', () => epSet(EM.escolher(ep, { kind: 'restore' })));
-        epsBar.append(b);
-      }
-      if (!ep.action && EM.podeVerificar(eps)) {
-        const b = el('button', 'btn btn-outline btn-sm btn-icon');
-        b.type = 'button'; b.disabled = ep.busy;
-        b.title = 'Confere por peças, no disco, os episódios que só parecem completos.';
-        b.append(icon('shield-check'), document.createTextNode('Verificar peças'));
-        b.addEventListener('click', () => epSet(EM.escolher(ep, { kind: 'verify' })));
-        epsBar.append(b);
-      }
+      if (plano.restaurar) epsBar.append(botao(plano.restaurar, 'btn-outline'));
+      if (plano.verificar) epsBar.append(botao(plano.verificar, 'btn-outline'));
       if (ep.action) {
         const d = EM.descricao(ep.action, t);
         epsPanel.append(alertBox(d.perigo ? 'leech' : 'complete', d.titulo, d.texto));
@@ -590,12 +575,9 @@
         ok.type = cancel.type = 'button'; ok.disabled = cancel.disabled = ep.busy;
         cancel.addEventListener('click', () => epSet(EM.cancelar(ep)));
         ok.addEventListener('click', async () => {
-          const indo = EM.confirmar(ep);
-          if (!indo) return;
-          const req = EM.pedido(indo.action, epCurrent.infoHash);
-          epSet(indo);
-          try { epSet(EM.concluido(ep, await app().call('POST', req.route, req.body))); } catch (err) { epSet(EM.falhou(ep, err)); }
-          app().refresh();
+          // O modelo ocupa, chama a rota e libera no fim (bem ou mal); o DOM só aplica cada estado.
+          const feito = await EM.executar(ep, epCurrent.infoHash, (route, body) => app().call('POST', route, body), epSet);
+          if (feito) app().refresh();
         });
         row.append(ok, cancel);
         epsPanel.append(row);

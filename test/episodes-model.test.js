@@ -60,7 +60,7 @@ test('a interface carrega o módulo antes de views.js e o painel o usa', () => {
   assert.match(html, /<script src="\/episodes-model\.js" defer><\/script>/);
   assert.ok(html.indexOf('episodes-model.js') < html.indexOf('views.js'), 'o módulo vem antes das telas');
   assert.match(ui('views.js'), /const EM = window\.EpisodesModel;/);
-  assert.match(ui('views.js'), /EM\.acaoExcluir/, 'o card usa a mesma regra testada aqui');
+  assert.match(ui('views.js'), /EM\.plano\(/, 'o card usa o plano (e a regra) testados aqui');
 });
 
 test('o card redesenha quando o que decide o botão muda (conclusão e confirmação do tracker)', () => {
@@ -163,7 +163,7 @@ test('texto da confirmação: alcance visível e aviso de ratio quando o release
 test('views.js usa o modelo do card em vez de repetir a lógica', () => {
   const views = fs.readFileSync(path.join(__dirname, '..', 'src', 'ui', 'views.js'), 'utf8');
   assert.match(views, /const EM = window\.EpisodesModel;/);
-  for (const fn of ['escolher', 'cancelar', 'confirmar', 'concluido', 'falhou', 'pedido', 'temporadas', 'descricao']) {
+  for (const fn of ['escolher', 'cancelar', 'executar', 'plano', 'descricao']) {
     assert.match(views, new RegExp(`EM\\.${fn}\\b`), fn);
   }
   assert.doesNotMatch(views, /app\(\)\.call\('POST', 'exclude'/, 'o pedido sai do modelo');
@@ -177,4 +177,132 @@ test('"Verificar peças" só se oferece quando há episódio apenas provável e 
   assert.equal(M.podeVerificar(undefined), false);
   assert.match(M.descricao({ kind: 'verify' }, {}).texto, /não baixa/i);
   assert.equal(M.descricao({ kind: 'verify' }, {}).perigo, false);
+});
+
+// ---- Fluxo de confirmar (o que o clique em "Confirmar" faz) e plano de botões --------------------------
+// A orquestração fica no modelo: o DOM só aplica cada estado que ela emite e depois atualiza a tela.
+test('executar: ocupa, chama a rota certa e termina liberado com a mensagem do servidor', async () => {
+  const estados = []; const chamadas = [];
+  const st = M.escolher(M.estadoInicial(), { kind: 'excludeSeason', season: 2 });
+  await M.executar(st, HASH, async (route, body) => { chamadas.push([route, body]); return { message: 'Temporada excluída.' }; }, (s) => estados.push(s));
+  assert.deepEqual(chamadas, [['exclude', { infoHash: HASH, season: 2 }]]);
+  assert.equal(estados.length, 2);
+  assert.equal(estados[0].busy, true, 'ocupado antes de a resposta chegar');
+  assert.deepEqual(estados[1], { action: null, busy: false, result: 'Temporada excluída.' });
+});
+
+test('executar: erro do servidor reabilita o card e mostra o motivo (nada fica ocupado)', async () => {
+  const estados = [];
+  const st = M.escolher(M.estadoInicial(), { kind: 'exclude', file: 1, tag: 'S01E02' });
+  await M.executar(st, HASH, async () => { throw new Error('Tracker ainda não confirmou.'); }, (s) => estados.push(s));
+  assert.equal(estados.at(-1).busy, false);
+  assert.equal(estados.at(-1).action, null);
+  assert.equal(estados.at(-1).result, 'Tracker ainda não confirmou.');
+});
+
+test('executar: clique duplo ou sem ação escolhida não chama o servidor', async () => {
+  let n = 0;
+  const call = async () => { n += 1; return {}; };
+  const aplicados = [];
+  const ocupado = { ...M.escolher(M.estadoInicial(), { kind: 'restore' }), busy: true };
+  assert.equal(await M.executar(ocupado, HASH, call, (s) => aplicados.push(s)), false);
+  assert.equal(await M.executar(M.estadoInicial(), HASH, call, (s) => aplicados.push(s)), false);
+  assert.equal(n, 0);
+  assert.deepEqual(aplicados, []);
+});
+
+test('executar: uma ação desconhecida não deixa o card ocupado', async () => {
+  const estados = [];
+  await assert.rejects(M.executar({ action: { kind: 'qualquer' }, busy: false, result: '' }, HASH, async () => ({}), (s) => estados.push(s)), /ação desconhecida/);
+  assert.deepEqual(estados, [], 'o pedido é montado antes de ocupar');
+});
+
+test('executar: erro ao desenhar o sucesso não vira "falhou" (o servidor já concluiu a ação)', async () => {
+  const estados = [];
+  const st = M.escolher(M.estadoInicial(), { kind: 'exclude', file: 0, tag: 'S01E01' });
+  const aplicar = (s) => { estados.push(s); if (estados.length === 2) throw new Error('falha ao redesenhar'); };
+  await assert.rejects(M.executar(st, HASH, async () => ({ message: 'Episódio excluído.' }), aplicar), /redesenhar/);
+  assert.equal(estados.length, 2, 'não tenta aplicar uma falha que não houve');
+  assert.equal(estados[1].result, 'Episódio excluído.');
+});
+
+const ep = (index, season, episode, state, extra = {}) => ({ index, season, episode, state, excluded: false, ...extra });
+const livre = M.estadoInicial();
+
+test('plano: pack de uma temporada não tem cabeçalho de temporada e liga o excluir pela regra do tracker', () => {
+  const t = titulo({ episodes: [ep(0, 1, 1, 'completo'), ep(1, 1, 2, 'ausente')] });
+  const p = M.plano(t, livre);
+  assert.equal(p.temporadas.length, 1);
+  assert.equal(p.temporadas[0].cabecalho, false);
+  const [e1, e2] = p.temporadas[0].episodios;
+  assert.equal(e1.baixar, null, 'completo não se baixa');
+  assert.equal(e1.excluir.desabilitado, false);
+  assert.deepEqual(e1.excluir.acao, { kind: 'exclude', file: 0, tag: 'S01E01' });
+  assert.equal(e2.excluir, null, 'ausente não tem o que excluir');
+  assert.deepEqual(e2.baixar.acao, { kind: 'completeFile', file: 1, tag: 'S01E02' });
+  assert.equal(p.restaurar.acao.kind, 'restore', 'falta episódio: oferece baixar o que falta');
+});
+
+test('plano: obrigação aberta desabilita o excluir (episódio e temporada) e o título explica', () => {
+  const t = titulo({ tracker: { satisfied: false, hitAndRun: false }, episodes: [ep(0, 1, 1, 'completo'), ep(1, 2, 1, 'completo')] });
+  const p = M.plano(t, livre);
+  assert.equal(p.temporadas.length, 2);
+  for (const ts of p.temporadas) {
+    assert.equal(ts.cabecalho, true);
+    assert.equal(ts.excluir.desabilitado, true);
+    assert.equal(ts.excluir.titulo, M.acaoExcluir(t).motivo);
+    assert.equal(ts.episodios[0].excluir.desabilitado, true);
+    assert.equal(ts.episodios[0].excluir.titulo, M.acaoExcluir(t).motivo);
+  }
+});
+
+test('plano: episódio excluído só oferece baixar; temporada sem nada em disco não oferece excluir', () => {
+  const t = titulo({ episodes: [ep(0, 1, 1, 'completo'), ep(1, 2, 1, 'ausente', { excluded: true }), ep(2, 2, 2, 'parcial', { excluded: true })] });
+  const p = M.plano(t, livre);
+  const s2 = p.temporadas[1];
+  assert.equal(s2.episodios[1].excluir, null, 'o flag de excluído vale mesmo se sobrar byte em disco');
+  assert.equal(s2.excluir, null);
+  assert.equal(s2.baixar.acao.kind, 'completeSeason');
+  assert.equal(s2.episodios[0].excluir, null);
+  assert.equal(s2.episodios[0].baixar.acao.kind, 'completeFile');
+});
+
+test('plano: durante a conclusão em segundo plano não se oferece nenhum download', () => {
+  const t = titulo({ state: 'completing', episodes: [ep(0, 1, 1, 'completo'), ep(1, 2, 1, 'parcial')] });
+  const p = M.plano(t, livre);
+  assert.equal(p.restaurar, null);
+  for (const ts of p.temporadas) {
+    assert.equal(ts.baixar, null);
+    for (const e of ts.episodios) assert.equal(e.baixar, null);
+  }
+});
+
+test('plano: com pedido em andamento todos os botões ficam desabilitados; com confirmação aberta somem os atalhos', () => {
+  const t = titulo({ episodes: [ep(0, 1, 1, 'completo'), ep(1, 1, 2, 'provavel'), ep(2, 1, 3, 'ausente')] });
+  const ocupado = { ...M.escolher(livre, { kind: 'restore' }), busy: true };
+  const p = M.plano(t, ocupado);
+  let botoes = 0;
+  for (const e of p.temporadas[0].episodios) {
+    for (const b of [e.baixar, e.excluir]) if (b) { botoes += 1; assert.equal(b.desabilitado, true); }
+  }
+  assert.ok(botoes >= 3, 'há botões para provar que nenhum escapou');
+  assert.equal(p.restaurar, null, 'com ação aberta o atalho some');
+  assert.equal(p.verificar, null);
+  const aberto = M.plano(t, livre);
+  assert.equal(aberto.verificar.acao.kind, 'verify', 'há episódio só provável');
+  assert.equal(aberto.verificar.desabilitado, false);
+});
+
+test('plano: sem episódios não há temporada nem botão', () => {
+  for (const t of [titulo({ episodes: [] }), {}]) {
+    assert.deepEqual(M.plano(t, livre), { temporadas: [], restaurar: null, verificar: null });
+  }
+});
+
+test('views.js só aplica o plano e o fluxo do modelo (sem decidir botão nem montar pedido)', () => {
+  const views = fs.readFileSync(path.join(__dirname, '..', 'src', 'ui', 'views.js'), 'utf8');
+  const corpo = views.slice(views.indexOf('function renderEps'), views.indexOf('main.append(cSeed'));
+  assert.match(corpo, /EM\.plano\(/);
+  assert.match(corpo, /EM\.executar\(/);
+  assert.doesNotMatch(corpo, /EM\.acaoExcluir|EM\.temporadas|EM\.podeVerificar|EM\.confirmar|EM\.pedido/, 'a decisão sai do DOM');
 });

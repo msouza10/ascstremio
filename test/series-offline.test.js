@@ -47,14 +47,17 @@ function resposta() {
 }
 const pedido = (method, url, headers = {}) => ({ method, url: `${url}?k=${TOKEN}`, headers, socket: { remoteAddress: '127.0.0.1' } });
 
-function ponte(over = {}) {
-  const store = tmpdir('so-store-');
-  const vault = new SeedVault({ file: path.join(tmpdir('so-v2-'), 'v.json') });
-  vault.markSeen(HASH, { name: 'Pack', freeleech: true });
+// `reinicio`: { store, vault } de uma ponte anterior; os arquivos e o cofre continuam, a memória não.
+function ponte({ reinicio = null, ...over } = {}) {
+  const store = reinicio?.store ?? tmpdir('so-store-');
+  const vault = reinicio?.vault ?? new SeedVault({ file: path.join(tmpdir('so-v2-'), 'v.json') });
+  if (!reinicio) vault.markSeen(HASH, { name: 'Pack', freeleech: true });
   const lib = { infoHash: HASH, name: 'Pack', title: 'Pack', freeleech: true, torrentPath: '/x/asc-12.torrent',
     files: DADOS.map((d, i) => ({ index: i, path: `P/P.S01E0${i + 1}.mkv`, length: d.length, isVideo: true })) };
-  fs.mkdirSync(path.join(store, 'P'));
-  lib.files.forEach((f, i) => fs.writeFileSync(path.join(store, f.path), DADOS[i]));
+  if (!reinicio) {
+    fs.mkdirSync(path.join(store, 'P'));
+    lib.files.forEach((f, i) => fs.writeFileSync(path.join(store, f.path), DADOS[i]));
+  }
   const b = new Bridge({ torrentDir: '/tmp', storeDir: store, port: 7099, publicUrl: 'http://127.0.0.1:7010/', credentials: cred, vault,
     minFreeBytes: 1000, freeSpace: () => 1e12,
     loadPieceMeta: async () => ({ pieceLength: PL, pieces, length: tudo.length, files: lib.files.map((f) => ({ path: f.path, length: f.length })) }), ...over });
@@ -101,6 +104,29 @@ test('só episódio VERIFICADO por peças, não excluído e do IMDb certo é ofe
   assert.equal(s.b.localEpisodeSources(IMDB, 1, 9).length, 0, 'episódio que o pack não tem');
   s.vault.setExcluded(HASH, 1, true);
   assert.equal(s.b.localEpisodeSources(IMDB, 1, 2).length, 0, 'excluído por você não é oferecido');
+});
+
+test('depois de reiniciar a ponte a prova se perde: nada é oferecido até verificar de novo', async () => {
+  const antes = ponte();
+  antes.vault.setSeriesLink(HASH, IMDB);
+  await antes.b.verifyEpisodes(HASH);
+  assert.equal(antes.b.localEpisodeSources(IMDB, 1, 2).length, 1);
+  const depois = ponte({ reinicio: { store: antes.store, vault: antes.vault } });
+  assert.equal(depois.vault.get(HASH).imdbId, IMDB, 'o vínculo com a série persiste');
+  assert.deepEqual(depois.b.localEpisodeSources(IMDB, 1, 2), [], 'tamanho em disco não é prova');
+  await depois.b.verifyEpisodes(HASH);
+  assert.equal(depois.b.localEpisodeSources(IMDB, 1, 2).length, 1);
+});
+
+test('episódio corrompido ou incompleto nunca é oferecido; o íntegro do mesmo pack continua', async () => {
+  const s = ponte();
+  s.vault.setSeriesLink(HASH, IMDB);
+  fs.writeFileSync(path.join(s.store, s.lib.files[0].path), Buffer.alloc(16384, 9)); // mesmo tamanho, outro conteúdo
+  fs.writeFileSync(path.join(s.store, s.lib.files[2].path), Buffer.alloc(8192, 3)); // metade do arquivo
+  await s.b.verifyEpisodes(HASH);
+  assert.deepEqual(s.b.localEpisodeSources(IMDB, 1, 1), [], 'peça não confere: sem prova');
+  assert.deepEqual(s.b.localEpisodeSources(IMDB, 1, 3), [], 'parcial não passa nem pela verificação');
+  assert.deepEqual(s.b.localEpisodeSources(IMDB, 1, 2).map((x) => x.fileIdx), [1]);
 });
 
 test('pack sem vínculo com a série nunca é oferecido, mesmo verificado', async () => {

@@ -355,6 +355,44 @@ test('arquivo compartilhado entre títulos e link físico protegem o título', (
   if (fs.statSync(solto.full).nlink > 1) assert.equal(motivos[solto.hash], 'arquivo-inseguro:link-fisico');
 });
 
+// ---- Packs de série ---------------------------------------------------------------------------------
+// Pack de episódios (um bloco por arquivo). `ausentes` são os que o usuário excluiu: sem arquivo em disco.
+function addPack(c, n, { ausentes = [], ...opts } = {}) {
+  const r = c.add(n, opts);
+  fs.rmSync(r.full); // o arquivo único do cenário de filme não faz parte do pack
+  const arquivos = [1, 2, 3].map((e, i) => ({ index: i, path: `Filme ${n}/Serie.S01E0${e}.mkv`, length: BLOCO, isVideo: true }));
+  c.b.entries.get(r.hash).files = arquivos;
+  arquivos.forEach((f, i) => { if (!ausentes.includes(i)) fs.writeFileSync(path.join(c.store, f.path), Buffer.alloc(BLOCO, 1)); });
+  for (const i of ausentes) c.vault.setExcluded(r.hash, i, true);
+  return { ...r, arquivos, existe: (i) => existe(path.join(c.store, arquivos[i].path)) };
+}
+
+test('pack com episódio excluído: a prévia conta só o que está em disco e a execução remove o resto sem falha', async () => {
+  const c = cenario({ budgetBlocos: 1 });
+  const pack = addPack(c, 1, { idade: 90, ausentes: [1] });
+  const p = c.R.preview();
+  assert.deepEqual(p.candidatos.map((x) => x.infoHash), [pack.hash]);
+  assert.equal(p.candidatos[0].bytes, 2 * BLOCO, 'o episódio excluído não conta bytes');
+  const r = await c.R.run(p.plano);
+  assert.deepEqual(r.removidos.map((x) => x.infoHash), [pack.hash]);
+  assert.deepEqual(r.falhas, [], 'arquivo já excluído pelo usuário não é falha');
+  assert.deepEqual([0, 2].map(pack.existe), [false, false]);
+  assert.ok(!existe(path.join(c.store, 'Filme 1')), 'pasta vazia aparada');
+  assert.equal(c.vault.get(pack.hash).releasedAs, 'retencao');
+});
+
+test('pack ainda incompleto nunca sai, mesmo com episódios inteiros em disco e confirmação antiga do tracker', async () => {
+  const c = cenario({ budgetBlocos: 1 });
+  const parcial = addPack(c, 1, { idade: 90 });
+  c.vault.get(parcial.hash).completedAt = null; // o pack nunca fechou: só alguns episódios foram baixados
+  const p = c.R.preview();
+  assert.deepEqual(p.candidatos, []);
+  assert.equal(p.executavel, false);
+  assert.equal(p.protegidos.find((x) => x.infoHash === parcial.hash).motivo, 'incompleto');
+  await assert.rejects(c.R.run(p.plano), (e) => e.status === 409);
+  assert.deepEqual([0, 1, 2].map(parcial.existe), [true, true, true]);
+});
+
 test('arquivo ausente conta zero e título sem dados em disco não é candidato', () => {
   const c = cenario({ budgetBlocos: 1 });
   const a = c.add(1, { idade: 90 });
