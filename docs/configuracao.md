@@ -100,7 +100,7 @@ Caminhos relativos fornecidos por variável são interpretados a partir do diret
 | `CONFIG_ALLOW_LAN` e demais `CONFIG_*` | desligado | Administração opcional do painel pela LAN; ver [a seção própria](#administração-do-painel-pela-lan) |
 | `ALLOWED_HOSTS` | vazio | Nomes DNS adicionais aceitos por addon/ponte, separados por vírgula |
 | `STATUS_CATALOG` | `on` | `off` remove o catálogo de status e seus alertas das fontes |
-| `DEMO_MODE` | desligado | `true` adiciona uma fonte de demonstração externa |
+| `DEMO_MODE` | desligado | `true` adiciona uma fonte de demonstração externa (Big Buck Bunny, "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org", CC BY 3.0; ver [terceiros](terceiros.md#atribuições-exigidas)) |
 
 `PORT`, `BRIDGE_PORT` e `CONFIG_PORT` devem ser inteiros entre 1 e 65535. `ALLOWED_HOSTS` não muda o Host exato exigido pelo painel. Alterar a porta interna do contêiner exige ajustar a publicação da mesma porta no host para o painel. Os nomes em `BRIDGE_PUBLIC_URL`/`ADDON_PUBLIC_URL` também entram na lista de hosts aceitos por addon/ponte.
 
