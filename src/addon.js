@@ -232,9 +232,11 @@ function createAddon({ provider = amigosShare, demo = false, library = [], local
       return {
         streams: [{
           name: 'Demonstração',
-          description: 'Big Buck Bunny — vídeo público de teste',
-          url: 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-          behaviorHints: { filename: 'BigBuckBunny.mp4' },
+          // Versão 480p hospedada na Wikimedia Commons (CC BY 3.0, Blender Foundation): host público,
+          // com Range e atribuição verificada. O bucket anterior passou a responder 403.
+          description: 'Big Buck Bunny — © 2008 Blender Foundation | www.bigbuckbunny.org (CC BY 3.0), via Wikimedia Commons',
+          url: 'https://upload.wikimedia.org/wikipedia/commons/transcoded/c/c0/Big_Buck_Bunny_4K.webm/Big_Buck_Bunny_4K.webm.480p.vp9.webm',
+          behaviorHints: { filename: 'Big_Buck_Bunny_480p.webm' },
         }],
         cacheMaxAge: 0,
       };

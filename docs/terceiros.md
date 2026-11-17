@@ -199,15 +199,17 @@ que o upstream não publicou.
   **"(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org"**. Logos e marcas
   do site (inclusive Blender e Creative Commons) ficam fora da licença. O filme não
   está no repositório: `src/addon.js` apenas aponta uma URL externa quando
-  `DEMO_MODE=true`. Cabe observar que:
-  - a URL é `https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`,
-    em um bucket Google chamado `gtv-videos-bucket`; **não foi encontrada fonte que
-    declare esse bucket espelho oficial do Blender**;
-  - em 17/11/2026 essa URL respondeu **403 `AccessDenied`** a requisições anônimas (HEAD e
-    GET). Isso é também um defeito funcional do `DEMO_MODE`, a tratar fora da questão de
-    licença. Os arquivos publicados em `download.blender.org/peach/bigbuckbunny_movies/`
-    são `.zip`, sem URL de streaming direto verificada; a substituição da URL fica
-    pendente;
+  `DEMO_MODE=true`. Sobre a fonte:
+  - **a URL foi trocada em 17/11/2026.** A anterior (um bucket Google chamado
+    `gtv-videos-bucket`, sem fonte que o declare espelho oficial do Blender) respondia
+    **403 `AccessDenied`** a requisições anônimas, o que quebrava o `DEMO_MODE`. A atual é a
+    versão 480p (`.webm`, VP9) hospedada na [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Big_Buck_Bunny_4K.webm);
+  - a página do arquivo na Commons, consultada pela API (`extmetadata`) em 17/11/2026, indica
+    licença **CC BY 3.0** e autor **Blender Foundation**, e o servidor respondeu 200 com
+    `Accept-Ranges: bytes` ao `HEAD`. A descrição da fonte no Stremio traz a atribuição e a
+    origem ("via Wikimedia Commons");
+  - os arquivos publicados em `download.blender.org/peach/bigbuckbunny_movies/` são `.zip`,
+    sem URL de streaming direto verificada, e por isso não foram usados;
   - o exemplo da documentação do SDK Stremio usa outra URL
     (`distribution.bbb3d.renderfarming.net`), não adotada aqui.
 - **Inter** e **Lucide**: avisos em `src/ui/assets/INTER-LICENSE.txt` e
@@ -365,8 +367,8 @@ Fatos das fontes oficiais (consultadas em 17/11/2026):
    executável não acompanham o instalador.
 5. **15 pacotes sem arquivo de licença:** decidir se o campo `license` e o README bastam.
    **Escolhas de licença** (`expand-template`, `rc`): confirmar as propostas pelo dono.
-6. **Big Buck Bunny:** a URL da amostra responde 403; escolher uma fonte oficial que
-   permita streaming direto e conferir a atribuição dessa cópia.
+6. **Big Buck Bunny:** resolvido em 17/11/2026 (URL trocada para a Wikimedia Commons, com a
+   atribuição na própria fonte). Reconferir se a URL deixar de responder.
 7. **Cinemeta e Stremio:** alcance dos termos de uso sobre a consulta automática; licença dos
    dados dos provedores; ausência de código público verificado do Cinemeta.
 8. **Nomes:** avaliar aviso de independência na tela do instalador/bandeja, a semelhança
