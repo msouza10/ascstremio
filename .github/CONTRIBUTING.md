@@ -19,7 +19,8 @@ explica ambiente, verificações e empacotamento.
 ```bash
 git clone https://github.com/msouza10/ascstremio.git && cd ascstremio
 npm ci                 # Node 22+
-npm run check          # sintaxe da UI + testes (os mesmos do CI)
+npm run check          # no Linux inclui Stremio Flatpak real (fechado antes do teste) e sessão gráfica
+npm run check:unit     # sintaxe e testes compartilhados, sem aplicativo ou interface gráfica
 # instância de teste, sem tocar nos seus dados:
 DATA_DIR=/tmp/ascstremio PORT=18000 BRIDGE_PORT=18010 CONFIG_PORT=18020 npm start
 ```
@@ -35,7 +36,8 @@ DATA_DIR=/tmp/ascstremio PORT=18000 BRIDGE_PORT=18010 CONFIG_PORT=18020 npm star
    shellcheck -S warning scripts/*.sh windows/build.sh     # se mexeu em shell
    actionlint .github/workflows/*.yml                      # se mexeu em workflows
    ```
-4. Abra o pull request. O CI roda testes em Ubuntu e Windows (Node 22 e 24), lint, auditoria,
+4. Abra o pull request. O CI roda testes em Ubuntu e Windows (Node 22 e 24), cliente Stremio real
+   no Linux em tela virtual, lint, auditoria,
    pacote, imagem Docker e o instalador do Windows instalado de verdade. Tudo precisa passar.
 5. Os **títulos dos commits** seguem o [padrão de commits e changelog](COMMIT_CONVENTION.md): eles
    decidem a versão e as notas do release.

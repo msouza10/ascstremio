@@ -92,14 +92,22 @@ jobs:
         shell: bash
         run: |
           for i in 1 2 3 4; do npm ci --no-audit --no-fund && exit 0; echo "tentativa $i falhou; aguardando"; sleep $((i * 20)); done; exit 1
-      - run: npm run check
+      - run: npm run check:unit
       - run: scripts/check-no-secrets.sh .
       - run: node scripts/audit-check.js
+
+  stremio:
+    name: Stremio real na versão do release
+    needs: target
+    if: needs.target.outputs.go == 'true'
+    uses: ./.github/workflows/stremio-tests.yml
+    with:
+      ref: ${{ needs.target.outputs.tag_name }}
 
   linux:
     name: Pacote Linux
     runs-on: ubuntu-latest
-    needs: [target, verify]
+    needs: [target, verify, stremio]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -119,7 +127,7 @@ jobs:
   windows-build:
     name: Instalador Windows
     runs-on: ubuntu-latest
-    needs: [target, verify]
+    needs: [target, verify, stremio]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -163,7 +171,7 @@ jobs:
   docker:
     name: Imagem no GHCR (amd64 + arm64)
     runs-on: ubuntu-latest
-    needs: [target, verify]
+    needs: [target, verify, stremio]
     permissions:
       contents: read
       packages: write

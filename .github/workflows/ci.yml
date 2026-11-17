@@ -38,7 +38,11 @@ jobs:
         shell: bash
         run: |
           for i in 1 2 3 4; do npm ci --no-audit --no-fund && exit 0; echo "tentativa $i falhou; aguardando"; sleep $((i * 20)); done; exit 1
-      - run: npm run check
+      - run: npm run check:unit
+
+  stremio:
+    name: Stremio real
+    uses: ./.github/workflows/stremio-tests.yml
 
   commits:
     name: Commits no padrão (Conventional Commits)
@@ -78,7 +82,7 @@ jobs:
   package-linux:
     name: Pacote e instalação por curl (Linux)
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, stremio]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v7
@@ -101,7 +105,7 @@ jobs:
   docker:
     name: Imagem Docker
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, stremio]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v4
@@ -121,7 +125,7 @@ jobs:
   windows-installer:
     name: Instalador Windows (compila e instala de verdade)
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, stremio]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v7

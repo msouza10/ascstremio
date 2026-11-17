@@ -1,4 +1,5 @@
 docs/README.md
+TESTS.md
 docs/instalacao.md
 docs/configuracao.md
 docs/uso.md

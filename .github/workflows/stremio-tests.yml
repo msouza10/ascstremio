@@ -1,0 +1,64 @@
+name: Stremio instalado
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Revisão a testar (vazio usa a revisão do chamador)
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  cliente:
+    name: Stremio real (Linux, LAN e interface oficial)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      STREMIO_COMMIT: 0496ce1d6d44ee462182b8779a6ff475bf58b2e77a48a528b5542a44fab7ae6c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Dependências do projeto
+        run: npm ci --no-audit --no-fund
+      - name: Preparar sessão gráfica e Flatpak
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends software-properties-common
+          # PPA mantido pelo projeto Flatpak: evita o Flatpak 1.12 do Ubuntu 22.04.
+          sudo add-apt-repository -y ppa:flatpak/stable
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak xvfb xauth dbus-x11 libgl1-mesa-dri
+          flatpak --version
+          dbus-run-session -- flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          dbus-run-session -- flatpak install --user --noninteractive -y flathub com.stremio.Stremio
+          dbus-run-session -- flatpak update --user --noninteractive -y --commit="$STREMIO_COMMIT" com.stremio.Stremio
+          test "$(flatpak info --user --show-commit com.stremio.Stremio)" = "$STREMIO_COMMIT"
+      - name: Testes comuns com Stremio real em tela virtual
+        shell: bash
+        env:
+          GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          set -Eeuo pipefail
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/stremio-runtime"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x800x24' npm test 2>&1 | tee "$RUNNER_TEMP/stremio-tests.log"
+      - name: Relatório dos testes (sem perfil ou credenciais)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stremio-linux-testes
+          path: ${{ runner.temp }}/stremio-tests.log
+          if-no-files-found: warn
+          retention-days: 7
+

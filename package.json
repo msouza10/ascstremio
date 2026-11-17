@@ -9,7 +9,8 @@
     "start": "node --max-http-header-size=65536 src/index.js",
     "dev": "node --max-http-header-size=65536 --watch src/index.js",
     "test": "npm run check",
-    "check": "node --check src/ui/app.js && node --check src/ui/views.js && node --check src/ui/logs.js && node --check src/ui/settings-model.js && node --check src/ui/settings.js && node --check src/ui/admin.js && node --test test/*.test.js",
+    "check": "node scripts/check.js",
+    "check:unit": "node scripts/check.js --unit",
     "credenciais": "node src/credenciais-cli.js",
     "configurar": "node src/configurar-cli.js",
     "rede": "node src/rede-cli.js",
@@ -17,6 +18,8 @@
     "admin-painel": "node src/admin-cli.js",
     "alertas": "node src/alertas-cli.js",
     "bench:reproducao": "node --max-http-header-size=65536 scripts/bench-playback.js",
+    "smoke:stremio:linux": "node scripts/stremio-linux-smoke.js",
+    "test:stremio:linux": "node --test test/integration/stremio/*.test.js",
     "install-service": "bash scripts/install.sh"
   },
   "engines": {

@@ -22,7 +22,22 @@ shellcheck -S warning scripts/*.sh windows/build.sh
 actionlint .github/workflows/*.yml
 ```
 
-`npm test` chama a mesma verificação de sintaxe da UI e testes `node:test`. Os testes não devem usar rede real, conta ASC, `private/` ou caminhos específicos da máquina. Para um arquivo: `node --test test/seed-policy.test.js`.
+`npm test` chama `npm run check`: sintaxe da UI e testes compartilhados `node:test`; no Linux,
+também instala o addon sintético e reproduz um vídeo na interface oficial do Stremio Flatpak
+instalado, em perfil temporário e sem conta. Feche o Stremio antes e tenha uma sessão gráfica
+disponível. A interface web pública do cliente exige rede, mas não há acesso ao ASC ou conta pessoal.
+O adaptador gráfico ainda é exclusivo do Linux; no Windows o comando informa essa limitação.
+
+`npm run check:unit` roda somente a parte sem cliente gráfico, usada também pelo instalador e pela
+matriz Ubuntu/Windows × Node 22/24. Esses testes não devem usar rede externa, conta ASC, `private/`
+ou caminhos específicos da máquina. Para um arquivo: `node --test test/seed-policy.test.js`.
+
+O job compartilhado em `.github/workflows/stremio-tests.yml`, chamado pelo CI e pelo release,
+prepara Flatpak, fixa o commit do aplicativo e executa `npm test` sob Xvfb e D-Bus isolados,
+com renderização por software. Falha na instalação, na inicialização ou nos cenários bloqueia os
+pacotes. O relatório é publicado sem perfil, URLs com credenciais ou dados de conta. Para executar
+somente os cenários gráficos: `npm run test:stremio:linux`. O mapa de cobertura está em
+[`TESTS.md`](../TESTS.md).
 
 `npm run bench:reproducao` é um benchmark **sob demanda** (swarm local com arquivo sintético, sem rede externa nem dados reais) e não faz parte de `npm run check` nem do CI; só suas partes puras são testadas (`test/bench-playback.test.js`). A instrumentação que ele lê (`src/stream-metrics.js`) é testada com relógio e streams simulados em `test/stream-metrics.test.js`. Como interpretar: [Medir a reprodução](#medir-a-reprodução-benchmark-offline).
 
