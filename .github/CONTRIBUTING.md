@@ -54,6 +54,9 @@ As capturas em `docs/imagens/` mostram a interface real com dados fictícios. Nu
 uma conta real. Antes de adicionar uma imagem, revise visualmente usuário, credenciais,
 caminhos, títulos e logs. Use PNG sem metadados textuais/EXIF, largura máxima de 1280 px,
 até 200 KiB por imagem e até 2 MiB na pasta. Toda imagem precisa de texto alternativo.
+`scripts/check-no-secrets.sh` barra, em `docs/imagens/`, extensão fora de `png`/`webp`, tamanho e
+largura acima desses limites e blocos de metadados (`tEXt`, `iTXt`, `zTXt`, `eXIf` no PNG; `EXIF`
+e `XMP ` no WebP).
 
 Capturas do Stremio saem de um addon de demonstração (`scripts/demo-stremio.js`): ele usa o addon
 real com um ASC falso, títulos de domínio público ou licença aberta (Night of the Living Dead,

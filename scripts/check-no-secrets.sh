@@ -39,6 +39,77 @@ while IFS= read -r file; do
       fi ;;
   esac
 done <<< "$files"
+
+# Imagens públicas (docs/imagens/): só PNG ou WebP, até 200 KiB cada (2 MiB no total), até 1280 px
+# de largura e sem metadados (texto, EXIF, XMP), que podem carregar usuário, máquina e caminhos
+# de quem gerou a captura. Os blocos são percorridos pela estrutura do arquivo, não por busca de
+# texto: assim os bytes de pixels que lembrem "tEXt" não geram falso positivo. Limites do
+# `.github/CONTRIBUTING.md`.
+IMG_MAX_BYTES=204800
+IMG_MAX_TOTAL=2097152
+IMG_MAX_WIDTH=1280
+# Número (decimal) de n bytes do arquivo a partir de um deslocamento: big-endian ou little-endian.
+img_uint() { # arquivo deslocamento n endian(be|le)
+  local bytes b v=0
+  bytes="$(od -An -v -tu1 -j "$2" -N "$3" "$1")"
+  if [ "$4" = le ]; then bytes="$(tr ' ' '\n' <<< "$bytes" | sed '/^$/d' | tac | tr '\n' ' ')"; fi
+  for b in $bytes; do v=$((v * 256 + b)); done
+  echo "$v"
+}
+img_tag() { LC_ALL=C dd if="$1" bs=1 skip="$2" count=4 2>/dev/null; } # 4 caracteres ASCII
+# Percorre os blocos e escreve "ok:<largura>" ou "meta:<tipo>" ou "invalido".
+img_scan() { # arquivo
+  local f="$1" size off len tag w=0
+  size="$(wc -c < "$f")"
+  if [ "$size" -ge 33 ] && [ "$(od -An -v -tx1 -N8 "$f" | tr -d ' \n')" = 89504e470d0a1a0a ]; then
+    w="$(img_uint "$f" 16 4 be)"; off=8
+    while [ "$off" -lt "$size" ]; do
+      [ $((off + 12)) -le "$size" ] || { echo invalido; return; }
+      len="$(img_uint "$f" "$off" 4 be)"; tag="$(img_tag "$f" $((off + 4)))"
+      case "$tag" in tEXt|iTXt|zTXt|eXIf) echo "meta:$tag"; return ;; esac
+      off=$((off + len + 12))
+      if [ "$tag" = IEND ]; then [ "$off" -eq "$size" ] && echo "ok:$w" || echo invalido; return; fi
+    done
+    echo invalido; return
+  fi
+  if [ "$size" -ge 20 ] && [ "$(img_tag "$f" 0)" = RIFF ] && [ "$(img_tag "$f" 8)" = WEBP ]; then
+    off=12
+    while [ "$off" -lt "$size" ]; do
+      [ $((off + 8)) -le "$size" ] || { echo invalido; return; }
+      tag="$(img_tag "$f" "$off")"; len="$(img_uint "$f" $((off + 4)) 4 le)"
+      case "$tag" in 'EXIF'|'XMP ') echo "meta:$tag"; return ;; esac
+      off=$((off + 8 + len + (len % 2)))
+    done
+    [ "$off" -le $((size + 1)) ] && echo "ok:0" || echo invalido; return
+  fi
+  echo invalido
+}
+img_total=0
+while IFS= read -r file; do
+  case "$file" in docs/imagens/*) ;; *) continue ;; esac
+  [ -f "$file" ] || continue
+  case "$file" in
+    *.png|*.webp) ;;
+    *) report "imagem com extensão fora de png/webp: $file"; continue ;;
+  esac
+  bytes="$(wc -c < "$file")"; img_total=$((img_total + bytes))
+  [ "$bytes" -le "$IMG_MAX_BYTES" ] || report "imagem acima de 200 KiB: $file"
+  result="$(img_scan "$file")"
+  case "$result" in
+    meta:*) report "imagem com metadados (${result#meta:}): $file" ;;
+    ok:*)
+      width="${result#ok:}"
+      # PNG traz a largura no cabeçalho; WebP depende do identify, quando existir.
+      if [ "$width" -eq 0 ] && command -v identify >/dev/null 2>&1; then
+        width="$(identify -format '%w' "${file}[0]" 2>/dev/null || echo 0)"
+        [ "$width" -gt 0 ] 2>/dev/null || report "imagem ilegível ao medir a largura: $file"
+      fi
+      [ "$width" -le "$IMG_MAX_WIDTH" ] 2>/dev/null || report "imagem acima de 1280 px de largura: $file" ;;
+    *) report "imagem ilegível ou inválida (PNG/WebP esperado): $file" ;;
+  esac
+done <<< "$files"
+[ "$img_total" -le "$IMG_MAX_TOTAL" ] || report "docs/imagens/ acima de 2 MiB no total"
+
 # a passkey real desta máquina (se existir) não pode aparecer em lugar nenhum
 for pk in "$OLDPWD/private/passkey.txt" "$HOME/.local/share/ascstremio/data/passkey.txt"; do
   if [ -s "$pk" ] && echo "$files" | tr '\n' '\0' | xargs -0 grep -IlF -- "$(tr -d '\n' < "$pk")" 2>/dev/null | grep -q .; then
