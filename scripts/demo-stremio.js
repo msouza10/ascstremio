@@ -105,6 +105,16 @@ function parseArgs(argv, env = process.env) {
 async function startDemoStremio({ port = 0, status: comStatus = false } = {}) {
   // Pasta própria: nada de DATA_DIR da instalação pessoal, nada de credencial real.
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'asc-demo-stremio-'));
+  try {
+    return await montar(dataDir, { port, comStatus });
+  } catch (error) {
+    // Qualquer falha na montagem (credencial, provedor, porta ocupada) não deixa a pasta para trás.
+    fs.rmSync(dataDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function montar(dataDir, { port, comStatus }) {
   const store = new CredentialStore({ file: path.join(dataDir, 'credentials.json') });
   const { token } = store.create({ name: 'demo-stremio', status: comStatus });
   const provider = createAscProvider(fakeAsc(), fakeBridge(), path.join(dataDir, 'torrents'));
@@ -121,12 +131,7 @@ async function startDemoStremio({ port = 0, status: comStatus = false } = {}) {
     if (!hostAllowed(req.headers.host)) { res.writeHead(403); res.end(); return; }
     handle(req, res);
   });
-  try {
-    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
-  } catch (error) {
-    fs.rmSync(dataDir, { recursive: true, force: true });
-    throw error;
-  }
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   const realPort = server.address().port;
   origin = `http://127.0.0.1:${realPort}`;
   const base = `${origin}/${token}`;
@@ -147,9 +152,15 @@ async function main() {
   console.log(`Filme: ${MOVIE_ID} (Night of the Living Dead) · Série: ${SERIES_ID} (Pioneer One; S01E01 tem fontes, S01E06 mostra o aviso)`);
   if (opcoes.status) console.log('Catálogo "ASC — status" ligado, com instantâneo fictício.');
   console.log('As fontes apontam para um endereço sem serviço: só a lista é fotografada. Ctrl+C encerra e apaga a pasta temporária.');
-  const fechar = () => demo.close().then(() => process.exit(0));
-  process.once('SIGINT', fechar);
-  process.once('SIGTERM', fechar);
+  // Um segundo sinal não deixa o processo preso se o encerramento travar; falha ao limpar sai com 1.
+  let encerrando = false;
+  const fechar = () => {
+    if (encerrando) process.exit(1);
+    encerrando = true;
+    demo.close().then(() => process.exit(0), (error) => { console.error(error.message); process.exit(1); });
+  };
+  process.on('SIGINT', fechar);
+  process.on('SIGTERM', fechar);
 }
 
 if (require.main === module) main().catch((error) => { console.error(error.message); process.exitCode = 1; });
