@@ -33,7 +33,14 @@ scripts/install.sh --check
 scripts/install.sh
 ```
 
-`--check` confere o ambiente e roda os testes, sem criar serviço. O instalador executa as verificações e cria `ascstremio.service` quando há `systemd --user`; sem ele, mostra como executar manualmente. Para o serviço subir no boot sem você estar logado, o instalador tenta ligar o *linger* (`loginctl enable-linger`); se o sistema pedir autorização e ela não for dada, o serviço só roda com a sessão aberta. Confira a saída para saber o que aconteceu.
+`--check` confere o ambiente e roda os testes, sem criar serviço. Num computador ainda sem instalação, a saída termina assim (caminhos e versões genéricos):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="imagens/terminal-instalar-escuro.png">
+  <img src="imagens/terminal-instalar-claro.png" alt="Saída do comando scripts/install.sh --check: verificações aprovadas e três avisos (passkey ausente, sem sessão do ASC e serviço ainda não instalado)." width="1056">
+</picture>
+
+ O instalador executa as verificações e cria `ascstremio.service` quando há `systemd --user`; sem ele, mostra como executar manualmente. Para o serviço subir no boot sem você estar logado, o instalador tenta ligar o *linger* (`loginctl enable-linger`); se o sistema pedir autorização e ela não for dada, o serviço só roda com a sessão aberta. Confira a saída para saber o que aconteceu.
 
 Em Linux glibc x64, arm64 ou armv7, se faltar Node 22+, o script baixa o Node oficial e confere seu SHA-256. `--system-node` impede esse download. O binário oficial não serve para musl/Alpine; use um Node compatível ou a imagem do projeto.
 

@@ -99,6 +99,20 @@ test('apresentação referencia somente imagens públicas existentes, com tema e
   assert.deepEqual([...citadas].sort(), imagens, 'nenhuma imagem pode ficar sem referência ou liberação');
 });
 
+test('guias em docs/ só citam imagens existentes, liberadas e com texto alternativo', () => {
+  const raiz = path.resolve(__dirname, '..');
+  const lista = new Set(fs.readFileSync(path.join(raiz, 'scripts', 'documentation-files.txt'), 'utf8').trim().split(/\r?\n/));
+  for (const guia of [...lista].filter((f) => /^docs\/[^/]+\.md$/.test(f))) {
+    const texto = fs.readFileSync(path.join(raiz, guia), 'utf8');
+    for (const [tag] of texto.matchAll(/<img\b[^>]*>/g)) assert.match(tag, /alt="[^"\s][^"]*"/, `${guia}: imagem sem alt`);
+    for (const [, alvo] of texto.matchAll(/(?:src|srcset)="([^"]+)"/g)) {
+      const relativo = path.posix.normalize(path.posix.join('docs', alvo));
+      assert.ok(lista.has(relativo), `${guia}: ${relativo} precisa estar na lista pública`);
+      assert.ok(fs.statSync(path.join(raiz, relativo)).isFile(), `${guia}: ${relativo}`);
+    }
+  }
+});
+
 test('capturas públicas respeitam tamanho, dimensões e exclusão de metadados', () => {
   const pasta = path.resolve(__dirname, '..', 'docs', 'imagens');
   let total = 0;

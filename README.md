@@ -57,6 +57,27 @@ A entrada começa pelo login no painel local.
 </details>
 
 <details>
+<summary>Instalar e configurar pelo terminal (Linux)</summary>
+
+`scripts/install.sh --check` confere o ambiente sem alterar nada.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/imagens/terminal-instalar-escuro.png">
+  <img src="docs/imagens/terminal-instalar-claro.png" alt="Saída do comando scripts/install.sh --check: sistema, Node, dependências e testes aprovados, com avisos de passkey ausente, sem sessão do ASC e serviço ainda não instalado." width="1056">
+</picture>
+
+`npm run configurar` abre o menu guiado de configuração.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/imagens/terminal-configurar-escuro.png">
+  <img src="docs/imagens/terminal-configurar-claro.png" alt="Menu do modo guiado de npm run configurar, com a pasta de dados, o modo local e as opções de ver, trocar, alterar, remover, diagnosticar e recuperar." width="767">
+</picture>
+
+Saídas reais, reproduzidas num ambiente isolado e com caminhos, versões e dados da máquina substituídos por valores genéricos.
+
+</details>
+
+<details>
 <summary>Acompanhar um torrent</summary>
 
 Veja o progresso de seed, o prazo, a conferência do tracker e a atividade daquele torrent.
