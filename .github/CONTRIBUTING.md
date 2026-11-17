@@ -55,6 +55,21 @@ uma conta real. Antes de adicionar uma imagem, revise visualmente usuário, cred
 caminhos, títulos e logs. Use PNG sem metadados textuais/EXIF, largura máxima de 1280 px,
 até 200 KiB por imagem e até 2 MiB na pasta. Toda imagem precisa de texto alternativo.
 
+Capturas do Stremio saem de um addon de demonstração (`scripts/demo-stremio.js`): ele usa o addon
+real com um ASC falso, títulos de domínio público ou licença aberta (Night of the Living Dead,
+`tt0063350`, e Pioneer One, `tt1748166`) e releases inventados. Nenhuma conta, `private/` ou
+credencial real é lida, e as URLs de vídeo apontam para `127.0.0.1:1`, onde nada escuta.
+
+```bash
+node scripts/demo-stremio.js            # imprime a URL do manifesto (credencial efêmera)
+node scripts/demo-stremio.js --status   # inclui o catálogo "ASC — status" com dados fictícios
+DEMO_STREMIO_PORT=18030 node scripts/demo-stremio.js   # porta fixa (padrão: efêmera)
+```
+
+Instale a URL impressa no Stremio (Addons > instalar por URL), abra o filme e a série (S01E01 mostra
+as fontes; S01E06, o aviso de release não suportado) e fotografe. Desinstale o addon depois; Ctrl+C
+apaga a pasta temporária.
+
 Libere cada nome exato no `.gitignore` (depois de `*.png`) e em
 `scripts/documentation-files.txt`. As imagens acompanham o tarball Linux e o instalador
 Windows para manter os links relativos do README disponíveis offline; a imagem Docker
