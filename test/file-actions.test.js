@@ -446,3 +446,27 @@ test('download parcial em andamento mantém o computador acordado até os arquiv
   m.torrent.done = true;
   assert.equal(s.b.needsAwake(), false);
 });
+
+// ---- Ações de seed e liberação automática num pack com episódio excluído ou baixando em parte --------
+test('pack com episódio excluído: manter semeando recusa (não há seed) e parar preserva a exclusão e os arquivos', async () => {
+  const s = cenario({ aberto: true });
+  await s.b.excludeFile(HASH, 1);
+  await assert.rejects(s.b.manageSeed(HASH, 'keep'), (e) => e.status === 409, 'o seed já está parado');
+  assert.notEqual(s.vault.get(HASH).seedChoice, 'keep', 'manter não grava escolha sem seed para manter');
+  let aberturas = 0;
+  s.b.getTorrent = async () => { aberturas += 1; return { length: 10 }; };
+  await s.b.manageSeed(HASH, 'stop');
+  await s.b.resumePending();
+  assert.equal(aberturas, 0, 'nada reabre o pack nem baixa o episódio de volta');
+  assert.deepEqual([0, 1, 2, 3, 4].map(s.existe), [true, false, true, true, true]);
+  assert.deepEqual(s.vault.get(HASH).excluded, [1], 'a exclusão continua valendo');
+});
+
+test('pack com episódio excluído: excluir o seed apaga só o que sobrou, sem tratar o ausente como falha', async () => {
+  const s = cenario({ aberto: false });
+  await s.b.excludeFile(HASH, 1);
+  const r = await s.b.manageSeed(HASH, 'delete');
+  assert.match(r.message, /excluídos/);
+  assert.deepEqual([0, 1, 2, 3, 4].map(s.existe), [false, false, false, false, false]);
+  assert.equal(s.vault.get(HASH).releasedAs, 'delete');
+});
