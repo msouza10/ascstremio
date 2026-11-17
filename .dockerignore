@@ -5,4 +5,6 @@ dist
 *.torrent
 *.log
 docs
+# Exceção por nome exato (mesma lista de scripts/documentation-files.txt); vem depois de docs.
+!docs/terceiros.md
 tools/__pycache__

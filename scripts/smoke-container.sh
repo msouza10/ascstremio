@@ -26,6 +26,10 @@ done
 if [ "$(curl -fsS "http://127.0.0.1:$P_PANEL/avisos-legais")" != "$("$ENGINE" exec "$NAME" cat /app/LEGAL.md)" ]; then
   echo "FALHA aviso legal servido difere do arquivo na imagem"; fail=1
 fi
+# Avisos de terceiros: precisam estar na própria imagem (não só no repositório).
+for aviso in /app/LICENSE /app/LEGAL.md /app/THIRD-PARTY-INVENTORY.json /app/docs/terceiros.md /app/src/ui/assets/INTER-LICENSE.txt /app/src/ui/assets/LUCIDE-LICENSE.txt; do
+  if "$ENGINE" exec "$NAME" test -s "$aviso"; then echo "ok   $aviso na imagem"; else echo "FALHA $aviso ausente ou vazio na imagem"; fail=1; fi
+done
 # Rotas administrativas: sem o token dão 403, com ele (lido de dentro do contêiner) 200.
 admin_key="$("$ENGINE" exec "$NAME" cat /data/admin-key)"
 c="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$P_BRIDGE/status" || true)"
