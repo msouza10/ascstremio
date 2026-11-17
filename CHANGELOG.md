@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/msouza10/ascstremio/compare/v0.7.0...v0.8.0) (2026-11-17)
+
+
+### Novidades
+
+* **series:** avise quando nenhum release do título é suportado ([#150](https://github.com/msouza10/ascstremio/issues/150)) ([5af1488](https://github.com/msouza10/ascstremio/commit/5af1488f626ffd0572dab9460f1b02da123cf697)), closes [#89](https://github.com/msouza10/ascstremio/issues/89)
+
+
+### Documentação
+
+* **licencas:** registre fontes oficiais, atribuições e pendências de terceiros ([#152](https://github.com/msouza10/ascstremio/issues/152)) ([adb6239](https://github.com/msouza10/ascstremio/commit/adb62393c2674cf6098f36d6b8f176d2344139e3)), closes [#103](https://github.com/msouza10/ascstremio/issues/103)
+* **permissoes:** registre a orientação informal da staff ([#148](https://github.com/msouza10/ascstremio/issues/148)) ([28c7d4e](https://github.com/msouza10/ascstremio/commit/28c7d4e5a9c0ccdfe6aad520f0f71e470fcdcf6d)), closes [#94](https://github.com/msouza10/ascstremio/issues/94)
+
 ## [0.7.0](https://github.com/msouza10/ascstremio/compare/v0.6.0...v0.7.0) (2026-11-16)
 
 
