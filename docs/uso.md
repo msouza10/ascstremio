@@ -63,6 +63,13 @@ Ações, por episódio e por temporada:
 
 Se você já tocou um episódio de um pack **para aquela série**, o addon grava esse vínculo no cofre. Com o ASC indisponível, os episódios desse pack que estão **completos e conferidos por peças** aparecem como `📁 Local` com `SxxExx`, e tocam direto pela ponte. Episódios só *prováveis*, excluídos ou de packs nunca tocados para a série não são oferecidos. Packs tocados antes da 0.5.0 só ganham o vínculo ao serem tocados de novo. Vale só para packs; episódios avulsos seguem a regra de filmes.
 
+### Limitações conhecidas de séries
+
+- **Legendas dentro do pack:** arquivos SRT/ASS que vêm no pack não são oferecidos pelo addon. O Stremio usa os addons de legenda que você instalou nele.
+- **Cliente real:** a validação foi feita no Stremio Desktop em Linux, com packs reais. O seek no meio da reprodução, feito pelo próprio player, não foi automatizado; a ponte foi validada por HTTP `Range`.
+- **Windows e contêiner:** no Windows, o dono relatou teste manual depois das correções do serviço e da bandeja (#119, #120), e o CI instala e sobe o serviço em Windows real. No contêiner não houve teste manual de reprodução, só o teste de fumaça do CI.
+- **Snatch parcial depois de 12 dias:** o que o tracker faz com ele continua sem confirmação. Veja [seed](seed.md#séries-e-packs-baixar-e-excluir-por-episódio).
+
 ## O que acontece ao reproduzir
 
 Listar fontes consulta metadados, mas não baixa o `.torrent` nem anuncia no swarm. O primeiro `GET` da reprodução baixa o torrent e abre a ponte. Sondagens `HEAD` não baixam nem anunciam. O início pode demorar enquanto o arquivo é obtido, verificado e os peers respondem.
