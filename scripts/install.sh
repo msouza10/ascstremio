@@ -199,7 +199,8 @@ else
 fi
 if [ -f "$DATA_DIR/asc-session.json" ]; then ok "sessão do ASC salva (confirmada ao abrir o painel)"
 else warn "sem sessão do ASC: abra http://127.0.0.1:7020/ e entre depois de subir o serviço"; fi
-n_torrents="$(find "$DATA_DIR/torrents" -maxdepth 1 -name '*.torrent' 2>/dev/null | wc -l)"
+# Sem a pasta (--check antes da primeira instalação) o find falha e, com pipefail, encerraria o script em silêncio.
+n_torrents="$(find "$DATA_DIR/torrents" -maxdepth 1 -name '*.torrent' 2>/dev/null | wc -l || true)"
 ok "$n_torrents arquivo(s) .torrent na biblioteca"
 
 ENV_FILE="$DATA_DIR/service.env"

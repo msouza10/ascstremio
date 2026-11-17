@@ -111,6 +111,8 @@ function verificar(raiz, opcoes = {}) {
       erro(posix(LISTA), 0, 'lista', `${rel} está na lista pública mas não existe`);
       continue;
     }
+    // Imagens da lista pública só precisam existir: ler PNG/WebP como texto gera achados falsos.
+    if (/\.(png|webp)$/i.test(rel)) continue;
     textos.set(rel, ler(abs));
   }
 

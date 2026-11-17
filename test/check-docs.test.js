@@ -40,6 +40,18 @@ test('árvore mínima coerente passa sem problemas', (t) => {
   assert.deepEqual(verificar(arvore(t), { esquema: ESQUEMA }), []);
 });
 
+test('imagens da lista pública só precisam existir: os bytes não são lidos como texto', (t) => {
+  // Bytes binários podem formar "porta 7038" ou "](alvo)" por acaso; isso não é documentação.
+  const lixo = Buffer.from('\x89PNG\r\n porta 7038 [x](nao-existe.md) `npm run inexistente` Node.js 14', 'latin1');
+  const dir = arvore(t, {
+    'scripts/documentation-files.txt': 'docs/configuracao.md\ndocs/uso.md\ndocs/imagens/a.png\n',
+    'docs/imagens/a.png': lixo,
+  });
+  assert.deepEqual(verificar(dir, { esquema: ESQUEMA }), []);
+  fs.unlinkSync(path.join(dir, 'docs', 'imagens', 'a.png'));
+  assert.deepEqual(regras(dir), ['lista'], 'imagem listada mas ausente continua sendo problema');
+});
+
 test('fim de linha CRLF não muda o resultado', (t) => {
   const dir = arvore(t);
   const f = path.join(dir, 'docs', 'uso.md');
