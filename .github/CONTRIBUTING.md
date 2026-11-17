@@ -73,6 +73,10 @@ Instale a URL impressa no Stremio (Addons > instalar por URL), abra o filme e a 
 as fontes; S01E06, o aviso de release não suportado) e fotografe. Desinstale o addon depois; Ctrl+C
 apaga a pasta temporária.
 
+`docs/imagens/social-preview.png` (1280x640) é a imagem de pré-visualização do repositório. O
+GitHub não tem API para ela: quem tem permissão de administrador a envia em Settings > Social
+preview. É montada a partir de uma captura do painel em tema escuro, sem logotipos de terceiros.
+
 Libere cada nome exato no `.gitignore` (depois de `*.png`) e em
 `scripts/documentation-files.txt`. As imagens acompanham o tarball Linux e o instalador
 Windows para manter os links relativos do README disponíveis offline; a imagem Docker

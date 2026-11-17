@@ -23,6 +23,7 @@ docs/imagens/logs-claro.png
 docs/imagens/logs-escuro.png
 docs/imagens/painel-claro.png
 docs/imagens/painel-escuro.png
+docs/imagens/social-preview.png
 docs/imagens/terminal-configurar-claro.png
 docs/imagens/terminal-configurar-escuro.png
 docs/imagens/terminal-instalar-claro.png

@@ -95,8 +95,23 @@ test('apresentação referencia somente imagens públicas existentes, com tema e
       citadas.add(path.basename(arquivo));
     }
   }
-  const imagens = fs.readdirSync(path.join(raiz, 'docs', 'imagens')).sort();
+  // A imagem do social preview não aparece no README: é enviada à mão (Settings > Social preview).
+  const imagens = fs.readdirSync(path.join(raiz, 'docs', 'imagens')).filter((nome) => nome !== 'social-preview.png').sort();
   assert.deepEqual([...citadas].sort(), imagens, 'nenhuma imagem pode ficar sem referência ou liberação');
+});
+
+test('imagem do social preview tem 1280x640 e está liberada por nome exato', () => {
+  const raiz = path.resolve(__dirname, '..');
+  const rel = 'docs/imagens/social-preview.png';
+  const bytes = fs.readFileSync(path.join(raiz, rel));
+  assert.equal(bytes.readUInt32BE(16), 1280);
+  assert.equal(bytes.readUInt32BE(20), 640);
+  assert.ok(new Set(fs.readFileSync(path.join(raiz, 'scripts', 'documentation-files.txt'), 'utf8').trim().split(/\r?\n/)).has(rel));
+  const arquivoIgnore = path.join(raiz, '.gitignore');
+  if (fs.existsSync(arquivoIgnore)) {
+    const ignore = fs.readFileSync(arquivoIgnore, 'utf8').split(/\r?\n/);
+    assert.ok(ignore.lastIndexOf(`!${rel}`) > ignore.lastIndexOf('*.png'));
+  }
 });
 
 test('guias em docs/ só citam imagens existentes, liberadas e com texto alternativo', () => {
