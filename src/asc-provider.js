@@ -26,6 +26,8 @@ function httpError(status, message) {
 
 // Release em imagem/estrutura de disco: o player não toca (e não há vídeo para a ponte servir).
 const DISC = /\b(iso|bdmv|bd25|bd50|bd66|bd100|dvd5|dvd9|video_ts)\b/i;
+// Arquivo que denuncia disco na lista do release (imagem ou pasta BDMV/VIDEO_TS), já com barras normais.
+const DISC_FILE = /\.(iso|img)$|(^|\/)(bdmv|video_ts)(\/|$)/i;
 
 // Motivo claro quando um torrent não tem filme tocável (usado no play).
 function whyNoMain(entry) {
@@ -187,6 +189,56 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return stream ? [stream] : [];
   }
 
+  // Regra 2.7: com o filtro "somente freeleech" ligado, a decisão de INICIAR download vale pela
+  // página do release lida agora. Nem o estado da busca (o benefício pode ter acabado depois dela)
+  // nem a existência do .torrent local provam freeleech. Resultado negativo ou consulta impossível
+  // recusam (fail-closed); consultas simultâneas do mesmo release dividem uma leitura só. O
+  // benefício ainda pode mudar durante a transferência: isto protege só o início.
+  const freeleechChecks = new Map(); // id -> Promise<boolean|null>
+  function freeleechNow(id) {
+    let task = freeleechChecks.get(id);
+    if (!task) {
+      task = asc.history(id).then((page) => (typeof page?.freeleech === 'boolean' ? page.freeleech : null));
+      freeleechChecks.set(id, task);
+      const forget = () => freeleechChecks.delete(id);
+      task.then(forget, forget);
+    }
+    return task;
+  }
+
+  // Recusa lembrada por pouco tempo: o player repete GET/Range sem parar e cada tentativa leria a
+  // página do release de novo (risco de limite de requisições do ASC). Só lembra NEGATIVAS, o que
+  // só recusa mais: nunca autoriza nada por cache.
+  const REFUSAL_TTL_MS = 15_000;
+  const refusals = new Map(); // id -> { at, status, message }
+  async function confirmFreeleech(id) {
+    if (!asc.onlyFreeleech) return;
+    const recent = refusals.get(id);
+    if (recent && now() - recent.at < REFUSAL_TTL_MS) throw httpError(recent.status, recent.message);
+    const refuse = (status, message) => {
+      if (status !== 401) refusals.set(id, { at: now(), status, message });
+      throw httpError(status, message);
+    };
+    const NAO_CONFIRMOU = 'Não foi possível confirmar agora se o release ainda é freeleech; nada foi baixado. Tente de novo.';
+    let freeleech;
+    try { freeleech = await freeleechNow(id); } catch (error) {
+      log.warn(`freeleech do release #${id} não confirmado: ${error?.message ?? error}`);
+      return refuse(asc.connected === false ? 401 : 503, NAO_CONFIRMOU);
+    }
+    if (freeleech === null) return refuse(503, NAO_CONFIRMOU);
+    if (!freeleech) return refuse(409, 'Este release não é freeleech e o filtro "somente freeleech" está ligado.');
+    refusals.delete(id);
+  }
+
+  // .torrent já local: só dados completos E concluídos no cofre dispensam a consulta (o tamanho
+  // aparente sozinho engana: arquivo esparso de streaming). Faltando dados, tocar baixa o resto.
+  function dataComplete(local) {
+    return bridge.diskState?.(local.infoHash) === 'full' && Boolean(bridge.vault?.get?.(local.infoHash)?.completedAt);
+  }
+  async function confirmBeforeLocalPlay(id, local) {
+    if (!dataComplete(local)) await confirmFreeleech(id);
+  }
+
   // Chamado pela ponte no primeiro GET de /a/<id>: baixa o .torrent, confere e
   // registra na biblioteca. Devolve onde tocar. Erros levam `status` HTTP.
   function resolve(rawId) {
@@ -201,12 +253,13 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     if (noSeeders) return Promise.reject(httpError(503, 'Este release está sem seeders agora; escolha outra fonte.'));
     if (local) {
       const main = mainVideo(local.files);
-      if (main) return Promise.resolve({ infoHash: local.infoHash, fileIdx: main.index });
+      if (main) return confirmBeforeLocalPlay(id, local).then(() => ({ infoHash: local.infoHash, fileIdx: main.index }));
       unsupported.add(id);
       return Promise.reject(httpError(422, whyNoMain(local)));
     }
 
     let task = prepared.get(id);
+    const reused = Boolean(task);
     if (!task) {
       task = (async () => {
         const entry = await prepareEntry(id, known);
@@ -226,7 +279,8 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
       // Falha não fica em cache (tenta de novo no próximo play); sucesso fica.
       task.catch(() => prepared.delete(id));
     }
-    return task;
+    // Preparo já feito (entrada que saiu da biblioteca, por exemplo): reabrir também é novo download.
+    return reused ? confirmFreeleech(id).then(() => task) : task;
   }
 
   // Baixa o .torrent do release e o lê, UMA vez por release: filme e episódios compartilham este
@@ -240,11 +294,9 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
         // Regra 2.7: com o filtro "somente freeleech" ligado, nunca baixa de release que não seja.
         let freeleech = known ? known.freeleech === true : null;
         if (asc.onlyFreeleech) {
-          if (freeleech === null) {
-            const page = await asc.history(id);
-            freeleech = page.freeleech === true;
-          }
-          if (!freeleech) throw httpError(409, 'Este release não é freeleech e o filtro "somente freeleech" está ligado.');
+          // Sempre a página de agora: `known` vem da busca e pode estar velho.
+          await confirmFreeleech(id);
+          freeleech = true;
         }
 
         log.info(`play: baixando o .torrent do release #${id} sob demanda`);
@@ -306,7 +358,9 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
       return Promise.reject(httpError(503, 'Este release está sem seeders agora; escolha outra fonte.'));
     }
     if (local) {
-      try { return Promise.resolve(pickEpisode(local, season, episode, expected)); } catch (error) { return Promise.reject(error); }
+      let chosen;
+      try { chosen = pickEpisode(local, season, episode, expected); } catch (error) { return Promise.reject(error); }
+      return confirmBeforeLocalPlay(id, local).then(() => chosen);
     }
     // Falta de episódio num release NÃO o marca como `unsupported`: o pack serve a outros episódios.
     return prepareEntry(id, known).then((entry) => {
@@ -377,6 +431,23 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return out;
   }
 
+  // Episódios VERIFICADOS por peças em packs que o usuário já tocou para esta série (vínculo gravado
+  // no play). Sem rede e sem .torrent; sem prova, vazio. Só entra aqui com o ASC indisponível.
+  function localEpisodeStreams(video) {
+    const found = bridge.localEpisodeSources?.(video.imdbId, video.season, video.episode) ?? [];
+    return found.map((src) => ({
+      name: ['📁 Local', `S${pad2(video.season)}E${pad2(video.episode)}`].join('\n'),
+      description: [
+        src.name,
+        `▶ Este episódio: ${fmtBytes(src.length)}`,
+        '✔ Arquivo completo, conferido por peças',
+        `ℹ Fontes online indisponíveis: ${availability.message ?? 'ASC não consultado'}.`,
+      ].filter(Boolean).join('\n'),
+      url: bridge.urlFor(src.infoHash, src.fileIdx),
+      behaviorHints: { notWebReady: true, bingeGroup: src.ascId ? `asc-${src.ascId}` : `local-${src.infoHash.slice(0, 8)}`, filename: path.basename(src.path) },
+    }));
+  }
+
   // Imagens de disco e releases sem seeders vão para o fim da lista (continuam visíveis);
   // no resto, mais seeders primeiro e, em empate, freeleech antes.
   function byPreference(rows) {
@@ -409,6 +480,17 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return { result, fetched: true };
   }
 
+  // Por que um release de série lido por inteiro não serve a NENHUM episódio: nenhum vídeo tem
+  // temporada e episódio seguros. Devolve o motivo (chave de UNSUPPORTED_REASONS) ou null quando o
+  // release tem ao menos um episódio identificado (aí é só "não traz este episódio"). Usa apenas a
+  // lista que a listagem já leu; nunca o .torrent. Fail-closed: não promove "EP05" a S01E05.
+  function whyUnsupported(row, files, index) {
+    if (index.episodes.length > 0) return null;
+    const disc = isDisc(row) || files.some((f) => DISC_FILE.test(String(f.path).replace(/\\/g, '/')));
+    if (disc) return 'disco';
+    return index.unmatched.length > 0 ? 'nome' : null;
+  }
+
   // status: 'tem' (o episódio está na lista), 'nao-visto' (lista não lida ou incompleta: segue como
   // candidato, o play confirma). Fora: nome que contradiz, lista completa sem o episódio, ambíguo.
   async function seriesCandidates(video) {
@@ -416,6 +498,7 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     const { rows, truncated } = await asc.searchSeries(video.imdbId);
     const plausible = byPreference(rows.filter((row) => !nameExcludes(row.name, season, episode)));
     const candidates = [];
+    const unsupportedReleases = []; // [{ id, reason }]: releases lidos que nenhum episódio identifica
     let lookups = 0;
     let failures = 0; // seguidas: site instável não deve gastar o orçamento inteiro esperando timeout
     const fresh = (id) => { const hit = filesCache.get(id); return Boolean(hit) && now() - hit.at < FILES_TTL_MS; };
@@ -437,7 +520,12 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
             status = 'tem';
             file = { path: found.file.path, length: found.file.length, confidence: found.file.confidence };
           } else if (result.complete) {
-            continue; // lista inteira lida e sem o episódio: este release não serve a este pedido
+            // Lista inteira lida e sem o episódio: este release não serve a este pedido. Se também não
+            // identifica episódio nenhum, é um formato que o addon não suporta (legado, disco...) e
+            // some em silêncio, a menos que o lookup avise (só quando não sobra fonte tocável).
+            const reason = whyUnsupported(row, result.files, index);
+            if (reason) unsupportedReleases.push({ id, reason });
+            continue;
           }
         } catch (error) {
           failures += 1;
@@ -448,12 +536,33 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
       // Guarda o que a listagem mostrou: o play confere o arquivo escolhido com isto e reserva disco.
       const record = seriesRows.get(id) ?? { row, expected: new Map() };
       record.row = row;
+      record.imdbId = video.imdbId; // o play usa isto para vincular o pack à série
       if (file) record.expected.set(`${season}:${episode}`, { path: file.path, length: file.length });
       seriesRows.delete(id);
       seriesRows.set(id, record);
       if (seriesRows.size > SERIES_ROWS_MAX) seriesRows.delete(seriesRows.keys().next().value);
     }
-    return { candidates, truncated, total: rows.length };
+    return { candidates, truncated, total: rows.length, unsupported: unsupportedReleases };
+  }
+
+  // Item informativo e não tocável (o addon lhe dá o `externalUrl`): quantos releases do título
+  // existem no ASC mas o projeto não toca, e por quê. Agregado, sem dado da conta e sem prometer
+  // suporte futuro; "não suportado" é limitação do addon, não parecer do ASC sobre o release.
+  const UNSUPPORTED_REASONS = {
+    nome: 'nomes dos arquivos sem temporada e episódio claros (como EP01 ou vários SxxExx)',
+    disco: 'imagem ou estrutura de disco (ISO, BDMV)',
+  };
+  function unsupportedNotice(list) {
+    const reasons = [...new Set(list.map((item) => item.reason))];
+    const n = list.length;
+    return {
+      name: `⚠ ${n === 1 ? 'Release não suportado' : 'Releases não suportados'}`,
+      description: [
+        `${n} ${n === 1 ? 'release' : 'releases'} deste título ${n === 1 ? 'existe' : 'existem'} no ASC, mas o addon não toca:`,
+        ...reasons.map((reason) => `• ${UNSUPPORTED_REASONS[reason]}`),
+        'Limitação deste addon.',
+      ].join('\n'),
+    };
   }
 
   const pad2 = (n) => String(n).padStart(2, '0');
@@ -520,9 +629,8 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
   async function lookup(video) {
     const series = video.type === 'series';
     if (video.type !== 'movie' && !series) return { streams: [], offline: null };
-    // Sem o ASC, filme cai para os arquivos locais completos; episódio ainda não (disponibilidade por
-    // arquivo vem depois): mostra só o aviso de indisponibilidade.
-    const fallback = () => (series ? [] : localStreams(video));
+    // Sem o ASC, filme cai para os arquivos locais completos e episódio para os verificados por peças.
+    const fallback = () => (series ? localEpisodeStreams(video) : localStreams(video));
     const blocked = onlineGate();
     if (blocked) {
       if (blocked === 'session' && availability.online) markOffline('session');
@@ -548,7 +656,10 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
       // O filtro por episódio já rodou sobre TODOS os releases; só agora corta nas opções.
       const streams = found.candidates.slice(0, MAX_OPTIONS).map((candidate) => streamFromCandidate(candidate, video));
       console.log(`[asc] ${video.imdbId} S${pad2(video.season)}E${pad2(video.episode)}: ${found.total} release(s), ${streams.length} fonte(s)${found.truncated ? ', busca truncada' : ''}, nenhum .torrent baixado`);
-      return { streams, offline: null };
+      // Com fonte tocável o aviso seria ruído em todo episódio; sem nenhuma, é o único jeito de a
+      // pessoa saber que há releases que o addon não toca (em vez de a lista vir vazia sem motivo).
+      const notice = streams.length === 0 && found.unsupported.length > 0 ? unsupportedNotice(found.unsupported) : null;
+      return { streams, offline: null, ...(notice ? { notice } : {}) };
     }
     const ordered = byPreference(rows);
     await loadOriginal(video.imdbId, rows);
@@ -569,6 +680,9 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
   return {
     sizeOf,
     episodeSizeOf,
+    // Trava de novo download para a ponte (GET com .torrent local): ver confirmFreeleech.
+    confirmFreeleech: (rawId) => confirmFreeleech(String(rawId)),
+    imdbOf(rawId) { return seriesRows.get(String(rawId))?.imdbId ?? null; },
     resolveEpisode,
     async catalog(query) { return (await search(query)).map(meta); },
     // As linhas lembradas descrevem o release (não dependem do filtro) e a query de cada uma

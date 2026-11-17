@@ -350,7 +350,7 @@ function bridgeBg(vault, over = {}) {
     backgroundMode: 'auto', idleMs: 10 * MIN, minFreeBytes: 1000, freeSpace: () => 1e12, ...over });
   const selecoes = [];
   const t = { infoHash: HASH, name: 'Filme', ready: true, done: false, length: 5000, downloaded: 1000,
-    pieces: new Array(10), progress: 0.2, select: (...a) => selecoes.push(a) };
+    pieces: new Array(10), progress: 0.2, select: (...a) => selecoes.push(a.slice(0, 3)) };
   b.client = { torrents: [t] };
   b.entries.set(HASH, { infoHash: HASH, freeleech: true });
   b.startedAt.set(HASH, 0);
@@ -462,6 +462,8 @@ function bridgeLiberar(afterSeed, trackerOk, over = {}) {
     vault.setTracker(HASH, hnr.normalizeHistory({ completedAt: '2026-11-01 00:00:00', remainingSeedTime: trackerOk ? 0 : 3600 }));
   }
   const b = new Bridge({ torrentDir: '/tmp', storeDir: '/tmp', vault, afterSeed, adminKey: ADMIN_KEY, ...over });
+  // A liberação só apaga o que prova ser exclusivo do título: ele precisa constar na biblioteca com seus arquivos.
+  b.entries.set(HASH, { infoHash: HASH, files: [{ path: 'filme.mkv', length: 1 }] });
   const chamadas = [];
   b.client = { torrents: [{ infoHash: HASH, destroy: (opts, cb) => { chamadas.push(opts); cb(); } }] };
   return { b, vault, chamadas };

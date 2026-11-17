@@ -3,8 +3,11 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY scripts/license-inventory.js ./scripts/license-inventory.js
 # Binários nativos vêm do GitHub Releases, que às vezes responde 504: tenta de novo.
 RUN for i in 1 2 3 4; do npm ci --omit=dev --no-audit --no-fund && exit 0; sleep $((i * 20)); done; exit 1
+
+RUN node scripts/license-inventory.js . THIRD-PARTY-INVENTORY.json --installed
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production \
@@ -13,7 +16,10 @@ ENV NODE_ENV=production \
     PORT=7000 BRIDGE_PORT=7010 CONFIG_PORT=7020 TORRENT_PORT=7030
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json LICENSE ./
+COPY --from=deps /app/THIRD-PARTY-INVENTORY.json ./THIRD-PARTY-INVENTORY.json
+# Os textos dos pacotes Debian permanecem em /usr/share/doc.
+RUN dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\n' > /app/DEBIAN-PACKAGES.txt
+COPY package.json LICENSE LEGAL.md ./
 COPY src ./src
 RUN mkdir /data && chown node:node /data
 USER node

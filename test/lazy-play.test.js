@@ -156,3 +156,60 @@ test('/a/<id> com .torrent local de filme + extras usa o vídeo principal (HEAD 
   assert.equal(aberto, HASH);
   assert.equal(get.headers['Content-Range'], 'bytes 0-3/10000', 'serviu o arquivo índice 1 (o filme)');
 });
+
+// ---- Issue #80: rota real. Com .torrent local, /a/<id> e /s/<hash> não passam pelo resolvedor,
+// mas abrir o torrent no motor começa a baixar o que falta: a trava de "novo download" tem de agir aqui.
+const entradaParcial = (b) => b.entries.set(HASH, { infoHash: HASH, torrentPath: '/x/asc-1.torrent', files: [{ index: 0, path: 'F.mkv', length: 10, isVideo: true }] });
+const recusa409 = () => Object.assign(new Error('Este release não é freeleech e o filtro "somente freeleech" está ligado.'), { status: 409 });
+
+test('GET com .torrent local incompleto: a trava de novo download recusa antes de abrir o torrent (/a e /s)', async () => {
+  for (const rota of ['/a/1', `/s/${HASH}/0`]) {
+    const b = ponte();
+    entradaParcial(b);
+    b.diskState = () => 'partial';
+    const consultados = [];
+    b.ascStartGate = async (id) => { consultados.push(id); throw recusa409(); };
+    let aberto = 0;
+    b.getTorrent = async () => { aberto++; return torrentFalso(Buffer.from('abcdefghij')); };
+    const res = resposta();
+    await b.handle(pedido('GET', rota), res);
+    assert.equal(res.statusCode, 409, rota);
+    assert.match(JSON.parse(corpo(res)).error, /freeleech/);
+    assert.deepEqual(consultados, ['1'], rota);
+    assert.equal(aberto, 0, `${rota}: não abre o torrent`);
+  }
+});
+
+test('GET com arquivo completo e concluído no cofre toca sem acionar a trava', async () => {
+  const b = ponte();
+  entradaParcial(b);
+  b.diskState = () => 'full';
+  b.vault.get = () => ({ completedAt: 1 });
+  b.ascStartGate = async () => { throw new Error('não devia consultar'); };
+  b.getTorrent = async () => torrentFalso(Buffer.from('abcdefghij'));
+  const res = resposta();
+  await b.handle(pedido('GET', '/a/1'), res);
+  assert.equal(res.statusCode, 200);
+});
+
+test('HEAD nunca aciona a trava (não baixa nada)', async () => {
+  const b = ponte();
+  entradaParcial(b);
+  b.diskState = () => 'partial';
+  b.ascStartGate = async () => { throw new Error('não devia consultar'); };
+  const res = resposta();
+  await b.handle(pedido('HEAD', '/a/1'), res);
+  assert.equal(res.statusCode, 200);
+});
+
+test('GET de fonte nova: o resolvedor já confirmou o freeleech, a trava não consulta de novo', async () => {
+  const b = ponte();
+  let consultas = 0;
+  b.ascResolver = async () => { b.entries.set(HASH, { infoHash: HASH, torrentPath: '/x/asc-1.torrent', files: [{ index: 0, path: 'F.mkv', length: 10, isVideo: true }] }); return { infoHash: HASH, fileIdx: 0 }; };
+  b.ascStartGate = async () => { consultas++; };
+  b.getTorrent = async () => torrentFalso(Buffer.from('abcdefghij'));
+  const res = resposta();
+  await b.handle(pedido('GET', '/a/1'), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(consultas, 0);
+});

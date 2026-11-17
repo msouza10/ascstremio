@@ -28,6 +28,12 @@ O addon e as URLs de vídeo exigem uma credencial de instalação revogável (ve
 Ainda assim, mantenha as publicações HTTP no loopback do host e não conecte a instância a redes com contêineres não confiáveis: o token protege a administração, não o restante da ponte. 
 **TV e celular só precisam do streaming.** Para assistir em outro aparelho basta alcançar o addon (`7000`) e a ponte (`7010`) com uma credencial própria; o painel (`7020`) e a administração não são necessários e devem continuar locais. Não publique o painel nem ative a administração pela LAN para "resolver" a TV. Em instalação nativa use `ASCSTREMIO_MODE=lan` com `LAN_ADVERTISE_HOST` e uma credencial por aparelho. No contêiner o Compose publica só no loopback do host: trocar `127.0.0.1` por outro IP nas linhas 7000/7010 expõe a ponte, que não tem usuário nem TLS, a toda a rede desse IP, e exige informar `ADDON_PUBLIC_URL` e `BRIDGE_PUBLIC_URL`. Esse caminho não é isolado pelo programa (o token administrativo protege só as rotas administrativas) e só vale em rede doméstica confiável; nunca altere a linha do painel.
 
+## Windows: serviço, dados e firewall
+
+O serviço roda como `NT AUTHORITY\LocalService` (privilégio mínimo, sem senha guardada). A pasta `%ProgramData%\AscStremio` não herda o acesso amplo do ProgramData: só SYSTEM, administradores, `LocalService` e quem instalou leem passkey, sessão e cofre. Usuários comuns podem iniciar, parar e consultar **só** este serviço; não alteram a configuração dele nem leem os dados (o CI confere isso com uma conta sem privilégio). Qualquer usuário local interativo pode parar o serviço, o que não apaga nada, mas interrompe o seed. O limite conhecido: quem instala por outra conta de administrador no UAC não recebe a ACL de dados.
+
+O instalador **não** abre o firewall. As regras de entrada (`firewall-lan.cmd`) só existem se você pedir: **Liberar addon na rede (firewall)** cria uma regra só para o addon e a ponte (TV e celular, sem painel); **Painel pela rede** liga a administração e acrescenta a porta do painel. Ambas valem só para o `node.exe` do pacote, TCP, rede privada ou de domínio e sub-rede local. O desinstalador remove as regras.
+
 ## Credenciais de instalação do addon
 
 Cada instalação do addon no Stremio (por exemplo, o computador e a TV) usa uma credencial própria, com nome e revogação individual. O modo local não muda de natureza: no mesmo computador, uma credencial só.
@@ -130,11 +136,14 @@ Publicar o repositório, os releases e a imagem (GitHub, GHCR) distribui o **pro
 
 ## Logs e publicação do código
 
+Consulte o [inventário de dados e comunicações](dados-privacidade.md) para conhecer também
+os dados da aba do navegador, o histórico de alertas e os limites da desinstalação/revogação.
+
 O logger redige segredos conhecidos e padrões sensíveis antes de gravar, mas revise qualquer exportação antes de enviá-la. Títulos, info hashes, caminhos e horários continuam podendo ser pessoais.
 
 A licença do código ([MIT](../LICENSE)) não dá acesso ao ASC nem direitos sobre conteúdo de terceiros.
 
-`scripts/check-no-secrets.sh` verifica arquivos proibidos e padrões de credenciais na árvore/pacote. Ele não comprova ausência de segredos em todo o histórico; essa auditoria ainda não foi feita. A documentação pública usa uma lista explícita de arquivos e mantém notas privadas fora dos pacotes.
+`scripts/check-no-secrets.sh` verifica arquivos proibidos e padrões de credenciais na árvore/pacote; ele não percorre o histórico completo. As auditorias anteriores de histórico e artefatos, incluindo a imagem publicada no GHCR da versão 0.2.0, estão registradas na [issue #11](https://github.com/msouza10/ascstremio/issues/11). Seus resultados valem para o escopo registrado, sem garantia absoluta para versões posteriores. Use também `scripts/audit-secrets.sh` conforme o artefato e preserve as verificações da esteira. A documentação pública usa uma lista explícita de arquivos e mantém notas privadas fora dos pacotes.
 
 ## Relatar um problema
 

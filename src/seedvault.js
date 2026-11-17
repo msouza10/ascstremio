@@ -97,6 +97,20 @@ class SeedVault {
     return entry;
   }
 
+  // Série a que o pack pertence (IMDb), gravada quando um episódio dele é tocado. Serve para
+  // oferecer offline os episódios verificados em disco quando o ASC não responde. Valor inválido
+  // é ignorado; sem entrada no cofre não cria vínculo.
+  setSeriesLink(infoHash, imdbId) {
+    const entry = this.entries.get(infoHash);
+    if (!entry || typeof imdbId !== 'string' || !/^tt\d{1,10}$/.test(imdbId)) return entry ?? null;
+    if (entry.imdbId !== imdbId) {
+      entry.imdbId = imdbId;
+      log.info(`pack vinculado a uma série no cofre: "${label(entry)}"`, { infoHash });
+      this.save();
+    }
+    return entry;
+  }
+
   clearExcluded(infoHash) {
     const entry = this.entries.get(infoHash);
     if (!entry || !entry.excluded?.length) return entry ?? null;
@@ -127,11 +141,14 @@ class SeedVault {
 
   // Registra que o torrent já cumpriu o limite e foi liberado (rede e, conforme
   // a política, disco).
-  markReleased(infoHash, mode) {
+  // `filesKept` (opcional) é o motivo de os arquivos terem ficado apesar de `AFTER_SEED=delete`
+  // ('arquivo-compartilhado' ou 'arquivos-desconhecidos'); o painel o usa para explicar por que o disco não foi liberado.
+  markReleased(infoHash, mode, filesKept = null) {
     const entry = this.entries.get(infoHash);
     if (!entry) return null;
     entry.releasedAt = this.now();
     entry.releasedAs = mode;
+    if (filesKept) entry.releaseFilesKept = filesKept; else delete entry.releaseFilesKept;
     log.info(`liberado (${mode}): "${label(entry)}"`, { infoHash });
     this.save();
     return entry;
@@ -228,6 +245,7 @@ class SeedVault {
     if (choice === 'keep') {
       delete entry.releasedAs;
       delete entry.releasedAt;
+      delete entry.releaseFilesKept;
     }
     this.save();
   }

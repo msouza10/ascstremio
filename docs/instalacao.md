@@ -19,7 +19,7 @@ Em todos os casos: a conta e a passkey do ASC, e espaço livre para os vídeos.
 |---|---|---|
 | Linux glibc | Instalador via curl ou script local | `private/` na instalação pelo código; `~/.local/share/ascstremio/data` na instalação remota |
 | Docker / Podman | Imagem pronta do GHCR ou build local | Volume em `/data` |
-| Windows | `AscStremio-Setup-<versão>.exe` | `%LOCALAPPDATA%\AscStremio\data` |
+| Windows | `AscStremio-Setup-<versão>.exe` | `%ProgramData%\AscStremio\data` |
 | macOS / execução manual | Node.js 22+ e npm | `private/` na raiz do projeto |
 
 Não use a mesma pasta de dados simultaneamente em duas instâncias. Não misture os volumes de instalações diferentes.
@@ -189,11 +189,21 @@ As portas HTTP 7000/7010/7020 ficam em `127.0.0.1` do host. A porta TCP 7030 de 
 
 ## Windows
 
-Baixe `AscStremio-Setup-<versão>.exe` na [página de releases](https://github.com/msouza10/ascstremio/releases) (só 64 bits) e confira o hash com o `.sha256` ao lado dele (no PowerShell: `Get-FileHash .\AscStremio-Setup-<versão>.exe -Algorithm SHA256`). Ele contém Node e dependências e instala por usuário, sem administrador, em `%LOCALAPPDATA%\Programs\AscStremio`.
+Baixe `AscStremio-Setup-<versão>.exe` na [página de releases](https://github.com/msouza10/ascstremio/releases) (só 64 bits) e confira o hash com o `.sha256` ao lado dele (no PowerShell: `Get-FileHash .\AscStremio-Setup-<versão>.exe -Algorithm SHA256`). Ele contém Node e dependências e instala como **serviço do Windows**, em `%ProgramFiles%\AscStremio`. A instalação pede administrador (UAC), porque criar serviço exige.
 
-O Menu Iniciar recebe atalhos para abrir o painel, parar o processo, abrir a pasta de dados, a configuração no terminal (`configurar.cmd`) e **Obter URL do addon** (`credenciais.cmd`). Na última página do instalador há uma caixa marcada com o mesmo nome: ela sobe o serviço, emite a primeira credencial só se ainda não houver nenhuma ativa e mostra a URL do Stremio **uma única vez**, numa janela de console local (sem log, arquivo ou área de transferência; copie-a antes de fechar). Com o instalador silencioso (`/S`) nada é emitido nem mostrado. Atualizar ou reinstalar não troca nem revoga credenciais; rodar o atalho de novo só informa que já existe uma (para outro aparelho: `credenciais.cmd criar "Nome"`). Um atalho na pasta Inicializar sobe o programa ao entrar no Windows. A máquina precisa continuar ligada e a sessão de usuário precisa permitir sua execução. A desinstalação mantém os dados.
+O serviço **AscStremio** (visível em `services.msc`) sobe sozinho com o Windows, mesmo sem ninguém logado, roda com a conta de baixo privilégio `LocalService` e é reiniciado automaticamente se cair. Um **ícone na bandeja** (verde: no ar; amarelo: iniciando; vermelho: parado) mostra o estado e tem o menu **Abrir painel**, **Iniciar**, **Reiniciar**, **Parar**, **Ver logs** e **Pasta de dados**; ele abre sozinho ao entrar no Windows. Sair da bandeja não para o serviço. O instalador concede aos usuários locais o direito de iniciar e parar só este serviço, para o menu funcionar sem pedir UAC. Seus dados ficam em `%ProgramData%\AscStremio\data`, legíveis só pelo serviço, pelos administradores e por quem instalou. Quem atualiza de uma versão antiga (por usuário, em `%LOCALAPPDATA%`) tem a pasta de dados **movida** para lá, sem perder nada.
 
-O instalador não é assinado; o SmartScreen pode mostrar um aviso. A porta de peers pode provocar uma solicitação do firewall. Os serviços HTTP permanecem em loopback. O comando de parar encerra o processo à força; o cofre é salvo a cada minuto. A CI possui teste de instalação silenciosa e inicialização em Windows; isso não comprova compatibilidade de reprodução com todos os players e codecs.
+O Menu Iniciar recebe atalhos para abrir o painel, abrir a bandeja, abrir a pasta de dados, a configuração no terminal (`configurar.cmd`) e **Obter URL do addon** (`credenciais.cmd`). Na última página do instalador há uma caixa marcada com o mesmo nome: ela sobe o serviço, emite a primeira credencial só se ainda não houver nenhuma ativa e mostra a URL do Stremio **uma única vez**, numa janela de console local (sem log, arquivo ou área de transferência; copie-a antes de fechar). Com o instalador silencioso (`/S`) nada é emitido nem mostrado. Atualizar ou reinstalar não troca nem revoga credenciais; rodar o atalho de novo só informa que já existe uma (para outro aparelho: `credenciais.cmd criar "Nome"`). A máquina precisa continuar ligada para o seed. A desinstalação remove o serviço e mantém os dados.
+
+O instalador não é assinado; o SmartScreen pode mostrar um aviso. A porta de peers pode provocar uma solicitação do firewall. Os serviços HTTP permanecem em loopback. Parar o serviço encerra o processo à força; o cofre é salvo a cada minuto. A CI possui teste de instalação silenciosa e inicialização em Windows; isso não comprova compatibilidade de reprodução com todos os players e codecs.
+
+### Windows em rede (TV, celular e o painel pela rede)
+
+**Só assistir em outro aparelho (TV, celular):** escolha o modo LAN em `configurar.cmd` e emita uma credencial por aparelho (**Obter URL do addon**). O firewall do Windows bloqueia a entrada por padrão e, para um serviço, em geral não aparece o aviso de liberação que um programa aberto por você mostraria. Rode **Liberar addon na rede (firewall)** no Menu Iniciar (pede administrador): ela cria uma regra só para o addon e a ponte, TCP, rede privada e sub-rede local. Não é preciso ligar o painel pela rede, e o painel continua só no computador do servidor.
+
+**Abrir o painel em outro computador da rede:** é uma escolha à parte, com senha. Use **Painel pela rede** (Menu Iniciar ou bandeja), que liga a administração, mostra a senha uma única vez e libera também a porta do painel. Isso passa a exigir a senha até no acesso local e é HTTP sem criptografia: só em rede doméstica confiável. Detalhes e riscos em [configuração](configuracao.md#administração-do-painel-pela-lan).
+
+Em ambos os casos, se a rede estiver como *Pública* no Windows, mude para *Privada* nas configurações de rede.
 
 ## Pelo código: Linux e macOS
 
@@ -220,7 +230,7 @@ read -r -s -p 'Passkey do ASC: ' asc_passkey; printf '\n'
 unset asc_passkey
 ```
 
-O exemplo é para Bash e para a instalação pelo código (pasta `private/`). Na instalação remota, a pasta é `~/.local/share/ascstremio/data`: troque `private` por `"$HOME/.local/share/ascstremio/data"` nos comandos. No Windows, crie o arquivo `passkey.txt` em `%LOCALAPPDATA%\AscStremio\data` com um editor de texto simples, só com a passkey, sem espaços nem linhas extras. No Docker, use o comando da seção de imagem pronta. Nunca envie a passkey pelo chat ou por uma issue. No Windows, proteja o arquivo pelas permissões da conta de usuário.
+O exemplo é para Bash e para a instalação pelo código (pasta `private/`). Na instalação remota, a pasta é `~/.local/share/ascstremio/data`: troque `private` por `"$HOME/.local/share/ascstremio/data"` nos comandos. No Windows, crie o arquivo `passkey.txt` em `%ProgramData%\AscStremio\data` (abra o editor como administrador) com um editor de texto simples, só com a passkey, sem espaços nem linhas extras. No Docker, use o comando da seção de imagem pronta. Nunca envie a passkey pelo chat ou por uma issue. No Windows, a pasta de dados já é restrita pelo instalador ao serviço, aos administradores e a quem instalou.
 
 `PASSKEY` no ambiente tem precedência sobre o arquivo.
 
@@ -238,7 +248,7 @@ O exemplo é para Bash e para a instalação pelo código (pasta `private/`). Na
 | Serviço Linux | `systemctl --user stop ascstremio` | `systemctl --user start ascstremio` | `systemctl --user status ascstremio` e `journalctl --user -u ascstremio -f` |
 | Docker pelo script | `scripts/docker.sh stop` | `scripts/docker.sh run` | `scripts/docker.sh logs` |
 | Compose | `docker compose stop` | `docker compose start` | `docker compose ps` e `docker compose logs -f` |
-| Windows | atalho **Parar servico** (pasta "Amigos Share Stremio" do Menu Iniciar) | atalho **Abrir painel**, que sobe o programa se ele estiver parado | `%LOCALAPPDATA%\AscStremio\data\service.log` |
+| Windows | ícone da bandeja › **Parar** (ou `sc stop AscStremio`) | ícone da bandeja › **Iniciar** ou **Reiniciar** (ou o atalho **Abrir painel**) | ícone da bandeja › **Ver logs** (`%ProgramData%\AscStremio\data\AscStremioServico.out.log`) |
 | Manual | `Ctrl+C` | `npm start` | terminal |
 
 Parar interrompe o seed, mas os prazos do tracker continuam correndo. Para trocar a versão, veja [atualizar](manutencao.md#atualizar-e-reiniciar).
@@ -249,7 +259,7 @@ Desinstalar não apaga os dados nem cancela nenhuma obrigação de seed no ASC. 
 
 - **Linux:** `scripts/install.sh --uninstall` remove só o serviço. Na instalação remota, rode `DATA_DIR="$HOME/.local/share/ascstremio/data" ~/.local/share/ascstremio/app/scripts/install.sh --uninstall`. O código e os dados ficam em `~/.local/share/ascstremio`; apague essa pasta só se não precisar mais deles.
 - **Docker / Podman:** `docker compose down` (ou `scripts/docker.sh stop`) para o contêiner e preserva o volume. Não use `-v`. O volume só sai com `docker volume rm ascstremio-data`, quando você tiver certeza.
-- **Windows:** remova "Amigos Share · Stremio" em Configurações › Aplicativos. Os dados em `%LOCALAPPDATA%\AscStremio\data` ficam; apague a pasta à mão se quiser.
+- **Windows:** remova "Amigos Share · Stremio" em Configurações › Aplicativos. O serviço é removido e os dados em `%ProgramData%\AscStremio\data` ficam; apague a pasta à mão se quiser.
 - Revogue as credenciais de reprodução que não for mais usar (Conta › Addons no painel, ou `credenciais revogar <id>`) e remova o addon no Stremio.
 
 ## Problemas na instalação

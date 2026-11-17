@@ -27,7 +27,7 @@ Regras que valem para qualquer origem:
 - Serviço Linux: edite `DATA_DIR/service.env`, uma variável por linha, e reinicie `ascstremio.service`.
 - Compose: use `environment` no serviço; recrie o contêiner para aplicar mudanças. Um `.env` do Compose só interpola o YAML quando referenciado.
 - `scripts/docker.sh run` repassa diretamente apenas `AFTER_SEED` e `LOG_LEVEL`, além dos padrões da imagem; outras opções exigem ajustar a invocação ou usar Compose.
-- Windows: não há carregamento de `service.env` pelo launcher; configure o ambiente herdado pelo processo e reinicie-o.
+- Windows: o serviço não lê `service.env`. Use `configurar.cmd` (grava `settings.json` em `%ProgramData%\AscStremio\data`) ou variáveis de ambiente da máquina, e reinicie o serviço pela bandeja.
 
 ## Configuração pelo painel
 
@@ -139,6 +139,17 @@ Consulte [segurança e rede](seguranca.md) antes de habilitar LAN. Não use essa
 
 Opcional e **desligada por padrão**. Serve para quem mantém o host num notebook ou NAS e quer abrir o painel de outro aparelho da mesma rede. Quem usa só o computador local não precisa de nada disto: o painel segue em `http://127.0.0.1:<CONFIG_PORT>`, sem senha de administração.
 
+### Em um passo: o assistente
+
+Para abrir o painel de **outro computador da mesma rede**, use o assistente. Ele liga o modo LAN, escolhe o endereço da rede (se houver mais de uma, peça `--ip`), gera uma senha de administração e a mostra **uma única vez**, e liga a administração em HTTP na rede doméstica. Pede confirmação (`sim`) e exige o aplicativo parado.
+
+- **Windows:** Menu Iniciar › Amigos Share Stremio › **Painel pela rede** (ou o item **Painel pela rede…** da bandeja; ou `painel-lan.cmd ligar`). O atalho pára o serviço, faz o ajuste, inicia de novo e cria a regra do Firewall do Windows (pede administrador): só TCP, só para o `node.exe` do programa, só rede privada e sub-rede local. `painel-lan.cmd desligar` fecha o acesso e remove a regra do painel; `status` mostra a situação; `senha` gera outra senha na hora. Se a rede estiver classificada como **Pública** no Windows, mude para **Privada**, senão a regra não vale.
+- **Linux e demais:** `npm run admin-painel -- assistente` (e reinicie o serviço). Libere a porta do painel no firewall do sistema, se houver um.
+
+Depois, em outro computador da rede, abra `http://<endereço>:<CONFIG_PORT>/` (o assistente mostra a URL) e entre com a senha. Essa senha **não** é a do ASC. O tráfego é HTTP sem criptografia: use só em rede doméstica confiável, ou o modo com proxy HTTPS abaixo. O assistente não torna a ponte nem as rotas de credencial acessíveis pela rede.
+
+Os comandos separados continuam valendo para quem quer controlar cada passo:
+
 | Variável | Padrão | Comportamento |
 |---|---|---|
 | `CONFIG_ALLOW_LAN` | `false` | Habilita a administração pela LAN. Só pelo terminal (`npm run admin-painel -- ativar`); o painel não consegue ligá-la |
@@ -174,7 +185,8 @@ A senha fica só como verificador scrypt com sal em `DATA_DIR/panel-admin.json` 
 | Variável | Padrão | Comportamento |
 |---|---|---|
 | `AFTER_SEED` | `delete` | Depois da confirmação do tracker: `delete` encerra e apaga arquivos; `stop` encerra e preserva; `keep` continua semeando; `manual` mantém até sua decisão por conteúdo no painel |
-| `BACKGROUND_COMPLETE` | `auto` | `auto` baixa o que falta do torrent inteiro em prioridade baixa (série: assim que o episódio aberto terminar de baixar; demais: depois de parado); em release que não é freeleech, o download conta no seu ratio. `off` só conclui quando você pede |
+| `SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES` | `5` | Idade máxima da leitura do tracker aceita para a liberação automática (`delete`/`stop`); inteiro de 0 a 60. Mais velha que isso, o addon relê o tracker antes de parar o seed ou apagar arquivos; sem confirmação, mantém tudo. `0` = sempre reler. Reinício necessário |
+| `BACKGROUND_COMPLETE` | `auto` | `auto` baixa o que falta do torrent inteiro em prioridade baixa (série: assim que o episódio aberto terminar de baixar; demais: depois de parado), na ordem da posição de reprodução ([detalhes](series-prioridades.md)); em release que não é freeleech, o download conta no seu ratio. `off` só conclui quando você pede |
 | `BACKGROUND_IDLE_MINUTES` | `10` | Inatividade antes da conclusão automática; número ≥ 1 |
 | `SEED_REQUIRED_HOURS` | `72` | Meta local; não altera a obrigação imposta pelo tracker |
 | `KEEP_AWAKE` | `auto` | `off` desliga o bloqueio de suspensão; no contêiner o bloqueio não é usado |
@@ -274,14 +286,14 @@ Campos do JSON: `schemaVersion`, `eventId` (aleatório, não deriva de nada), `t
 
 | Variável | Padrão | Comportamento |
 |---|---|---|
-| `ASC_ONLY_FREELEECH` | `true` | `true` lista e baixa só releases freeleech (o download deles não conta no ratio, regra 2.7); `false` mostra todos e os que não são freeleech gastam ratio. Vale na hora, sem novo login |
+| `ASC_ONLY_FREELEECH` | `true` | `true` lista e baixa só releases freeleech (o download deles não conta no ratio, regra 2.7); `false` mostra todos e os que não são freeleech gastam ratio. O play confere de novo antes de iniciar o download, mas o benefício pode acabar durante a transferência e a contabilidade final é do tracker. Vale na hora, sem novo login |
 
 Precedência normal: ambiente, depois `settings.json`, depois o padrão. Valor diferente de `true`/`false` é recusado (na partida, a partida falha; no painel e na CLI, a alteração é rejeitada).
 ## Logs
 
 | Variável | Padrão | Comportamento |
 |---|---|---|
-| `LOG_LEVEL` | `debug` | Mínimo registrado: `debug`, `info`, `warn` ou `error` |
+| `LOG_LEVEL` | `info` | Mínimo registrado: `debug`, `info`, `warn` ou `error` |
 | `LOG_RETENTION_DAYS` | `14` | Retenção dos arquivos diários |
 
 A página `/logs` permite mudar o nível durante a execução; para preservar a escolha depois de reiniciar, altere o ambiente. Consulte [manutenção](manutencao.md#logs).

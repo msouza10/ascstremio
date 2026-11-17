@@ -32,9 +32,9 @@
     const sub = el('p', 'page-sub', 'Carregando…');
     hl.append(sub);
     const dl = el('div', 'item-badges');
-    const aTxt = el('a', 'btn btn-outline btn-sm'); aTxt.append(icon('download'), document.createTextNode('Baixar .txt'));
-    const aNd = el('a', 'btn btn-outline btn-sm'); aNd.append(icon('download'), document.createTextNode('Baixar .ndjson'));
-    aTxt.setAttribute('download', ''); aNd.setAttribute('download', '');
+    const aTxt = el('button', 'btn btn-outline btn-sm'); aTxt.append(icon('download'), document.createTextNode('Baixar .txt'));
+    const aNd = el('button', 'btn btn-outline btn-sm'); aNd.append(icon('download'), document.createTextNode('Baixar .ndjson'));
+    aTxt.type = 'button'; aNd.type = 'button';
     dl.append(aTxt, aNd);
     head.append(hl, dl);
 
@@ -63,7 +63,7 @@
     const bLive = el('button', 'btn btn-outline btn-sm'); bLive.type = 'button'; bLive.setAttribute('aria-pressed', 'true');
     const bEnd = el('button', 'btn btn-ghost btn-icon'); bEnd.type = 'button';
     bEnd.append(icon('arrow-down-to-line'), document.createTextNode('Ir para o fim'));
-    const bCopy = el('button', 'btn btn-ghost btn-icon'); bCopy.type = 'button'; bCopy.append(icon('copy'), document.createTextNode('Copiar visíveis'));
+    const bCopy = el('button', 'btn btn-ghost btn-icon'); bCopy.type = 'button'; bCopy.append(icon('copy'), document.createTextNode('Revisar para copiar'));
     const bClear = el('button', 'btn btn-ghost btn-icon'); bClear.type = 'button';
     bClear.append(icon('x'), document.createTextNode('Limpar tela'));
     const hint = el('span', 'page-sub');
@@ -104,13 +104,63 @@
     // Uma frase diz o essencial; o detalhe (debug, redação de segredos, como fixar) fica em "Saiba mais".
     const cfgMore = el('details', 'more');
     cfgMore.append(el('summary', '', 'Saiba mais'),
-      el('p', 'foot', 'Debug mostra cada requisição ao ASC e cada pedido de streaming. A passkey, cookies, senhas e tokens são removidos antes de qualquer gravação. A mudança vale até reiniciar o serviço; para fixar, use LOG_LEVEL em private/service.env.'));
+      el('p', 'foot', 'Debug mostra cada requisição ao ASC e cada pedido de streaming. Segredos conhecidos e padrões previstos são redigidos; títulos, caminhos e outros dados podem permanecer. A mudança vale até reiniciar o serviço; para fixar, use LOG_LEVEL em private/service.env.'));
     cCfg.append(cardHead('Gravação'), lvlField, cfgStatus,
       el('p', 'foot', 'Linhas abaixo deste nível não são gravadas, nem na memória nem em disco.'), cfgMore);
 
     const grid = el('div', 'grid grid-2');
     grid.append(cFiles, cCfg);
-    root.append(head, bar, view, grid);
+    const warning = el('p', 'foot', 'Logs podem conter títulos, caminhos e identificadores. Revise a prévia antes de compartilhar; a redação automática não garante anonimização.');
+    const dialog = el('dialog', 'log-export');
+    dialog.setAttribute('aria-labelledby', 'log-export-title');
+    const title = el('h2', '', 'Revisar exportação'); title.id = 'log-export-title';
+    const mode = el('select', 'input'); mode.setAttribute('aria-label', 'Conteúdo da exportação');
+    for (const [value, label] of [['suporte', 'Suporte: sem mensagens e dados'], ['completo', 'Completo: pode conter dados pessoais']]) {
+      const o = el('option', '', label); o.value = value; mode.append(o);
+    }
+    const detail = el('p', 'foot'); detail.setAttribute('role', 'status');
+    const previewText = el('textarea', 'input'); previewText.readOnly = true; previewText.rows = 15;
+    previewText.setAttribute('aria-label', 'Texto exato da exportação');
+    const save = el('button', 'btn', 'Baixar conteúdo revisado'); save.type = 'button';
+    const copy = el('button', 'btn btn-outline', 'Copiar conteúdo revisado'); copy.type = 'button';
+    const cancel = el('button', 'btn btn-ghost', 'Fechar'); cancel.type = 'button';
+    const actions = el('div', 'item-badges'); actions.append(save, copy, cancel);
+    dialog.append(title, mode, detail, previewText, actions);
+    root.append(head, warning, bar, view, grid, dialog);
+    let snapshot = null; let exportParams = null; let exportSequence = 0;
+    function invalidatePreview() {
+      snapshot = null; save.disabled = true; copy.disabled = true; previewText.value = '';
+    }
+    async function refreshPreview() {
+      const sequence = ++exportSequence;
+      invalidatePreview(); setText(detail, 'Preparando prévia…');
+      const params = new URLSearchParams(exportParams); params.set('modo', mode.value);
+      try {
+        const result = await app().call('GET', `logs/preview?${params}`);
+        if (destroyed || sequence !== exportSequence || !dialog.open) return;
+        snapshot = result; previewText.value = result.content;
+        setText(detail, `${result.scope} ${result.count} registro(s). Retenção local: ${result.retentionDays} dias. ${result.skippedLines} linha(s) ilegível(is) omitida(s). ${result.notice}`);
+        save.disabled = false; copy.disabled = false;
+      } catch (e) { if (sequence === exportSequence) setText(detail, `Não foi possível preparar a prévia: ${e.message}`); }
+    }
+    function openPreview(params) {
+      exportParams = params; mode.value = 'suporte'; dialog.showModal(); refreshPreview();
+    }
+    mode.addEventListener('change', refreshPreview);
+    cancel.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => { if (!dialog.open) { exportSequence++; invalidatePreview(); } });
+    save.addEventListener('click', () => {
+      if (!snapshot) return;
+      const url = URL.createObjectURL(new Blob([snapshot.content], { type: snapshot.contentType }));
+      const link = el('a'); link.href = url; link.download = snapshot.filename;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    copy.addEventListener('click', async () => {
+      if (!snapshot) return;
+      try { await navigator.clipboard.writeText(snapshot.content); setText(detail, 'Conteúdo revisado copiado. Confira o destino antes de compartilhar.'); }
+      catch { previewText.focus(); previewText.select(); setText(detail, 'Selecione o texto revisado e use Ctrl+C.'); }
+    });
 
     // --------------------------------------------------------------- estado
     const st = { levels: new Set(DEFAULT_LEVELS), fonte: '', q: '', janela: '6h', live: true };
@@ -160,8 +210,7 @@
       // Ponto que pulsa quando ao vivo (o ícone de carregamento girando parecia travado/erro).
       const dot = el('span', st.live ? 'live-dot is-live' : 'live-dot'); dot.setAttribute('aria-hidden', 'true');
       bLive.append(dot, document.createTextNode(st.live ? 'Ao vivo' : 'Pausado'));
-      aTxt.href = `/api/logs/download?${filterQuery({ formato: 'txt' })}`;
-      aNd.href = `/api/logs/download?${filterQuery({ formato: 'ndjson' })}`;
+
     }
     function toggleLevel(k) {
       if (st.levels.has(k)) { if (st.levels.size > 1) st.levels.delete(k); } else st.levels.add(k);
@@ -295,7 +344,8 @@
         clear(fb);
         for (const f of d.files) {
           const tr = document.createElement('tr');
-          const a = el('a', 'link', 'Baixar'); a.href = `/api/logs/file?nome=${encodeURIComponent(f.name)}`; a.setAttribute('download', f.name);
+          const a = el('button', 'btn btn-ghost btn-sm', 'Revisar e baixar'); a.type = 'button';
+          a.addEventListener('click', () => openPreview(new URLSearchParams({ nome: f.name, formato: 'ndjson' })));
           const c1 = el('td', 'mono', f.name); const c4 = document.createElement('td'); c4.className = 'r'; c4.append(a);
           tr.append(c1, el('td', 'r', fmtBytes(f.bytes)), el('td', 'r', fmtDate(new Date(f.modifiedAt).toISOString())), c4);
           fb.append(tr);
@@ -315,11 +365,9 @@
     bEnd.addEventListener('click', toEnd);
     bMore.addEventListener('click', loadMore);
     bClear.addEventListener('click', () => { for (const n of lines.values()) n.remove(); lines.clear(); more = false; unseen = 0; renderMeta(); renderHint(); });
-    bCopy.addEventListener('click', async () => {
-      const text = [...box.querySelectorAll('.ll')].map((n) => n.dataset.text).join('\n');
-      try { await navigator.clipboard.writeText(text); setText(hint, `${lines.size} linha(s) copiada(s)`); }
-      catch { const r = document.createRange(); r.selectNodeContents(box); const s = getSelection(); s.removeAllRanges(); s.addRange(r); setText(hint, 'Selecionado: use Ctrl+C'); }
-    });
+    aTxt.addEventListener('click', () => openPreview(filterQuery({ formato: 'txt' })));
+    aNd.addEventListener('click', () => openPreview(filterQuery({ formato: 'ndjson' })));
+    bCopy.addEventListener('click', () => openPreview(filterQuery({ formato: 'txt' })));
     box.addEventListener('scroll', () => { if (nearBottom() && unseen) { unseen = 0; renderHint(); } }, { passive: true });
     lvlSel.addEventListener('change', async () => {
       setText(cfgStatus, 'Aplicando…'); cfgStatus.classList.remove('error');
@@ -335,7 +383,7 @@
       root,
       params(q) { const before = `${[...st.levels].sort()}|${st.fonte}|${st.q}|${st.janela}`; readParams(q); syncControls(); if (before !== `${[...st.levels].sort()}|${st.fonte}|${st.q}|${st.janela}`) fetchFull(); },
       update() { /* os logs têm leitura própria; o painel não os empurra */ },
-      destroy() { destroyed = true; clearInterval(timer); clearTimeout(input._t); },
+      destroy() { destroyed = true; exportSequence++; if (dialog.open) dialog.close(); invalidatePreview(); clearInterval(timer); clearTimeout(input._t); },
     };
   }
 

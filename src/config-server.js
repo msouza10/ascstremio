@@ -7,9 +7,10 @@ const { Logger, logger: defaultLogger, LEVEL_NAMES } = require('./logger');
 const { configHost, isLoopbackRequest } = require('./safety');
 const { AdminCredential, AdminSessions, LoginLimiter, safeEqual } = require('./admin-auth');
 const { PanelError } = require('./panel-settings');
+const { serveLegalNotice } = require('./legal-notice');
 
 // Tela local do addon. O CSP só aceita script/estilo/fonte do próprio servidor,
-// então nada é inline e só arquivos de src/ui/ com extensão conhecida saem daqui.
+// então nada é inline. Estáticos vêm de src/ui/; o aviso tem uma rota fixa separada.
 const UI_DIR = path.join(__dirname, 'ui');
 const TYPES = {
   '.js': 'text/javascript; charset=utf-8',
@@ -21,7 +22,7 @@ const TYPES = {
 const PAGES = [/^\/$/, /^\/filmes$/, /^\/filmes\/[A-Za-z0-9_-]{1,64}$/, /^\/trafego$/, /^\/logs$/, /^\/conta$/, /^\/entrar$/, /^\/configuracoes$/, /^\/assistente$/];
 // Leituras repetidas pelo próprio painel: não geram linha de log (seria ruído e laço).
 const QUIET = new Set(['/api/monitor', '/api/status', '/api/logs', '/api/logs/files', '/api/addon-connection', '/config.js']);
-const MAX_DOWNLOAD = 100_000;
+const { buildLogExport, LogExportError } = require('./log-export');
 const PANEL_POSTS = ['/api/settings', '/api/settings/preview', '/api/wizard/complete', '/api/wizard/dismiss', '/api/credentials', '/api/credentials/revoke', '/api/credentials/rotate'];
 const ALERT_POSTS = ['/api/alerts/webhook', '/api/alerts/webhook/clear', '/api/alerts/test'];
 
@@ -161,6 +162,9 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       const url = new URL(req.url, origin);
       pathname = url.pathname;
       const sp = url.searchParams;
+      // Documento público da instalação, como o shell de login: disponível sem
+      // sessão ASC/administrativa, mas somente depois da validação do canal/Host.
+      if (pathname === '/avisos-legais') return serveLegalNotice(req, res);
       let admin = null; // sessão de administração válida desta requisição
       if (guard) {
         const found = sessions.check(readCookie(req.headers.cookie, cookieName), channel.host);
@@ -250,23 +254,15 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         });
       }
       if (req.method === 'GET' && url.pathname === '/api/logs/files') return send(200, { files: logs.listFiles(), retentionDays: logs.retentionDays });
-      if (req.method === 'GET' && url.pathname === '/api/logs/download') {
-        const nd = sp.get('formato') === 'ndjson';
-        const { entries } = logs.query(Logger.parseFilter(sp), { limit: MAX_DOWNLOAD });
-        const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
-        res.writeHead(200, {
-          'Content-Type': nd ? 'application/x-ndjson; charset=utf-8' : 'text/plain; charset=utf-8',
-          'Content-Disposition': `attachment; filename="asc-logs-${stamp}.${nd ? 'ndjson' : 'txt'}"`,
-        });
-        log.info(`download de logs (${nd ? 'ndjson' : 'txt'}): ${entries.length} linha(s)`);
-        return res.end(entries.map((e) => (nd ? JSON.stringify(e) : logs.format(e))).join('\n') + (entries.length ? '\n' : ''));
-      }
-      if (req.method === 'GET' && url.pathname === '/api/logs/file') {
-        const full = logs.filePath(sp.get('nome'));
-        if (!full) return send(404, { error: 'Arquivo de log inexistente.' });
-        res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Content-Disposition': `attachment; filename="${path.basename(full)}"` });
-        log.info(`download do arquivo ${path.basename(full)}`);
-        return res.end(fs.readFileSync(full));
+      if (['/api/logs/preview', '/api/logs/download', '/api/logs/file'].includes(pathname)) {
+        if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); return send(405, { error: 'Método não permitido.' }); }
+        if (req.headers.origin && req.headers.origin !== channel.origin) return send(403, { error: 'Origem não autorizada.' });
+        const preview = pathname === '/api/logs/preview';
+        const result = buildLogExport(logs, sp, { defaultMode: preview ? 'suporte' : 'completo', file: pathname === '/api/logs/file' });
+        if (preview) return send(200, result);
+        res.writeHead(200, { 'Cache-Control': 'no-store', 'Content-Type': result.contentType,
+          'Content-Disposition': `attachment; filename="${result.filename}"` });
+        return res.end(result.content);
       }
 
       if (req.method === 'GET' && url.pathname === '/api/status') return send(200, asc.status());
@@ -286,7 +282,7 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
         if (!asc.connected) return send(401, { error: 'Conecte e confirme a sessão do ASC para abrir as configurações.' });
         return send(200, alerts.status());
       }
-      const routes = [...ALERT_POSTS, '/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/seed', '/api/exclude', '/api/logs/level', ...PANEL_POSTS];
+      const routes = [...ALERT_POSTS, '/api/login', '/api/verify', '/api/logout', '/api/complete', '/api/seed', '/api/exclude', '/api/verify-pieces', '/api/logs/level', ...PANEL_POSTS];
       if (req.method !== 'POST' || !routes.includes(url.pathname)) return send(404, { error: 'Página inexistente.' });
       const csrfOk = guard ? safeEqual(req.headers['x-csrf-token'], admin.csrf) : req.headers['x-csrf-token'] === token;
       if (req.headers.origin !== channel.origin || !csrfOk || req.headers['content-type'] !== 'application/json') {
@@ -335,13 +331,38 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
           throw err;
         }
       }
+      // Escopo opcional de exclusão/conclusão em pack: `file` (índice) ou `season`, nunca os dois.
+      // Só números chegam à ponte; quem escolhe os arquivos da temporada é o servidor.
+      const scopeOf = (b) => {
+        const hasFile = b.file !== undefined; const hasSeason = b.season !== undefined;
+        if (hasFile && hasSeason) return null;
+        if (hasFile) return Number.isInteger(b.file) && b.file >= 0 ? { file: b.file } : null;
+        if (hasSeason) return Number.isInteger(b.season) && b.season >= 0 && b.season <= 99 ? { season: b.season } : null;
+        return {};
+      };
       if (url.pathname === '/api/exclude') {
         if (!monitor?.excludeFile) return send(404, { error: 'Exclusão de episódios indisponível.' });
         if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
-        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash) || !Number.isInteger(body.file) || body.file < 0) return send(400, { error: 'Conteúdo ou episódio inválido.' });
+        const scope = scopeOf(body);
+        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash) || !scope || (scope.file === undefined && scope.season === undefined)) return send(400, { error: 'Conteúdo, episódio ou temporada inválido.' });
         try {
-          const result = await monitor.excludeFile(body.infoHash, body.file);
-          log.info('episódio excluído pelo painel');
+          const result = scope.season !== undefined
+            ? await monitor.excludeSeason(body.infoHash, scope.season)
+            : await monitor.excludeFile(body.infoHash, scope.file);
+          log.info(`${scope.season !== undefined ? 'temporada' : 'episódio'} excluído pelo painel`);
+          return send(200, result);
+        } catch (err) {
+          if (err.expose) return send(err.status, { error: err.message });
+          throw err;
+        }
+      }
+      if (url.pathname === '/api/verify-pieces') {
+        if (!monitor?.verifyEpisodes) return send(404, { error: 'Verificação por peças indisponível.' });
+        if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
+        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash)) return send(400, { error: 'Conteúdo inválido.' });
+        try {
+          const result = await monitor.verifyEpisodes(body.infoHash);
+          log.info('verificação por peças feita pelo painel');
           return send(200, result);
         } catch (err) {
           if (err.expose) return send(err.status, { error: err.message });
@@ -351,9 +372,17 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       if (url.pathname === '/api/complete') {
         if (!monitor) return send(404, { error: 'Painel indisponível.' });
         if (!asc.connected) return send(401, { error: 'Sessão não confirmada.' });
-        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash)) return send(400, { error: 'Filme inválido.' });
+        const scope = scopeOf(body);
+        if (typeof body.infoHash !== 'string' || !/^[0-9a-f]{40}$/.test(body.infoHash) || !scope) return send(400, { error: 'Filme inválido.' });
         log.info(`concluir download pedido pelo painel: ${body.infoHash}`);
-        return send(202, await monitor.complete(body.infoHash));
+        if (scope.file === undefined && scope.season === undefined) return send(202, await monitor.complete(body.infoHash));
+        if (!monitor.completeFiles) return send(404, { error: 'Conclusão parcial indisponível.' });
+        try {
+          return send(202, await monitor.completeFiles(body.infoHash, scope));
+        } catch (err) {
+          if (err.expose) return send(err.status, { error: err.message });
+          throw err;
+        }
       }
       if (url.pathname === '/api/login') {
         if (typeof body.username !== 'string' || !body.username.trim() || body.username.length > 100 || typeof body.password !== 'string' || !body.password || body.password.length > 512) return send(400, { error: 'Preencha usuário e senha.' });
@@ -373,6 +402,7 @@ async function startConfig(asc, port = 7020, monitor = null, logs = defaultLogge
       log.info('sessão local removida pelo painel');
       return send(200, await asc.logout());
     } catch (error) {
+      if (error instanceof LogExportError) return send(error.status, { error: error.message });
       const known = error instanceof AscError;
       // O motivo real vai para o log (já redigido); a resposta ao navegador segue genérica.
       log[known ? 'warn' : 'error'](`${req.method} ${pathname}: ${error?.message ?? error}`, known ? undefined : { stack: error?.stack });

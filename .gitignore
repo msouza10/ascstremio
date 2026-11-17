@@ -33,12 +33,14 @@ docs/*
 tools/
 *.md
 !README.md
+!LEGAL.md
 !CHANGELOG.md
 !AGENTS.md
 !.github/*.md
 !CLAUDE.md
 !TESTS.md
 !docs/README.md
+!docs/terceiros.md
 !docs/instalacao.md
 !docs/configuracao.md
 !docs/uso.md
@@ -47,11 +49,33 @@ tools/
 !docs/manutencao.md
 !docs/arquitetura.md
 !docs/desenvolvimento.md
+!docs/conformidade-juridica.md
+!docs/permissoes-e-contato.md
+!docs/dados-privacidade.md
+!docs/series-prioridades.md
 *.png
 *.jpg
 *.jpeg
 *.pdf
 *.har
+
+# Capturas públicas revisadas; liberar somente nomes exatos.
+!docs/imagens/
+docs/imagens/*
+!docs/imagens/login-claro.png
+!docs/imagens/login-escuro.png
+!docs/imagens/logs-claro.png
+!docs/imagens/logs-escuro.png
+!docs/imagens/painel-claro.png
+!docs/imagens/painel-escuro.png
+!docs/imagens/torrent-claro.png
+!docs/imagens/torrent-escuro.png
+!docs/imagens/wizard-instalar-claro.png
+!docs/imagens/wizard-instalar-escuro.png
+!docs/imagens/wizard-seed-claro.png
+!docs/imagens/wizard-seed-escuro.png
+!docs/imagens/wizard-uso-claro.png
+!docs/imagens/wizard-uso-escuro.png
 
 # --- build e ambiente -------------------------------------------------------
 node_modules/
@@ -60,7 +84,8 @@ coverage/
 __pycache__/
 *.pyc
 .cache/
-.claude/
+.claude/*
+!.claude/settings.json
 .codex/
 .vscode/
 .idea/

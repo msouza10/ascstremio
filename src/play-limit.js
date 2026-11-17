@@ -67,6 +67,17 @@ class PlaybackLimiter {
     return false;
   }
 
+  // Sessão ainda aberta (ou na janela de inatividade) de uma fonte lazy do ASC: filme (`a:<id>`) ou
+  // episódio de pack (`e:<id>:T:E`). Comparação exata do id: `a:1000` não é o título `a:100`.
+  hasAscSession(ascId) {
+    this.sweep();
+    for (const s of this.sessions.values()) {
+      const key = String(s.key);
+      if (key === `a:${ascId}` || key.startsWith(`e:${ascId}:`)) return true;
+    }
+    return false;
+  }
+
   // Segundos até a primeira vaga ociosa expirar (as que têm resposta aberta não têm prazo).
   refuse(scope, limit, credentialId) {
     const t = this.now();

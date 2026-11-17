@@ -12,6 +12,7 @@ const path = require('path');
 const { loadLibrary, mainVideo, isPackEntry } = require('./library');
 const { buildEpisodeIndex, findEpisode } = require('./episodes');
 const { fileStates } = require('./file-state');
+const { completionPlan, selectCompletion } = require('./completion-order');
 const { announceWithPasskey } = require('./passkey');
 const { SeedVault } = require('./seedvault');
 const { isLoopbackRequest, inContainer, hostAllowed } = require('./safety');
@@ -22,8 +23,10 @@ const { DiskGuard, DEFAULT_RESERVE_BYTES } = require('./disk-policy');
 const { UploadPolicy } = require('./upload-policy');
 const { PlaybackLimiter, DEFAULT_GRACE_MS } = require('./play-limit');
 const { Retention } = require('./retention-service');
+const { sharedWith } = require('./retention');
 const { manageSeed } = require('./seed-actions');
-const { excludeFile } = require('./file-actions');
+const { excludeFile, excludeSeason, completeFiles } = require('./file-actions');
+const { verifyPack, stampOf, defaultLoadMeta } = require('./piece-check');
 const { logger } = require('./logger');
 const { rankPending, runLimited } = require('./resume-policy');
 const { StreamMetrics } = require('./stream-metrics');
@@ -108,6 +111,7 @@ class Bridge {
     clock = Date.now, // relógio da quota (injetável nos testes)
     freeSpace = null, // injeção para testes: (dir) => livres | { free, total }
     afterSeed = 'delete',
+    releaseConfirmMaxAgeMs = 5 * 60 * 1000, // idade máxima da leitura do tracker aceita para liberar (SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES); 0 = sempre reler
     retention = null, // { mode, budgetBytes, maxTitles, minAgeDays } (RETENTION_*); sem isto, desligada
     keepAwake = null,
     resumeOnStart = true,
@@ -118,6 +122,9 @@ class Bridge {
     ascSizeHint = null, // (ascId) => bytes da listagem, para reservar espaço antes de baixar o .torrent
     ascEpisodeResolver = null, // async (ascId, season, episode) => { infoHash, fileIdx }  (/e/<id>/<T>/<E>)
     ascEpisodeSizeHint = null, // (ascId, season, episode) => bytes do episódio na listagem (0 = desconhecido)
+    ascStartGate = null, // async (ascId) => void: confirma o freeleech agora; lança com `status` se não puder autorizar novo download
+    ascImdbHint = null, // (ascId) => IMDb da série que o provedor listou para o release (vínculo gravado no play)
+    loadPieceMeta = null, // async (torrentPath) => { pieceLength, pieces, length, files }; injetável nos testes
   }) {
     this.torrentDir = torrentDir;
     this.storeDir = storeDir;
@@ -142,6 +149,10 @@ class Bridge {
     // confirma: delete = encerra e apaga os dados; stop = encerra e mantém os
     // dados; keep = continua semeando.
     this.afterSeed = afterSeed;
+    this.releaseConfirmMaxAgeMs = releaseConfirmMaxAgeMs;
+    // Por que a liberação automática ainda NÃO ocorreu (hash -> { reason, at }). O painel mostra
+    // "aguardando confirmação" em vez de dar o título como resolvido.
+    this.releaseBlocked = new Map();
     // Retenção por orçamento (issue #27): desligada por padrão; ver src/retention-service.js.
     this.retention = new Retention(this, retention ?? {});
     // Opcional: objeto com update(boolean) que impede a suspensão do PC.
@@ -164,14 +175,26 @@ class Bridge {
     this.ascResolver = ascResolver;
     this.ascSizeHint = ascSizeHint;
     this.ascEpisodeResolver = ascEpisodeResolver;
+    this.ascStartGate = ascStartGate;
+    this.ascImdbHint = ascImdbHint;
     this.ascEpisodeSizeHint = ascEpisodeSizeHint;
     // Pack: infoHash -> Map(índice do arquivo -> bytes prometidos na admissão). Só vale enquanto o
     // torrent está no motor: se foi destruído (limpeza, seed, retenção) ou nunca abriu, a admissão
     // é refeita. Só em memória: depois de um reinício nada fica "prometido".
     this.packFiles = new Map();
+    // Última posição pedida por GET de vídeo, por instância do torrent (some quando o motor o destrói).
+    this.playbackPositions = new WeakMap();
     this.streams = new Map(); // infoHash -> streams HTTP abertos agora
     this.lastStreamEnd = new Map(); // infoHash -> ms do último stream encerrado
-    this.completing = new Set(); // infoHash com o torrent inteiro selecionado
+    this.completing = new Set(); // infoHash com espaço admitido e fila de conclusão ativa
+    // Prova por peças de arquivos fora do motor (infoHash -> Map(índice -> { ok, stamp })). Só em memória.
+    this.pieceProof = new Map();
+    this.verifying = new Set();
+    this.loadPieceMeta = loadPieceMeta ?? defaultLoadMeta;
+    // infoHash -> índices que o usuário pediu para concluir (episódio/temporada). Enquanto existir, a
+    // conclusão automática NÃO baixa o resto do pack; só o pedido explícito do torrent inteiro desfaz.
+    // Não persiste: depois de um reinício vale a política normal.
+    this.partialScope = new Map();
     this.noPeersWarned = new Set(); // infoHash já avisado de "sem peers" neste período
     // Histórico de tráfego para o painel: uma amostra a cada 15 s, 1 h no total.
     this.traffic = [];
@@ -188,7 +211,9 @@ class Bridge {
     this.adminKey = adminKey;
     this.strictHost = strictHost;
     this.firstByteTimeoutMs = firstByteTimeoutMs;
-    // Credencial em memória: os .torrent em disco ficam sem token.
+    // Passkey separada, só em memória, para montar o announce do motor. Ela NÃO limpa os
+    // .torrent em disco: eles guardam os bytes recebidos do ASC (0600), possivelmente com a
+    // passkey no announce. A sanitização/migração desses arquivos ainda não existe (#99).
     this.passkey = passkey;
     this.uploadLimit = uploadLimit;
     // Teto reduzido durante reprodução (src/upload-policy.js). Inerte sem streamUploadLimit.
@@ -309,11 +334,19 @@ class Bridge {
   episodeStates(lib, torrent, excluded = []) {
     const states = new Map(fileStates({ files: lib.files, torrent, storeDir: this.storeDir }).map((s) => [s.index, s]));
     const index = lib.episodes ?? buildEpisodeIndex(lib.files);
+    const proof = this.pieceProof.get(lib.infoHash);
     return index.episodes.map((e) => {
       const s = states.get(e.index);
+      let state = s?.state ?? 'ausente'; let verified = Boolean(s?.verified); let pieceCheck = null;
+      // Fora do motor, só a prova por peças (ainda válida para o arquivo como está) vale como "completo".
+      const p = state === 'provavel' ? proof?.get(e.index) : null;
+      if (p && p.stamp === stampOf(this.storeDir, e.path)) {
+        pieceCheck = p.ok ? 'ok' : 'falhou';
+        if (p.ok) { state = 'completo'; verified = true; }
+      }
       return {
         index: e.index, season: e.season, episode: e.episode, episodeEnd: e.episodeEnd ?? null,
-        length: e.length, onDisk: s?.onDisk ?? 0, state: s?.state ?? 'ausente', verified: Boolean(s?.verified),
+        length: e.length, onDisk: s?.onDisk ?? 0, state, verified, pieceCheck,
         excluded: excluded.includes(e.index),
       };
     });
@@ -644,16 +677,6 @@ class Bridge {
     });
   }
 
-  // Ordem do que falta num pack, para o binge: primeiro os arquivos depois do episódio aberto mais
-  // recentemente, depois os anteriores que ficaram para trás. O aberto agora já está pronto ou
-  // vem pelo streaming (prioridade crítica).
-  packCompletionOrder(torrent) {
-    const files = torrent.files ?? [];
-    const current = [...(this.packFiles.get(torrent.infoHash)?.keys() ?? [])].pop() ?? -1;
-    const idx = files.map((_, i) => i);
-    return [...idx.filter((i) => i > current), ...idx.filter((i) => i < current)];
-  }
-
   // Conclusão em segundo plano: baixa o resto do torrent (prioridade baixa, nunca disputa com o
   // player) para que a obrigação de 72 h da regra 13.1 possa de fato ser paga. Torrent baixado
   // em parte fica no tracker como `downloading` e a meta de seed só conta depois da conclusão.
@@ -669,6 +692,8 @@ class Bridge {
       const pack = isPackEntry(this.entries.get(torrent.infoHash));
       if (!requested) {
         if (this.backgroundMode !== 'auto') continue;
+        // O usuário escolheu baixar só parte do pack: o resto não baixa por conta própria.
+        if (this.partialScope.has(torrent.infoHash)) continue;
         // O usuário excluiu um episódio: não baixar o pack por conta própria (o pedido explícito de
         // concluir limpa a exclusão).
         if (entry?.excluded?.length) continue;
@@ -694,13 +719,15 @@ class Bridge {
       }
       if (entry?.noSpaceWarned) entry.noSpaceWarned = false;
 
-      // Prioridade 0: o streaming (prioridade crítica) sempre passa na frente. Em pack, os arquivos
-      // entram na ordem do binge (seguintes, depois anteriores); empate de prioridade respeita a
-      // ordem de inserção.
-      const order = pack ? this.packCompletionOrder(torrent) : [];
-      const selectable = order.filter((i) => typeof torrent.files?.[i]?.select === 'function');
-      if (selectable.length > 0) for (const i of selectable) torrent.files[i].select(0);
-      else torrent.select(0, torrent.pieces.length - 1, 0);
+      // Uma recusa do motor num torrent não pode abortar os demais nem derrubar o processo (o
+      // timer não tem quem capture); sem seleção feita, a conclusão não é dada como ativa.
+      try {
+        selectCompletion(torrent, completionPlan(torrent, this.entries.get(torrent.infoHash), this.playbackPositions.get(torrent)),
+          () => this.completing.delete(torrent.infoHash));
+      } catch (err) {
+        console.warn(`[conclusão] não foi possível selecionar "${String(torrent.name).slice(0, 40)}": ${err.message}`);
+        continue;
+      }
       this.completing.add(torrent.infoHash);
       this.vault.setBackground(torrent.infoHash, true);
       console.log(`[conclusão] baixando o restante em segundo plano: ${String(torrent.name).slice(0, 50)}`);
@@ -717,35 +744,175 @@ class Bridge {
     return excludeFile(this, infoHash, fileIdx);
   }
 
+  requestFilesCompletion(infoHash, scope) {
+    return completeFiles(this, infoHash, scope);
+  }
+
+  // Episódios locais que servem a um pedido de série SEM o ASC: pack vinculado àquela série no play,
+  // episódio não excluído e `completo` com prova (motor aberto ou verificação por peças ainda válida).
+  // Tamanho "provável" nunca basta. Só leitura, sem rede.
+  localEpisodeSources(imdbId, season, episode) {
+    const out = [];
+    for (const entry of this.vault.list()) {
+      if (entry.imdbId !== imdbId) continue;
+      const lib = this.entries.get(entry.infoHash);
+      if (!lib || !isPackEntry(lib)) continue;
+      const found = findEpisode(lib.episodes ?? buildEpisodeIndex(lib.files), season, episode);
+      if (!found?.file) continue; // sem o episódio, ou dois arquivos dizem ser ele: não adivinha
+      const torrent = this.client?.torrents.find((t) => t.infoHash === entry.infoHash) ?? null;
+      const state = this.episodeStates(lib, torrent, entry.excluded ?? []).find((e) => e.index === found.file.index);
+      if (!state || state.excluded || state.state !== 'completo' || !state.verified) continue;
+      out.push({
+        infoHash: entry.infoHash, fileIdx: found.file.index, length: found.file.length, path: found.file.path,
+        name: lib.title ?? lib.name ?? entry.name ?? null,
+        ascId: /asc-(\d+)\.torrent$/.exec(String(lib.torrentPath ?? ''))?.[1] ?? null,
+      });
+    }
+    return out;
+  }
+
+  verifyEpisodes(infoHash) {
+    return verifyPack(this, infoHash);
+  }
+
+  excludeSeason(infoHash, season) {
+    return excludeSeason(this, infoHash, season);
+  }
+
   manageSeed(infoHash, action) {
     return manageSeed(this, infoHash, action);
   }
 
+  // Parar o seed/apagar arquivos sozinho: só com o tracker confirmando AGORA (13.1). O cofre guarda a
+  // confirmação para sempre e a conciliação periódica não relê o que já foi confirmado; por isso a
+  // leitura é refeita aqui quando a anterior passou de `releaseConfirmMaxAgeMs` (ou nunca foi datada).
   async releaseSatisfied() {
     const released = [];
+    this.releaseBlocked = new Map();
     if (['keep', 'manual'].includes(this.afterSeed) || !this.client) return released;
+    const busy = (hash) => this.releaseBusy(hash);
     for (const torrent of [...this.client.torrents]) {
       const hash = torrent.infoHash;
       const entry = this.vault.get(hash);
       if (!hnr.trackerConfirmed(entry) || entry.seedChoice === 'keep' || entry.seedChoice === 'stop') continue;
-      if ((this.streams.get(hash) ?? 0) > 0 || this.retention.isRetiring(hash)) continue;
+      if (busy(hash) || this.retention.isRetiring(hash)) continue;
       // Todos os caminhos de liberação usam a mesma trava: uma confirmação do
       // painel não pode disputar com a exclusão automática já iniciada.
       this.retention.retiring.add(hash);
       try {
+        const gate = await this.confirmRelease(hash, entry);
+        if (!gate.ok) {
+          this.releaseBlocked.set(hash, { reason: gate.reason, at: this.vault.now() });
+          log.warn(`liberação adiada (${gate.reason}): "${String(entry.name).slice(0, 50)}"`);
+          // Sessão expirada/site fora do ar: insistir só repete a falha e castiga o site.
+          if (gate.abort) break;
+          continue;
+        }
+        // A consulta foi assíncrona: reavalia uso e confirmação no ponto síncrono antes do destroy.
+        // Também a escolha individual (keep/stop) e o próprio torrent: podem mudar durante a consulta.
+        if (busy(hash) || !this.releaseFresh(entry, gate.since) || this.vault.get(hash) !== entry
+          || entry.seedChoice === 'keep' || entry.seedChoice === 'stop' || !this.client?.torrents.includes(torrent)) {
+          this.releaseBlocked.set(hash, { reason: 'o estado mudou durante a conferência no tracker', at: this.vault.now() });
+          continue;
+        }
+        // Apagar o armazenamento só se NENHUM outro título usa esses arquivos (mesma definição das
+        // ações individuais). O outro pode ter seed obrigatório (13.1) ou ser assistido. Sem a
+        // lista de arquivos do título não dá para provar que é só dele: mantém (fail-closed).
+        let filesKept = null;
+        if (this.afterSeed === 'delete') {
+          const paths = (this.entries.get(hash)?.files ?? []).map((f) => f.path);
+          if (!paths.length) filesKept = 'arquivos-desconhecidos';
+          else if (sharedWith(this.entries, hash, paths)) filesKept = 'arquivo-compartilhado';
+        }
+        const apagar = this.afterSeed === 'delete' && !filesKept;
         await new Promise((resolve, reject) => {
-          torrent.destroy({ destroyStore: this.afterSeed === 'delete' }, (err) => err ? reject(err) : resolve());
+          torrent.destroy({ destroyStore: apagar }, (err) => err ? reject(err) : resolve());
         });
         this.completing.delete(hash);
         this.startedAt.delete(hash);
         this.lastTick.delete(hash);
-        this.vault.markReleased(hash, this.afterSeed);
-        released.push({ infoHash: hash, name: entry.name, mode: this.afterSeed });
+        // Com arquivos mantidos o que ocorreu foi uma parada ('stop'), e é assim que o cofre registra.
+        const mode = filesKept ? 'stop' : this.afterSeed;
+        this.vault.markReleased(hash, mode, filesKept);
+        released.push({ infoHash: hash, name: entry.name, mode });
         console.log(`[liberar] limite cumprido e confirmado pelo tracker: "${String(entry.name).slice(0, 50)}"`
-          + ` (${this.afterSeed === 'delete' ? 'rede e arquivos liberados' : 'rede liberada, arquivos mantidos'})`);
+          + ` (${apagar ? 'rede e arquivos liberados' : 'rede liberada, arquivos mantidos'})`);
+        if (filesKept) {
+          log.warn(`arquivos mantidos apesar de AFTER_SEED=delete (${filesKept}): "${String(entry.name).slice(0, 50)}"`);
+        }
       } finally { this.retention.retiring.delete(hash); }
     }
     return released;
+  }
+
+  // Conteúdo em uso agora (abrindo, com stream ou com sessão recente de reprodução).
+  releaseBusy(hash) {
+    const ascId = hnr.ascIdFromPath(this.vault.get(hash)?.torrentPath);
+    return this.loading.has(hash) || (this.streams.get(hash) ?? 0) > 0 || this.limiter.hasKeyPrefix(`s:${hash}:`)
+      || Boolean(ascId && this.limiter.hasAscSession(ascId));
+  }
+
+  // O adiamento só vale enquanto a liberação automática ainda decide o caso. Se o usuário já escolheu
+  // keep/stop, se o título foi liberado ou saiu do motor, o aviso gravado na última passada (que só
+  // roda de hora em hora) ficou velho e não pode continuar no painel.
+  releaseBlockedFor(hash) {
+    const blocked = this.releaseBlocked.get(hash);
+    if (!blocked) return null;
+    const entry = this.vault.get(hash);
+    if (!entry || entry.releasedAs || entry.seedChoice === 'keep' || entry.seedChoice === 'stop') return null;
+    if (!this.client?.torrents.some((t) => t.infoHash === hash)) return null;
+    return blocked;
+  }
+
+  releaseBlockedNotice(hash) {
+    const nome = String(this.vault.get(hash)?.name ?? hash).slice(0, 50);
+    return `${nome}: liberação automática aguardando confirmação recente do tracker (${this.releaseBlockedFor(hash)?.reason}). Seed e arquivos foram mantidos.`;
+  }
+
+  // Avisa que `AFTER_SEED=delete` NÃO apagou os arquivos deste título. O motivo gravado é só o que
+  // ocorreu na liberação; o aviso reavalia o compartilhamento agora e some quando o outro título saiu
+  // da biblioteca, quando os arquivos já não estão em disco ou quando o usuário voltou a manter o
+  // seed (`keep` apaga o registro).
+  filesKeptNotice(hash) {
+    const entry = this.vault.get(hash);
+    if (!entry?.releaseFilesKept || entry.releasedAs !== 'stop' || this.diskState(hash) === 'none') return null;
+    const nome = String(entry.name ?? hash).slice(0, 50);
+    const base = `${nome}: seed encerrado, mas os arquivos foram mantidos apesar de "excluir após o seed"`;
+    if (entry.releaseFilesKept === 'arquivo-compartilhado') {
+      const paths = (this.entries.get(hash)?.files ?? []).map((f) => f.path);
+      if (!sharedWith(this.entries, hash, paths)) return null;
+      return `${base}: são compartilhados com outro título. Só poderão ser apagados quando nenhum outro título os usar.`;
+    }
+    return `${base}: não foi possível confirmar quais arquivos são só deste título.`;
+  }
+
+  // Confirmação do tracker utilizável agora: cumprida, sem hit-and-run e lida há no máximo
+  // `releaseConfirmMaxAgeMs`. Idade negativa (relógio que voltou) ou sem data (cofre antigo) não vale.
+  releaseFresh(entry, since = null) {
+    if (!hnr.trackerConfirmed(entry) || entry.tracker.hitAndRun) return false;
+    if (since !== null) return entry.tracker.checkedAt >= since; // leitura feita por esta própria liberação
+    const idade = this.vault.now() - entry.tracker.checkedAt;
+    return this.releaseConfirmMaxAgeMs > 0 && Number.isFinite(idade) && idade >= 0 && idade <= this.releaseConfirmMaxAgeMs;
+  }
+
+  // { ok } ou { ok: false, reason, abort }. Fail-closed: qualquer dúvida mantém seed e arquivos.
+  async confirmRelease(hash, entry) {
+    if (entry.tracker.hitAndRun) return { ok: false, reason: 'tracker registrou hit-and-run' };
+    if (this.releaseFresh(entry)) return { ok: true, since: null };
+    if (!this.trackerCheck) return { ok: false, reason: 'sem leitura do tracker disponível' };
+    const since = this.vault.now();
+    let res;
+    try { res = await this.trackerCheck([hash], { force: true }); } catch (err) {
+      // O detalhe vai só para o log (que redige segredos); o painel recebe um texto fixo.
+      log.debug(`consulta ao tracker falhou: ${err?.message ?? err}`);
+      return { ok: false, abort: true, reason: 'tracker indisponível ou sessão expirada' };
+    }
+    if (!res || res.failed) return { ok: false, abort: true, reason: 'tracker indisponível ou sessão expirada' };
+    if (res.semRegistro || !res.checked) return { ok: false, reason: 'tracker sem registro deste torrent' };
+    const t = entry.tracker;
+    if (t?.hitAndRun) return { ok: false, reason: 'tracker registrou hit-and-run' };
+    if (!hnr.trackerConfirmed(entry) || !(t.checkedAt >= since)) return { ok: false, reason: 'tracker não confirma o cumprimento do seed' };
+    return { ok: true, since };
   }
 
   // Freeleech conhecido? O tracker (cofre) vale mais que o palpite da biblioteca.
@@ -762,8 +929,10 @@ class Bridge {
       err.status = 404;
       throw err;
     }
-    // Pedido explícito do usuário: o que ele excluiu antes volta a ser baixado.
+    // Pedido explícito do usuário: o que ele excluiu antes volta a ser baixado, e o pack inteiro
+    // deixa de ser "só parte".
     this.vault.clearExcluded(infoHash);
+    this.partialScope.delete(infoHash);
     const torrent = await this.getTorrent(infoHash);
     this.vault.setBackground(infoHash, true);
     this.completionTick();
@@ -783,8 +952,18 @@ class Bridge {
   needsAwake() {
     return (this.client?.torrents ?? []).some((t) => {
       const entry = this.vault.get(t.infoHash);
-      if (!t.done) return this.completing.has(t.infoHash);
+      if (!t.done) return this.completing.has(t.infoHash) || this.partialPending(t);
       return Boolean(entry?.completedAt && !entry.satisfiedAt);
+    });
+  }
+
+  // Pedido parcial (episódio/temporada) com arquivo escolhido ainda por baixar: conta como download
+  // em andamento para não suspender o computador, sem marcar o pack inteiro como "concluindo".
+  partialPending(torrent) {
+    const scope = this.partialScope.get(torrent.infoHash);
+    return Boolean(scope) && [...scope].some((i) => {
+      const f = torrent.files?.[i];
+      return f && (f.downloaded ?? 0) < f.length;
     });
   }
 
@@ -826,6 +1005,11 @@ class Bridge {
       const deadline = entry ? this.vault.deadlineMs(infoHash) : null;
       const daysLeft = deadline === null ? null : (deadline - now) / 86_400_000;
       const warnings = entry ? hnr.warningsFor({ vault: this.vault, entry, active, now }) : [];
+      const releaseBlocked = this.releaseBlockedFor(infoHash);
+      const extraWarnings = [...warnings];
+      if (releaseBlocked) extraWarnings.push(this.releaseBlockedNotice(infoHash));
+      const keptNotice = this.filesKeptNotice(infoHash);
+      if (keptNotice) extraWarnings.push(keptNotice);
       const down = torrent?.downloaded || 0;
       const up = torrent?.uploaded || 0;
       const completando = this.completing.has(infoHash) || Boolean(entry?.backgroundComplete && !completed);
@@ -866,6 +1050,7 @@ class Bridge {
         backgroundComplete: Boolean(entry?.backgroundComplete),
         ...(isPackEntry(lib) ? { episodes: this.episodeStates(lib, torrent, entry?.excluded), excluded: entry?.excluded ?? [] } : {}),
         released: entry?.releasedAs ?? null,
+        releaseBlocked: releaseBlocked ? { reason: releaseBlocked.reason, at: new Date(releaseBlocked.at).toISOString() } : null,
         seedChoice: entry?.seedChoice ?? null,
         progress: torrent ? Number((torrent.progress || 0).toFixed(4)) : (completed ? 1 : 0),
         downloaded: down,
@@ -893,7 +1078,7 @@ class Bridge {
               ? null : Number((tracker.remainingMs / 3_600_000).toFixed(2)),
           }
           : null,
-        warnings,
+        warnings: extraWarnings,
       };
     };
 
@@ -1028,6 +1213,11 @@ class Bridge {
       if (p.local) continue;
       out.push(`${String(p.name).slice(0, 50)}: obrigação aberta no tracker sem .torrent local (abra o filme pelo catálogo ASC no Stremio).`);
     }
+    for (const hash of this.releaseBlocked.keys()) if (this.releaseBlockedFor(hash)) out.push(this.releaseBlockedNotice(hash));
+    for (const entry of this.vault.list()) {
+      const aviso = this.filesKeptNotice(entry.infoHash);
+      if (aviso) out.push(aviso);
+    }
     for (const entry of this.vault.list()) {
       if (entry.completedAt && !entry.satisfiedAt && !active.has(entry.infoHash)
         && this.entries.has(entry.infoHash) && this.diskState(entry.infoHash) !== 'full') {
@@ -1055,6 +1245,18 @@ class Bridge {
     if (!local) return null;
     if (!episode) return mainVideo(local.files);
     return findEpisode(buildEpisodeIndex(local.files), episode.season, episode.episode)?.file ?? null;
+  }
+
+  // Id do release do ASC de uma entrada (arquivo asc-<id>.torrent); null para torrent de outra origem.
+  ascIdOf(entry) {
+    return /^asc-(\d{1,9})\.torrent$/.exec(path.basename(String(entry?.torrentPath ?? '')))?.[1] ?? null;
+  }
+
+  // Abrir este torrent agora iniciaria download de dados? Não, se já está no motor (ou abrindo) ou se
+  // o cofre o dá por concluído e os arquivos estão inteiros (mesma regra de admitTorrent).
+  startsNewDownload(infoHash) {
+    if (this.loading.has(infoHash) || (this.client?.torrents ?? []).some((t) => t.infoHash === infoHash)) return false;
+    return !(this.vault.get(infoHash)?.completedAt && this.diskState(infoHash) === 'full');
   }
 
   // Entrada da biblioteca de um release do ASC (arquivo asc-<id>.torrent), se já baixado.
@@ -1598,8 +1800,11 @@ class Bridge {
 
     // /a/<id>: fonte listada pelo Stremio sem .torrent local. Só o GET (o play)
     // baixa o .torrent; HEAD e sondagens nunca baixam nem anunciam.
+    let resolvedNow = false; // o resolvedor acabou de confirmar o freeleech: a trava abaixo não repete
+    let seriesImdb = null; // série do episódio tocado, para vincular o pack no cofre
     if (lazy) {
       const ascId = lazy[1];
+      if (episode) seriesImdb = this.ascImdbHint?.(ascId) ?? null;
       const local = this.entryByAscId(ascId);
       const main = this.lazyFile(local, episode);
       const resolver = episode ? this.ascEpisodeResolver : this.ascResolver;
@@ -1639,6 +1844,7 @@ class Bridge {
         } finally {
           this.disk.release(holder);
         }
+        resolvedNow = true;
         // Credencial revogada (ou cliente que saiu) enquanto o .torrent era preparado: não abre o torrent.
         if (res.destroyed) return;
         lease?.rekey(`s:${infoHash}:${fileIdx}`);
@@ -1675,9 +1881,25 @@ class Bridge {
       return;
     }
 
+    // Abrir no motor um torrent com dados faltando começa a baixar (regra 2.7: pode contar no ratio),
+    // mesmo com o .torrent já local e sem passar pelo resolvedor. A trava confirma o freeleech agora.
+    // Torrent já aberto não é início; arquivo completo e concluído toca sem consulta.
+    const gateId = lazy ? lazy[1] : this.ascIdOf(this.entries.get(infoHash));
+    if (this.ascStartGate && gateId && !resolvedNow && this.startsNewDownload(infoHash)) {
+      try { await this.ascStartGate(gateId); } catch (err) {
+        const status = Number.isInteger(err?.status) ? err.status : 503;
+        log.warn(`play de #${gateId} recusado (${status}): ${err?.message ?? err}`);
+        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: err?.message || 'Não foi possível confirmar o freeleech; nada foi baixado.' }));
+        return;
+      }
+      if (res.destroyed) return;
+    }
+
     const torrent = await this.getTorrent(infoHash, { fileIdx });
     // Tocar um episódio excluído é pedir de novo: só esse arquivo deixa de estar excluído.
     if (fileIdx !== null) this.vault.setExcluded(infoHash, fileIdx, false);
+    if (seriesImdb) this.vault.setSeriesLink(infoHash, seriesImdb);
     // A resposta pode ter sido encerrada durante a espera (revogação ou cliente que saiu): o 'close'
     // já passou e não limparia o contador de streams abertos, que travaria conclusão e ociosidade.
     if (res.destroyed) return;
@@ -1726,6 +1948,22 @@ class Bridge {
     res.once('close', () => trace.finish(res.writableFinished ? 'ok' : 'fechado'));
     const stream = file.createReadStream({ start, end });
     const iterator = stream[Symbol.asyncIterator]();
+
+    this.playbackPositions.set(torrent, { fileIdx, start });
+    // Só a ORDEM da conclusão depende da posição: o GET nunca a inicia (isso segue as regras de
+    // ociosidade e de episódio pronto). Com a conclusão já ativa, reorganiza a fila; é só
+    // otimização: se o motor recusar a seleção (torrent destruído no meio do pedido), o vídeo segue.
+    try {
+      if (this.completing.has(infoHash)) {
+        selectCompletion(torrent, completionPlan(torrent, this.entries.get(infoHash), { fileIdx, start }),
+          () => this.completing.delete(infoHash));
+      }
+    } catch (err) {
+      // A reorganização remove as seleções de fundo antes de criar a nova: com falha no meio o
+      // torrent ficaria "concluindo" sem seleção. Soltar o estado deixa o timer recomeçar a fila.
+      this.completing.delete(infoHash);
+      log.warn(`conclusão: não foi possível reorganizar a fila de ${short(infoHash)}: ${err.message}`);
+    }
 
     let first;
     try {

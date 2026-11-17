@@ -1,6 +1,6 @@
 {
   "name": "ascstremio",
-  "version": "0.3.1",
+  "version": "0.7.0",
   "private": true,
   "license": "MIT",
   "description": "Base de addon Stremio para integração futura com Amigos Share",
@@ -10,7 +10,6 @@
     "dev": "node --max-http-header-size=65536 --watch src/index.js",
     "test": "npm run check",
     "check": "node scripts/check.js",
-    "check:unit": "node scripts/check.js --unit",
     "credenciais": "node src/credenciais-cli.js",
     "configurar": "node src/configurar-cli.js",
     "rede": "node src/rede-cli.js",
@@ -18,9 +17,10 @@
     "admin-painel": "node src/admin-cli.js",
     "alertas": "node src/alertas-cli.js",
     "bench:reproducao": "node --max-http-header-size=65536 scripts/bench-playback.js",
+    "install-service": "bash scripts/install.sh",
+    "check:unit": "node scripts/check.js --unit",
     "smoke:stremio:linux": "node scripts/stremio-linux-smoke.js",
-    "test:stremio:linux": "node --test test/integration/stremio/*.test.js",
-    "install-service": "bash scripts/install.sh"
+    "test:stremio:linux": "node --test test/integration/stremio/*.test.js"
   },
   "engines": {
     "node": ">=22"

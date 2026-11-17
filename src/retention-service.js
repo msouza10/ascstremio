@@ -90,11 +90,7 @@ class Retention {
     if (t - (entry.satisfiedAt ?? 0) < retention.SAFETY_MS) return { ...base, reason: 'recem-confirmado' };
     if (t - lastUse < this.minAgeDays * retention.DAY_MS) return { ...base, reason: 'uso-recente' };
     // Arquivo compartilhado com outro título da biblioteca: quem mais o usa pode ter obrigação.
-    for (const [other, olib] of b.entries) {
-      if (other === infoHash) continue;
-      const theirs = new Set((olib.files ?? []).map((f) => retention.pathKey(f.path)));
-      if (files.some((f) => theirs.has(retention.pathKey(f)))) return { ...base, reason: 'arquivo-compartilhado' };
-    }
+    if (retention.sharedWith(b.entries, infoHash, files)) return { ...base, reason: 'arquivo-compartilhado' };
     return { ...base, eligible: true };
   }
 

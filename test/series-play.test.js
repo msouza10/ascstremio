@@ -387,7 +387,9 @@ function packAberto({ baixado = [0, 0, 0], abertos = [1], streams = 1, ...over }
   const selecoes = [];
   const files = PACK.files.map((f, i) => ({ length: f.length, downloaded: baixado[i] ?? 0, select: (p) => selecoes.push(['arquivo', i, p]) }));
   b.client.torrents.push({ infoHash: HASH, name: 'Pack', ready: true, done: false, length: 30 * GB, downloaded: GB,
-    pieces: new Array(10), progress: 0.03, files, select: (...a) => selecoes.push(['torrent', ...a]) });
+    pieces: new Array(31), pieceLength: GB, progress: 0.03, files, select: (...a) => selecoes.push(['torrent', ...a.slice(0, 3)]) });
+  // Posição do último GET Range: só alimenta a ORDEM da fila, nunca decide quando a conclusão começa.
+  b.playbackPositions.set(b.client.torrents[0], { fileIdx: abertos.at(-1), start: 0 });
   b.startedAt.set(HASH, 0);
   b.packFiles.set(HASH, new Map(abertos.map((i) => [i, 10 * GB])));
   if (streams) b.streams.set(HASH, streams);
@@ -403,17 +405,50 @@ test('pack: com o episódio aberto ainda baixando e o player aberto, não comple
 test('pack: episódio aberto inteiro em disco começa o resto do pack mesmo com o player aberto', () => {
   const { b, vault, selecoes } = packAberto({ baixado: [0, 10 * GB, 0] });
   b.completionTick(1e6);
-  // aberto = 1: os seguintes primeiro (2 e o banner 3), depois os anteriores (0), tudo em prioridade baixa
-  assert.deepEqual(selecoes, [['arquivo', 2, 0], ['arquivo', 3, 0], ['arquivo', 0, 0]]);
+  // Gatilho de sempre (episódio aberto inteiro); a ordem é por peças: primeiro o resto do arquivo
+  // atual (peças 10-19), prioridade baixa. As etapas seguintes só entram com as peças verificadas.
+  assert.deepEqual(selecoes, [['torrent', 10, 19, 0]]);
   assert.equal(vault.get(HASH).backgroundComplete, true);
   b.completionTick(2e6);
-  assert.equal(selecoes.length, 3, 'não repete');
+  assert.equal(selecoes.length, 1, 'não repete');
 });
 
 test('pack: abrir um episódio adiante completa os anteriores depois do atual', () => {
   const { b, selecoes } = packAberto({ baixado: [0, 0, 10 * GB], abertos: [2] });
   b.completionTick(1e6);
-  assert.deepEqual(selecoes.map(([, i]) => i), [3, 0, 1], 'depois do atual (só o banner), depois os anteriores em ordem');
+  assert.deepEqual(selecoes, [['torrent', 20, 29, 0]], 'começa pelo restante do episódio aberto (o 3.º)');
+});
+
+test('pack: sem espaço para o resto, a conclusão não começa nem com o episódio pronto, avisa uma vez e começa com folga', () => {
+  const { b, vault, selecoes } = packAberto({ baixado: [0, 10 * GB, 0], freeSpace: () => 5 * GB });
+  const avisos = [];
+  const warn = console.warn;
+  console.warn = (m) => avisos.push(String(m));
+  try {
+    b.completionTick(1e6);
+    b.completionTick(2e6);
+  } finally { console.warn = warn; }
+  assert.deepEqual(selecoes, [], 'o atalho do episódio pronto não pula a reserva de disco');
+  assert.equal(b.completing.has(HASH), false);
+  assert.ok(!vault.get(HASH).backgroundComplete);
+  assert.equal(avisos.length, 1, 'o aviso de falta de espaço não se repete a cada passada');
+  b.disk.measureFn = () => 100 * GB;
+  const log = console.log; console.log = () => {};
+  try { b.completionTick(3e6); } finally { console.log = log; }
+  assert.equal(selecoes.length, 1, 'com espaço o resto do pack começa');
+  assert.equal(vault.get(HASH).noSpaceWarned, false);
+});
+
+test('pack: o início da conclusão segue o gatilho de sempre; a posição só define a ordem', () => {
+  // Player aberto e episódio ainda baixando: com posição conhecida, mesmo assim nada é selecionado.
+  const aberto = packAberto({ baixado: [0, 4 * GB, 0] });
+  aberto.b.completionTick(1e6);
+  assert.deepEqual(aberto.selecoes, []);
+  // Parado há mais que o limite: começa, na ordem da posição registrada (episódio 2 a partir do meio).
+  const parado = packAberto({ baixado: [0, 4 * GB, 0], streams: 0 });
+  parado.b.playbackPositions.set(parado.b.client.torrents[0], { fileIdx: 1, start: 5 * GB });
+  parado.b.completionTick(1e6);
+  assert.deepEqual(parado.selecoes, [['torrent', 15, 19, 0]], 'do ponto do seek até o fim do arquivo');
 });
 
 test('pack: sem episódio pronto e parado, a conclusão automática completa pela ociosidade', () => {
@@ -541,4 +576,120 @@ test('o tracker dizendo "baixando" (parcial) nunca vira obrigação cumprida por
   assert.equal(s.concluded, false, 'todos os episódios prontos, mas o torrent não concluiu (falta o banner)');
   assert.equal(s.tracker.satisfied, false);
   assert.equal(vault.get(HASH).satisfiedAt ?? null, null);
+});
+
+test('GET com Range reorganiza a conclusão ao começar no meio e ao fazer seek', async () => {
+  const { b, vault, selecoes } = packAberto({ streams: 0 });
+  b.completing.add(HASH); // conclusão já ativa pelas regras de sempre: o GET só reordena a fila
+  vault.setBackground(HASH, true);
+  const torrent = b.client.torrents[0];
+  torrent.files = [0, 1, 2].map((i) => video3(i, Buffer.from('0123456789')));
+  torrent.files.push({ length: 1, path: 'capa.jpg' });
+  torrent.pieces = new Array(31);
+  torrent.pieceLength = 1;
+  torrent.length = 31;
+  torrent.downloaded = 0;
+  b.getTorrent = async () => torrent;
+  const removed = [];
+  torrent.deselect = (...args) => removed.push(args);
+  for (const [range, expected] of [['bytes=6-9', 16], ['bytes=2-5', 12]]) {
+    const res = resposta();
+    await b.handle(pedido('GET', `/s/${HASH}/1`, { range }), res);
+    assert.equal(res.statusCode, 206);
+    assert.equal(selecoes.at(-1)[1], expected, 'a fila acompanha a nova posição');
+    assert.equal(selecoes.at(-1)[2], 19, 'busca o restante do arquivo mesmo com Range curto');
+  }
+  assert.equal(removed.length, 2, 'substitui as seleções de fundo, sem acumular a posição anterior');
+  assert.equal(vault.get(HASH).backgroundComplete, true);
+  assert.equal(b.streams.get(HASH), 0);
+});
+
+async function getComPack(ctx) {
+  const torrent = ctx.b.client.torrents[0];
+  torrent.files = [0, 1, 2].map((i) => video3(i, Buffer.from('0123456789')));
+  torrent.pieces = new Array(30);
+  torrent.pieceLength = 1;
+  // `completos`: o episódio aberto já está inteiro em disco, o gatilho que liberaria a conclusão de um pack.
+  if (ctx.completos) for (const f of torrent.files) f.downloaded = f.length;
+  ctx.b.getTorrent = async () => torrent;
+  const res = resposta();
+  await ctx.b.handle(pedido('GET', `/s/${HASH}/1`, { range: 'bytes=2-5' }), res);
+  return res;
+}
+
+
+test('GET de vídeo registra a posição, mas não inicia a conclusão automática', async () => {
+  const ctx = packAberto({ streams: 0 });
+  // Episódio aberto inteiro (gatilho que liberaria a conclusão de um pack): só o timer
+  // (completionTick) decide quando começar; o GET não.
+  ctx.completos = true;
+  const res = await getComPack(ctx);
+  assert.equal(res.statusCode, 206);
+  assert.deepEqual(ctx.selecoes, []);
+  assert.equal(ctx.b.completing.has(HASH), false);
+  assert.ok(!ctx.vault.get(HASH).backgroundComplete);
+  assert.deepEqual(ctx.b.playbackPositions.get(ctx.b.client.torrents[0]), { fileIdx: 1, start: 2 });
+});
+
+test('falha ao selecionar não derruba a reprodução nem o timer, e o timer tenta de novo', async (t) => {
+  const ctx = packAberto({ streams: 0, baixado: [0, 10 * GB, 0] });
+  const torrent = ctx.b.client.torrents[0];
+  const avisos = [];
+  t.mock.method(console, 'warn', (m) => avisos.push(String(m)));
+  // Timer: o motor recusa a seleção. Sem seleção feita, a conclusão não é dada como ativa nem marcada.
+  const original = torrent.select;
+  torrent.select = () => { throw new Error('invalid selection'); };
+  assert.doesNotThrow(() => ctx.b.completionTick(1e6));
+  assert.equal(ctx.b.completing.has(HASH), false);
+  assert.ok(!ctx.vault.get(HASH).backgroundComplete);
+  assert.ok(avisos.some((m) => m.includes('não foi possível selecionar')), 'a falha é registrada');
+  torrent.select = original;
+  ctx.b.completionTick(2e6);
+  assert.equal(ctx.b.completing.has(HASH), true, 'quando o motor aceita, a conclusão começa');
+  // GET com a conclusão ativa: a reorganização falha, o vídeo continua e o timer refaz a fila.
+  torrent.select = () => { throw new Error('invalid selection'); };
+  const res = await getComPack(ctx);
+  assert.equal(res.statusCode, 206, 'a conclusão é otimização: o vídeo continua');
+  assert.equal(ctx.b.completing.has(HASH), false, 'sem seleção de fundo, deixa o timer recomeçar');
+});
+
+test('falha numa etapa posterior da fila libera o estado da ponte para o timer recomeçar', async (t) => {
+  const ctx = packAberto({ streams: 0, baixado: [0, 10 * GB, 0] });
+  const torrent = ctx.b.client.torrents[0];
+  t.mock.method(console, 'warn', () => {});
+  const verificadas = new Set();
+  let notifica;
+  let recusa = false;
+  torrent.bitfield = { get: (i) => verificadas.has(i) };
+  torrent.deselect = () => {};
+  torrent.select = (from, to, p, notify) => { if (recusa) throw new Error('invalid selection'); notifica = notify; };
+  ctx.b.completionTick(1e6);
+  assert.equal(ctx.b.completing.has(HASH), true);
+  // A etapa atual termina e o motor recusa a próxima, já na microtarefa (fora de qualquer try do chamador).
+  for (let i = 10; i <= 19; i += 1) verificadas.add(i);
+  recusa = true;
+  notifica();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ctx.b.completing.has(HASH), false, 'sem seleção de fundo ativa, o timer pode recomeçar');
+  recusa = false;
+  ctx.b.completionTick(2e6);
+  assert.equal(ctx.b.completing.has(HASH), true);
+});
+
+test('falha numa etapa posterior da fila (microtarefa) não vira exceção não capturada', async () => {
+  const { selectCompletion } = require('../src/completion-order');
+  const verificadas = new Set();
+  let notifica;
+  const torrent = { pieces: new Array(4), bitfield: { get: (i) => verificadas.has(i) }, deselect: () => {},
+    select: (from, to, p, notify) => { if (from === 2) throw new Error('invalid selection'); notifica = notify; } };
+  const naoCapturadas = [];
+  const ouvinte = (err) => naoCapturadas.push(err);
+  process.on('uncaughtException', ouvinte);
+  try {
+    selectCompletion(torrent, [[0, 1], [2, 3]]);
+    verificadas.add(0); verificadas.add(1);
+    notifica();
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally { process.off('uncaughtException', ouvinte); }
+  assert.deepEqual(naoCapturadas, []);
 });

@@ -161,13 +161,13 @@ function withInstance(ctx, snapshot, changes, fn) {
 }
 
 // changes: { CHAVE: valor tipado | null (remover) }. expectedRevision opcional (padrão: a lida agora).
-function change({ env = process.env, changes, expectedRevision } = {}) {
+function change({ env = process.env, changes, expectedRevision, interfaces = undefined } = {}) {
   assertWritable(Object.keys(changes || {}));
   const ctx = context({ env });
-  const snapshot = settings.resolve({ dataDir: ctx.dataDir, env: ctx.env });
+  const snapshot = settings.resolve({ dataDir: ctx.dataDir, env: ctx.env, interfaces });
   const expected = Number.isInteger(expectedRevision) ? expectedRevision : snapshot.revision;
   return withInstance(ctx, snapshot, changes, () => {
-    const out = settings.update({ dataDir: ctx.dataDir, env: ctx.env, changes, expectedRevision: expected });
+    const out = settings.update({ dataDir: ctx.dataDir, env: ctx.env, changes, expectedRevision: expected, interfaces });
     return { ...out, ctx };
   });
 }

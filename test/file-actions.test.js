@@ -1,8 +1,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const path = require('node:path');
+const { EventEmitter } = require('node:events');
+const { Readable } = require('node:stream');
 const { Bridge } = require('../src/bridge');
+const { CredentialStore } = require('../src/credentials');
 const { SeedVault } = require('../src/seedvault');
 const { tmpdir } = require('./tmp-helper');
 
@@ -17,6 +21,7 @@ const pack = (hash = HASH, dir = 'P') => ({
     { index: 1, path: `${dir}/P.S01E02.mkv`, length: 10, isVideo: true },
     { index: 2, path: `${dir}/P.S01E03.mkv`, length: 10, isVideo: true },
     { index: 3, path: `${dir}/banner.jpg`, length: 4, isVideo: false },
+    { index: 4, path: `${dir}/P.S02E01.mkv`, length: 10, isVideo: true },
   ],
 });
 
@@ -55,7 +60,7 @@ function cenario({ aberto = true, tracker = 'confirmado', concluido = true, aoPa
   const destruidos = [];
   b.client = { torrents: [], get: async () => null };
   if (aberto) {
-    b.client.torrents.push({ infoHash: HASH, name: 'Pack', ready: true, done: true, length: 34, progress: 1,
+    b.client.torrents.push({ infoHash: HASH, name: 'Pack', ready: true, done: true, length: 44, progress: 1,
       files: lib.files.map((f) => ({ length: f.length, downloaded: f.length })),
       destroy(opts, cb) { destruidos.push(opts); b.client.torrents.splice(0); aoParar?.({ vault, snap, respostas }); cb(); } });
   }
@@ -80,6 +85,48 @@ test('a exclusão sobrevive a reiniciar o cofre', async () => {
   await s.b.excludeFile(HASH, 2);
   const reaberto = new SeedVault({ file: s.vault.file });
   assert.deepEqual(reaberto.get(HASH).excluded, [2]);
+});
+
+test('depois de excluir um episódio, os restantes continuam servindo Range sem restaurar o excluído', async (t) => {
+  const s = cenario();
+  const credenciais = new CredentialStore({ file: path.join(tmpdir('excluir-cred-'), 'credentials.json') });
+  const { token } = credenciais.create({ name: 'teste' });
+  s.b.credentials = credenciais;
+  const alvo = fs.statSync(path.join(s.store, s.lib.files[1].path));
+  const removido = await s.b.excludeFile(HASH, 1);
+  assert.equal(removido.bytes, alvo.blocks === undefined ? alvo.size : alvo.blocks * 512);
+  // O motor simulado reabre os arquivos preservados no disco real; não pode fabricar o apagado.
+  const pedidos = [];
+  s.b.getTorrent = async (hash, { fileIdx }) => {
+    assert.equal(hash, HASH);
+    pedidos.push(fileIdx);
+    return { ready: true, files: s.lib.files.map((f) => ({
+      length: f.length, path: f.path,
+      createReadStream: ({ start, end }) => fs.createReadStream(path.join(s.store, f.path), { start, end }),
+    })) };
+  };
+  const encerramentos = [];
+  const servidor = http.createServer((req, res) => {
+    encerramentos.push(new Promise((resolve) => res.once('close', resolve)));
+    s.b.handle(req, res);
+  });
+  t.after(() => new Promise((resolve) => servidor.close(resolve)));
+  await new Promise((resolve) => servidor.listen(0, '127.0.0.1', resolve));
+  for (const indice of [0, 2]) {
+    const res = await fetch(`http://127.0.0.1:${servidor.address().port}/s/${HASH}/${indice}?k=${token}`, {
+      headers: { Range: 'bytes=2-5' },
+    });
+    assert.equal(res.status, 206);
+    assert.equal(res.headers.get('content-range'), 'bytes 2-5/10');
+    assert.deepEqual(Buffer.from(await res.arrayBuffer()), Buffer.alloc(4, 1));
+  }
+  // Receber o corpo no cliente pode anteceder o evento close no servidor.
+  await Promise.all(encerramentos);
+  assert.deepEqual(pedidos, [0, 2]);
+  assert.equal(s.existe(1), false);
+  assert.deepEqual(s.vault.get(HASH).excluded, [1]);
+  assert.equal(s.vault.get(HASH).backgroundComplete, false);
+  assert.equal(s.b.streams.get(HASH), 0, 'as reproduções encerradas não bloqueiam novas ações');
 });
 
 test('sem o torrent no motor também exclui, sem tentar parar nada', async () => {
@@ -162,7 +209,7 @@ test('o snapshot marca o episódio excluído e lista as exclusões do título', 
   await s.b.excludeFile(HASH, 1);
   const item = s.b.snapshot().titles.find((t) => t.infoHash === HASH);
   assert.deepEqual(item.excluded, [1]);
-  assert.deepEqual(item.episodes.map((e) => [e.episode, e.excluded]), [[1, false], [2, true], [3, false]]);
+  assert.deepEqual(item.episodes.map((e) => [e.episode, e.excluded]), [[1, false], [2, true], [3, false], [1, false]]);
   assert.equal(item.episodes[1].state, 'ausente');
   assert.equal(item.state, 'done', 'o seed já estava cumprido: excluir depois não reabre nada');
 });
@@ -227,4 +274,199 @@ test('pack nunca concluído não tem obrigação de seed: exclui sem consultar o
   assert.deepEqual(s.vault.get(HASH).excluded, [2]);
   assert.equal(s.vault.get(HASH).backgroundComplete, false);
   assert.deepEqual(s.consultas, [], 'sem conclusão não há seed a proteger nem o que confirmar');
+});
+
+// ---- Depois da exclusão, o que sobrou continua tocando (rota /s/ real) ---------------------------
+const store = new CredentialStore({ file: path.join(tmpdir('excluir-cred-'), 'credentials.json') });
+const { token: TOKEN } = store.create({ name: 'teste' });
+function resposta() {
+  const r = new EventEmitter();
+  Object.assign(r, { statusCode: 0, headers: {}, chunks: [], headersSent: false, writableFinished: false, writableEnded: false, destroyed: false,
+    setHeader(k, v) { this.headers[k] = v; },
+    writeHead(st, h) { this.statusCode = st; Object.assign(this.headers, h || {}); this.headersSent = true; },
+    write(c) { this.chunks.push(Buffer.from(c)); return true; },
+    end(c) { if (c) this.chunks.push(Buffer.from(c)); this.writableEnded = true; this.writableFinished = true; this.emit('close'); },
+    off(ev, fn) { return this.removeListener(ev, fn); } });
+  return r;
+}
+const tocar = (b, idx) => {
+  const res = resposta();
+  const req = { method: 'GET', url: `/s/${HASH}/${idx}?k=${TOKEN}`, headers: { range: 'bytes=0-3' }, socket: { remoteAddress: '127.0.0.1' } };
+  return b.handle(req, res).then(() => res);
+};
+
+test('depois de excluir um episódio, o outro continua tocando e a exclusão só some ao tocar o excluído', async () => {
+  const s = cenario({ credentials: store });
+  await s.b.excludeFile(HASH, 1);
+  const conteudo = (i) => Buffer.alloc(10, 65 + i);
+  const aberto = (i) => ({ length: 10, path: s.lib.files[i].path, downloaded: 10, createReadStream: ({ start, end }) => Readable.from([conteudo(i).subarray(start, end + 1)]) });
+  s.b.getTorrent = async (h, { fileIdx }) => ({ ready: true, numPeers: 0, progress: 1, files: s.lib.files.map((_, i) => (i === fileIdx ? aberto(i) : { length: 10 })) });
+
+  const restante = await tocar(s.b, 2);
+  assert.equal(restante.statusCode, 206, 'o episódio que sobrou toca');
+  assert.equal(Buffer.concat(restante.chunks).toString(), 'CCCC');
+  assert.deepEqual(s.vault.get(HASH).excluded, [1], 'tocar outro episódio não desfaz a exclusão');
+
+  await tocar(s.b, 1);
+  assert.deepEqual(s.vault.get(HASH).excluded ?? [], [], 'tocar o excluído é pedir de novo');
+});
+
+// ---- Exclusão por temporada ------------------------------------------------------------------------
+test('excluir uma temporada apaga todos os episódios dela, só os dela, e grava cada um no cofre', async () => {
+  const s = cenario();
+  const r = await s.b.excludeSeason(HASH, 1);
+  assert.deepEqual([0, 1, 2, 3, 4].map(s.existe), [false, false, false, true, true], 'extras e outra temporada ficam');
+  assert.deepEqual(s.vault.get(HASH).excluded, [0, 1, 2]);
+  assert.equal(r.count, 3);
+  assert.deepEqual(s.destruidos, [{ destroyStore: false }], 'o motor é parado uma vez só');
+  assert.deepEqual(s.consultas, [{ hashes: [HASH], force: true }], 'uma consulta ao tracker para a operação toda');
+});
+
+test('excluir temporada respeita a mesma trava: tracker sem confirmar não remove nada', async () => {
+  const s = cenario({ tracker: 'aberto' });
+  await assert.rejects(s.b.excludeSeason(HASH, 1), (e) => e.status === 409);
+  assert.deepEqual([0, 1, 2, 3, 4].map(s.existe), [true, true, true, true, true]);
+  assert.equal(s.vault.get(HASH).excluded, undefined);
+});
+
+test('temporada que o pack não tem dá 404 e não toca em nada', async () => {
+  const s = cenario();
+  await assert.rejects(s.b.excludeSeason(HASH, 7), (e) => e.status === 404);
+  assert.deepEqual([0, 1, 2, 3, 4].map(s.existe), [true, true, true, true, true]);
+  await assert.rejects(s.b.excludeSeason(HASH, -1), (e) => e.status === 400);
+});
+
+test('temporada com um episódio já excluído só apaga o que resta e não falha', async () => {
+  const s = cenario();
+  await s.b.excludeFile(HASH, 1);
+  s.b.client.torrents.splice(0);
+  const r = await s.b.excludeSeason(HASH, 1);
+  assert.deepEqual(s.vault.get(HASH).excluded, [0, 1, 2]);
+  assert.equal(r.count, 2, 'conta só o que ainda existia');
+});
+
+// ---- Concluir só um episódio ou uma temporada --------------------------------------------------------
+// Baixa só esses arquivos (prioridade baixa). Não é "concluir o pack": não liga a conclusão em segundo
+// plano nem abre a obrigação de 72 h, que só nasce com o torrent inteiro (13.1).
+function motorFalso(s) {
+  const selecionados = [];
+  const torrent = { infoHash: HASH, name: 'Pack', ready: true, done: false, length: 44, progress: 0.2,
+    files: s.lib.files.map((f, i) => ({ length: f.length, downloaded: 0, select: (p) => selecionados.push([i, p]) })) };
+  s.b.getTorrent = async (h, { fileIdx }) => { s.abertoCom = fileIdx; return torrent; };
+  return selecionados;
+}
+
+test('concluir uma temporada seleciona só os episódios dela, sem ligar a conclusão do pack', async () => {
+  const s = cenario({ concluido: false });
+  s.vault.setBackground(HASH, false);
+  const sel = motorFalso(s);
+  const r = await s.b.requestFilesCompletion(HASH, { season: 1 });
+  assert.deepEqual(sel, [[0, 0], [1, 0], [2, 0]], 'só os vídeos da temporada 1, em prioridade baixa');
+  assert.deepEqual(r.files, [0, 1, 2]);
+  assert.equal(s.vault.get(HASH).backgroundComplete, false, 'não é conclusão do torrent inteiro');
+  assert.ok(!s.vault.get(HASH).completedAt, 'não abre obrigação de seed');
+  assert.equal(s.b.completing.has(HASH), false);
+  assert.equal(s.abertoCom, 0);
+});
+
+test('concluir um episódio devolve só a exclusão dele e mantém as demais', async () => {
+  const s = cenario({ concluido: false });
+  s.vault.setExcluded(HASH, 1, true); s.vault.setExcluded(HASH, 4, true);
+  const sel = motorFalso(s);
+  await s.b.requestFilesCompletion(HASH, { file: 1 });
+  assert.deepEqual(sel, [[1, 0]]);
+  assert.deepEqual(s.vault.get(HASH).excluded, [4]);
+});
+
+test('concluir parte do pack recusa escopo inválido, não-vídeo, temporada ausente e filme', async () => {
+  const s = cenario({ concluido: false });
+  const sel = motorFalso(s);
+  await assert.rejects(s.b.requestFilesCompletion(HASH, { file: 3 }), (e) => e.status === 404, 'extra não é episódio');
+  await assert.rejects(s.b.requestFilesCompletion(HASH, { season: 9 }), (e) => e.status === 404);
+  await assert.rejects(s.b.requestFilesCompletion(HASH, { file: -1 }), (e) => e.status === 400);
+  await assert.rejects(s.b.requestFilesCompletion(HASH, {}), (e) => e.status === 400);
+  await assert.rejects(s.b.requestFilesCompletion(HASH, { file: 0, season: 1 }), (e) => e.status === 400, 'um escopo só');
+  assert.deepEqual(sel, []);
+  s.b.entries.set(HASH, { infoHash: HASH, title: 'Filme', files: [{ index: 0, path: 'F/f.mkv', length: 10, isVideo: true }] });
+  await assert.rejects(s.b.requestFilesCompletion(HASH, { file: 0 }), (e) => e.status === 409);
+});
+
+test('concluir parte do pack paga a reserva de disco de cada arquivo e recusa sem espaço', async () => {
+  const { DiskRefusal } = require('../src/disk-policy');
+  const s = cenario({ concluido: false, freeSpace: () => 5 });
+  const sel = motorFalso(s);
+  await assert.rejects(s.b.requestFilesCompletion(HASH, { season: 1 }), DiskRefusal);
+  assert.deepEqual(sel, [], 'sem espaço nada é selecionado');
+});
+
+// ---- Conclusão parcial: o escopo escolhido vale contra a conclusão automática e segura a suspensão ----
+function motorEmAndamento(s, { baixados = [0, 1, 2] } = {}) {
+  const inteiro = [];
+  const selecionados = [];
+  const torrent = { infoHash: HASH, name: 'Pack', ready: true, done: false, length: 44, progress: 0.5, downloaded: 30, pieces: [1, 2],
+    select: (...a) => inteiro.push(a),
+    files: s.lib.files.map((f, i) => ({ length: f.length, downloaded: baixados.includes(i) ? f.length : 0, select: (p) => selecionados.push([i, p]) })) };
+  s.b.client.torrents.push(torrent);
+  s.b.getTorrent = async () => torrent;
+  return { torrent, inteiro, selecionados };
+}
+
+test('concluir só a temporada 1 não deixa a conclusão automática baixar o resto do pack', async () => {
+  const s = cenario({ concluido: false, aberto: false });
+  s.vault.setBackground(HASH, false);
+  const m = motorEmAndamento(s);
+  await s.b.requestFilesCompletion(HASH, { season: 1 });
+  m.selecionados.length = 0;
+  s.b.completionTick(Date.now() + 1e9); // ocioso há muito tempo e com o episódio aberto inteiro
+  assert.deepEqual(m.selecionados, [], 'nenhum outro arquivo foi selecionado');
+  assert.deepEqual(m.inteiro, [], 'o torrent inteiro não foi selecionado');
+  assert.equal(s.b.completing.has(HASH), false);
+  assert.ok(!s.vault.get(HASH).backgroundComplete);
+});
+
+test('o pedido explícito de concluir o pack inteiro desfaz o escopo parcial', async () => {
+  const s = cenario({ concluido: false, aberto: false });
+  const m = motorEmAndamento(s);
+  await s.b.requestFilesCompletion(HASH, { file: 0 });
+  await s.b.requestCompletion(HASH);
+  assert.equal(s.b.completing.has(HASH), true, 'agora o pack inteiro baixa');
+  // A conclusão integral seleciona intervalos de peças do torrent (não mais arquivo a arquivo): sem
+  // posição de reprodução conhecida, o plano é o torrent inteiro, da primeira à última peça.
+  assert.deepEqual(m.inteiro.map((a) => a.slice(0, 3)), [[0, 1, 0]]);
+});
+
+test('download parcial em andamento mantém o computador acordado até os arquivos escolhidos terminarem', async () => {
+  const s = cenario({ concluido: false, aberto: false });
+  const m = motorEmAndamento(s, { baixados: [] });
+  assert.equal(s.b.needsAwake(), false, 'sem pedido parcial e sem conclusão, nada a proteger');
+  await s.b.requestFilesCompletion(HASH, { file: 1 });
+  assert.equal(s.b.needsAwake(), true, 'o episódio escolhido ainda baixa');
+  m.torrent.files[1].downloaded = m.torrent.files[1].length;
+  assert.equal(s.b.needsAwake(), false, 'terminou o que foi pedido');
+  m.torrent.done = true;
+  assert.equal(s.b.needsAwake(), false);
+});
+
+// ---- Ações de seed e liberação automática num pack com episódio excluído ou baixando em parte --------
+test('pack com episódio excluído: manter semeando recusa (não há seed) e parar preserva a exclusão e os arquivos', async () => {
+  const s = cenario({ aberto: true });
+  await s.b.excludeFile(HASH, 1);
+  await assert.rejects(s.b.manageSeed(HASH, 'keep'), (e) => e.status === 409, 'o seed já está parado');
+  assert.notEqual(s.vault.get(HASH).seedChoice, 'keep', 'manter não grava escolha sem seed para manter');
+  let aberturas = 0;
+  s.b.getTorrent = async () => { aberturas += 1; return { length: 10 }; };
+  await s.b.manageSeed(HASH, 'stop');
+  await s.b.resumePending();
+  assert.equal(aberturas, 0, 'nada reabre o pack nem baixa o episódio de volta');
+  assert.deepEqual([0, 1, 2, 3, 4].map(s.existe), [true, false, true, true, true]);
+  assert.deepEqual(s.vault.get(HASH).excluded, [1], 'a exclusão continua valendo');
+});
+
+test('pack com episódio excluído: excluir o seed apaga só o que sobrou, sem tratar o ausente como falha', async () => {
+  const s = cenario({ aberto: false });
+  await s.b.excludeFile(HASH, 1);
+  const r = await s.b.manageSeed(HASH, 'delete');
+  assert.match(r.message, /excluídos/);
+  assert.deepEqual([0, 1, 2, 3, 4].map(s.existe), [false, false, false, false, false]);
+  assert.equal(s.vault.get(HASH).releasedAs, 'delete');
 });

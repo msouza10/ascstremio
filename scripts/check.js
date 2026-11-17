@@ -21,6 +21,7 @@ if (process.argv.slice(2).some((arg) => arg !== '--unit')) {
 }
 
 for (const name of uiFiles) run(['--check', `src/ui/${name}.js`]);
+run(['scripts/check-docs.js']);
 const tests = fs.readdirSync(path.join(root, 'test')).filter((name) => name.endsWith('.test.js')).sort();
 run(['--test', ...tests.map((name) => `test/${name}`)]);
 

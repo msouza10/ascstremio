@@ -34,7 +34,9 @@ function config(env = process.env) {
   let aviso = null;
   if (plan?.mode === 'lan' && !plan.urls?.addon) aviso = 'sem endereço anunciado utilizável: defina LAN_ADVERTISE_HOST (veja: npm run rede)';
   else if (plan?.ambiguous) aviso = 'várias interfaces candidatas: confira o endereço da URL (npm run rede)';
-  return { dataDir, bridge: `http://127.0.0.1:${bridgePort}`, addon, aviso };
+  const configPort = v.CONFIG_PORT || env.CONFIG_PORT || 7020;
+  const addonPort = v.PORT || env.PORT || 7000;
+  return { dataDir, bridge: `http://127.0.0.1:${bridgePort}`, addon, aviso, configPort, addonPort };
 }
 
 async function call(cfg, method, route, doFetch) {
@@ -70,9 +72,11 @@ async function run(argv, { env = process.env, doFetch = fetch, out = console.log
   const flags = args.filter((a) => a.startsWith('--'));
   const pos = args.filter((a) => !a.startsWith('--'));
   const enc = encodeURIComponent;
-  // Usado pelos atalhos do Windows para sondar a ponte na porta efetiva (ambiente > settings.json > padrão).
+  // Usado pelos atalhos, pela bandeja e pelo firewall do Windows para achar a ponte (ou, com "painel"
+  // ou "addon", o painel ou o addon)
+  // na porta efetiva (ambiente > settings.json > padrão).
   if (cmd === 'porta') {
-    out(String(new URL(cfg.bridge).port));
+    out(pos[0] === 'painel' ? String(cfg.configPort) : pos[0] === 'addon' ? String(cfg.addonPort) : String(new URL(cfg.bridge).port));
     return 0;
   }
   if (cmd === 'listar') {

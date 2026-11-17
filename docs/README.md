@@ -6,13 +6,20 @@ Se esta é sua primeira instalação, siga **[instalação](instalacao.md)** e d
 
 | Tarefa | Guia |
 |---|---|
+| Conhecer avisos legais, compartilhamento e limites de responsabilidade | [Avisos legais](../LEGAL.md) |
+| Comparar código, legislação e pendências de redução de risco | [Matriz de conformidade](conformidade-juridica.md) |
+| Registrar decisões de permissões e preparar o contato jurídico | [Permissões e contato](permissoes-e-contato.md) |
+| Saber quais dados ficam na instalação e quais são transmitidos | [Dados e privacidade](dados-privacidade.md) |
 | Instalar no Linux, Windows, Docker/Podman ou executar com Node | [Instalação](instalacao.md) |
 | Fazer login, instalar o addon e escolher uma fonte | [Uso](uso.md) |
 | Configurar ambiente, portas, pastas e políticas | [Configuração](configuracao.md) |
 | Entender o que mantém o computador ligado e quando os arquivos são apagados | [Seed e regras operacionais](seed.md) |
+| Entender a conclusão integral, prioridades de reprodução e pendências de séries | [Séries e prioridades de download](series-prioridades.md) |
 | Atualizar, preservar os dados e resolver falhas | [Manutenção e diagnóstico](manutencao.md) |
 | Avaliar acesso pela rede, credenciais e relatos de problemas | [Segurança](seguranca.md) |
 | Entender o fluxo e consultar as rotas locais | [Arquitetura e interfaces](arquitetura.md) |
 | Desenvolver, validar documentação e gerar uma distribuição | [Desenvolvimento e releases](desenvolvimento.md) |
 
 As regras de contribuição e os invariantes do projeto ficam em [AGENTS.md](../AGENTS.md); o histórico de versões fica em [CHANGELOG.md](../CHANGELOG.md).
+
+- [Componentes e materiais de terceiros](terceiros.md): inventários por formato e revisões pendentes.

@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.7.0](https://github.com/msouza10/ascstremio/compare/v0.6.0...v0.7.0) (2026-11-16)
+
+
+### Novidades
+
+* **logs:** revise exportações com prévia e modo de suporte ([#123](https://github.com/msouza10/ascstremio/issues/123)) ([5dff988](https://github.com/msouza10/ascstremio/commit/5dff988df56b99c05694587988c18fbfbc26e30a))
+* **privacidade:** descreva dados e campos enviados pelo webhook ([#116](https://github.com/msouza10/ascstremio/issues/116)) ([29c200b](https://github.com/msouza10/ascstremio/commit/29c200b8f86ad70dd0fc5e6229a5f0d152cd5b69))
+* **series:** baixe a conclusão do torrent por prioridade de posição ([#143](https://github.com/msouza10/ascstremio/issues/143)) ([37fea68](https://github.com/msouza10/ascstremio/commit/37fea686fc4cae0db96a5a349c51ac7320132146)), closes [#88](https://github.com/msouza10/ascstremio/issues/88) [#83](https://github.com/msouza10/ascstremio/issues/83)
+
+
+### Correções
+
+* **freeleech:** revalidar o freeleech antes de iniciar novos downloads ([#138](https://github.com/msouza10/ascstremio/issues/138)) ([7991934](https://github.com/msouza10/ascstremio/commit/7991934016b2504d8eb75fc9997bbb55aec17264)), closes [#80](https://github.com/msouza10/ascstremio/issues/80)
+* **seed:** exigir confirmação recente do tracker antes de liberar o seed ([#133](https://github.com/msouza10/ascstremio/issues/133)) ([2c70a70](https://github.com/msouza10/ascstremio/commit/2c70a708448563404390e77fdbebc0683b20003e)), closes [#100](https://github.com/msouza10/ascstremio/issues/100)
+* **seed:** liberação automática não apaga arquivo usado por outro título ([#137](https://github.com/msouza10/ascstremio/issues/137)) ([29b1e1c](https://github.com/msouza10/ascstremio/commit/29b1e1c434a75b10a6885f1f396f35d6eef3f410)), closes [#134](https://github.com/msouza10/ascstremio/issues/134) [#100](https://github.com/msouza10/ascstremio/issues/100)
+
+
+### Documentação
+
+* **juridico:** registre as issues públicas como canal de contato jurídico ([#127](https://github.com/msouza10/ascstremio/issues/127)) ([9bdedd3](https://github.com/msouza10/ascstremio/commit/9bdedd30e4b1aeee354a0771255b318bbdf542a9)), closes [#95](https://github.com/msouza10/ascstremio/issues/95) [#94](https://github.com/msouza10/ascstremio/issues/94)
+* **readme:** apresente o painel com capturas nos dois temas ([#132](https://github.com/msouza10/ascstremio/issues/132)) ([b4b0519](https://github.com/msouza10/ascstremio/commit/b4b05193ca2143f953595d3cbdf5042c821ab5be)), closes [#130](https://github.com/msouza10/ascstremio/issues/130)
+* **seguranca:** corrija a afirmação sobre passkey nos .torrent salvos ([#136](https://github.com/msouza10/ascstremio/issues/136)) ([bd6aae0](https://github.com/msouza10/ascstremio/commit/bd6aae06687c2668f0364ed70bc3c122dff4d56f)), closes [#99](https://github.com/msouza10/ascstremio/issues/99)
+
+
+### Build e empacotamento
+
+* **licencas:** gere inventários e preserve avisos dos componentes ([#128](https://github.com/msouza10/ascstremio/issues/128)) ([5b96098](https://github.com/msouza10/ascstremio/commit/5b96098ba82c90d6296c404edf2a61633eb58b0d)), closes [#103](https://github.com/msouza10/ascstremio/issues/103)
+
+
+### Esteira (CI/CD)
+
+* **docs:** verificador determinístico de documentação ([#139](https://github.com/msouza10/ascstremio/issues/139)) ([b20fe41](https://github.com/msouza10/ascstremio/commit/b20fe417e581d022bfb0cb52185796c0c270d8b2)), closes [#131](https://github.com/msouza10/ascstremio/issues/131)
+
+## [0.6.0](https://github.com/msouza10/ascstremio/compare/v0.5.0...v0.6.0) (2026-11-16)
+
+
+### Novidades
+
+* **painel:** abre o painel pela rede em um passo, com firewall no Windows ([#124](https://github.com/msouza10/ascstremio/issues/124)) ([0af5776](https://github.com/msouza10/ascstremio/commit/0af5776a0c13d67d547cd010b9788c69e637de64))
+* **windows:** atalho de firewall só do addon e guias atualizados ([#126](https://github.com/msouza10/ascstremio/issues/126)) ([e5d05f6](https://github.com/msouza10/ascstremio/commit/e5d05f6ae93da03cf986283ae80a3ac88aa1fd77))
+
+## [0.5.0](https://github.com/msouza10/ascstremio/compare/v0.4.0...v0.5.0) (2026-11-16)
+
+
+### Novidades
+
+* **series:** confere por peças, sem o motor, os episódios que só parecem completos ([#115](https://github.com/msouza10/ascstremio/issues/115)) ([cb13bfd](https://github.com/msouza10/ascstremio/commit/cb13bfd25db649b1ff43266ee9a86b4ea8479e8d))
+* **series:** exclui e conclui por temporada ou por episódio ([#114](https://github.com/msouza10/ascstremio/issues/114)) ([f998b12](https://github.com/msouza10/ascstremio/commit/f998b123533ca031f7ebd64183a8c727e9978c8f))
+* **series:** oferece offline o episódio verificado de um pack que o usuário já tocou ([#117](https://github.com/msouza10/ascstremio/issues/117)) ([2abc573](https://github.com/msouza10/ascstremio/commit/2abc573d72058dfc628ad9766684b00ba606285c))
+* **windows:** serviço do Windows com ícone na bandeja ([#122](https://github.com/msouza10/ascstremio/issues/122)) ([8ddb206](https://github.com/msouza10/ascstremio/commit/8ddb2063b33d191ef368b47a601ccfcdc9761325))
+
+
+### Documentação
+
+* avisa no README dos problemas graves do Windows e do modo LAN ([#121](https://github.com/msouza10/ascstremio/issues/121)) ([2d26688](https://github.com/msouza10/ascstremio/commit/2d26688e6cfbdc3f934db81a60b4cd53811fd627))
+
+## [0.4.0](https://github.com/msouza10/ascstremio/compare/v0.3.1...v0.4.0) (2026-11-15)
+
+
+### Novidades
+
+* **painel:** disponibilize avisos legais offline antes do login ([82bb0ae](https://github.com/msouza10/ascstremio/commit/82bb0aef4338fef6891896239f813fd60144c750))
+* **painel:** disponibilize avisos legais offline antes do login ([7fcf4bd](https://github.com/msouza10/ascstremio/commit/7fcf4bdc09a5cac62cf038e07ca484a67d778c7d))
+* **painel:** disponibilize avisos legais offline antes do login ([#111](https://github.com/msouza10/ascstremio/issues/111)) ([82bb0ae](https://github.com/msouza10/ascstremio/commit/82bb0aef4338fef6891896239f813fd60144c750))
+* **series:** identifica episódios, descobre fontes, toca por arquivo e completa o pack em segundo plano ([#91](https://github.com/msouza10/ascstremio/issues/91)) ([8caa97e](https://github.com/msouza10/ascstremio/commit/8caa97e27e13a1526ac66f1e95b8a1d0674d6486))
+* **series:** mostra o estado de cada episódio de um pack e permite excluir e baixar de novo ([#113](https://github.com/msouza10/ascstremio/issues/113)) ([c853a38](https://github.com/msouza10/ascstremio/commit/c853a384dc8aea3dfcf53a86758a592d780125a2))
+
+
+### Documentação
+
+* **agentes:** exige TDD, indica a ferramenta do ECC e lembra do teste ao editar src ([#112](https://github.com/msouza10/ascstremio/issues/112)) ([26cb670](https://github.com/msouza10/ascstremio/commit/26cb67079d84f3d6d27ffb036fa609729f05b5bd))
+* **legal:** documente avisos e pendências de conformidade ([b7ecb27](https://github.com/msouza10/ascstremio/commit/b7ecb271f6fb34633f9d8c1cea5d87339619ef6e))
+* **legal:** documente avisos e pendências de conformidade ([c398f2a](https://github.com/msouza10/ascstremio/commit/c398f2a115c4411229d20ef9c062c840385ef91c))
+* **legal:** publique avisos e matriz de conformidade ([#105](https://github.com/msouza10/ascstremio/issues/105)) ([b7ecb27](https://github.com/msouza10/ascstremio/commit/b7ecb271f6fb34633f9d8c1cea5d87339619ef6e))
+
 ## [0.3.1](https://github.com/msouza10/ascstremio/compare/v0.3.0...v0.3.1) (2026-11-13)
 
 

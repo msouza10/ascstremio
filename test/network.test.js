@@ -323,3 +323,48 @@ test('credenciais porta: segue o settings.json e o ambiente vence (atalho do Win
   await cli.run(['porta'], { env: { DATA_DIR: novo() }, out: (l) => padrao.push(l) });
   assert.deepEqual(padrao, ['7010']);
 });
+
+test('credenciais porta painel: porta efetiva do painel para a bandeja do Windows', async () => {
+  const cli = require('../src/credenciais-cli');
+  const dir = novo();
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 1, revision: 1, values: { CONFIG_PORT: 7120 } }));
+  const saida = [];
+  assert.equal(await cli.run(['porta', 'painel'], { env: { DATA_DIR: dir }, out: (l) => saida.push(l) }), 0);
+  assert.deepEqual(saida, ['7120']);
+  const comEnv = [];
+  await cli.run(['porta', 'painel'], { env: { DATA_DIR: dir, CONFIG_PORT: '7220' }, out: (l) => comEnv.push(l) });
+  assert.deepEqual(comEnv, ['7220']);
+  const padrao = [];
+  await cli.run(['porta', 'painel'], { env: { DATA_DIR: novo() }, out: (l) => padrao.push(l) });
+  assert.deepEqual(padrao, ['7020']);
+  // Sem argumento continua sendo a porta da ponte.
+  const ponte = [];
+  await cli.run(['porta'], { env: { DATA_DIR: dir }, out: (l) => ponte.push(l) });
+  assert.deepEqual(ponte, ['7010']);
+});
+
+test('credenciais porta addon: porta efetiva do addon para o firewall do Windows', async () => {
+  const cli = require('../src/credenciais-cli');
+  const dir = novo();
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ version: 1, revision: 1, values: { PORT: 7100 } }));
+  const saida = [];
+  assert.equal(await cli.run(['porta', 'addon'], { env: { DATA_DIR: dir }, out: (l) => saida.push(l) }), 0);
+  assert.deepEqual(saida, ['7100']);
+  const comEnv = [];
+  await cli.run(['porta', 'addon'], { env: { DATA_DIR: dir, PORT: '7200' }, out: (l) => comEnv.push(l) });
+  assert.deepEqual(comEnv, ['7200']);
+  const padrao = [];
+  await cli.run(['porta', 'addon'], { env: { DATA_DIR: novo() }, out: (l) => padrao.push(l) });
+  assert.deepEqual(padrao, ['7000']);
+});
+
+test('modo LAN: o aviso explica que o painel só abre neste computador e como abrir pela rede', () => {
+  const settings = require('../src/settings');
+  const dir = novo();
+  const snap = settings.resolve({ dataDir: dir, env: { DATA_DIR: dir, ASCSTREMIO_MODE: 'lan', LAN_ADVERTISE_HOST: '192.168.1.20' }, interfaces: { eth0: [{ address: '192.168.1.20', family: 'IPv4', internal: false }] } });
+  const aviso = snap.warnings.find((w) => /Modo LAN/.test(w));
+  assert.ok(aviso, 'aviso do modo LAN');
+  assert.match(aviso, /painel[^.]*só abre neste computador/i);
+  assert.match(aviso, /admin-painel -- assistente/);
+  assert.match(aviso, /painel-lan\.cmd/);
+});

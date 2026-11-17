@@ -62,7 +62,7 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'ASC_ONLY_FREELEECH', type: 'bool', default: true, group: 'conta', access: 'editable', restart: false,
-    description: 'true (padrão) lista e baixa só releases freeleech: o download deles não conta no ratio. false mostra todos os releases e o download dos que não são freeleech gasta ratio. Vale na hora, sem novo login.',
+    description: 'true (padrão) lista e só inicia download de releases freeleech (conferido de novo no play, inclusive com o .torrent já local e dados faltando): o download deles não conta no ratio. O benefício pode acabar durante a transferência e a contabilidade final é do tracker. false mostra todos os releases e o download dos que não são freeleech gasta ratio. Vale na hora, sem novo login.',
   },
   {
     key: 'DATA_DIR', type: 'path', default: null, group: 'caminhos', access: 'readonly', envOnly: true, restart: true, risky: true,
@@ -171,6 +171,10 @@ const SCHEMA = Object.freeze([
     description: 'Depois de o tracker confirmar o seed: delete apaga os arquivos, stop encerra e preserva, keep continua semeando, manual mantém o seed até você decidir no painel.',
   },
   {
+    key: 'SEED_RELEASE_CONFIRM_MAX_AGE_MINUTES', type: 'int', min: 0, max: 60, default: 5, unit: 'min', group: 'seed', access: 'advanced', restart: true,
+    description: 'Idade máxima da leitura do tracker aceita para parar o seed ou apagar arquivos sozinho (AFTER_SEED=delete ou stop). Mais velha que isso, o addon relê o tracker antes de liberar e, sem confirmação, mantém tudo. 0 = sempre reler.',
+  },
+  {
     key: 'BACKGROUND_COMPLETE', type: 'enum', values: ['off', 'auto'], default: 'auto', group: 'seed', access: 'editable', restart: true,
     description: 'auto baixa em segundo plano o que falta do torrent (em série, o pack todo, depois que o episódio aberto terminar) para a obrigação de seed poder ser cumprida. Em release que não é freeleech, o download conta no seu ratio.',
   },
@@ -240,7 +244,7 @@ const SCHEMA = Object.freeze([
   },
   {
     key: 'ALERTS_ENABLED', type: 'bool', default: false, group: 'alertas', access: 'editable', restart: false,
-    description: 'Liga os alertas operacionais por webhook (desligado por padrão). Exige ALERT_WEBHOOK_ALLOWED_HOSTS e um destino configurado (painel, npm run alertas ou ambiente).',
+    description: 'Liga o envio de mensagens operacionais para o destino escolhido (desligado por padrão). Podem incluir contagens e horários; não incluem títulos nem credenciais. Confira os campos no cartão de destino antes de habilitar. Exige ALERT_WEBHOOK_ALLOWED_HOSTS e um destino configurado (painel, npm run alertas ou ambiente).',
   },
   {
     key: 'ALERT_WEBHOOK_URL', type: 'string', default: null, group: 'alertas', access: 'readonly', envOnly: true, secret: true, restart: true,
@@ -287,7 +291,7 @@ const SCHEMA = Object.freeze([
     description: 'Intervalo mínimo para repetir o mesmo alerta enquanto a condição continua aberta.',
   },
   {
-    key: 'LOG_LEVEL', type: 'enum', values: ['debug', 'info', 'warn', 'error'], default: 'debug', group: 'logs', access: 'editable', restart: false,
+    key: 'LOG_LEVEL', type: 'enum', values: ['debug', 'info', 'warn', 'error'], default: 'info', group: 'logs', access: 'editable', restart: false,
     description: 'Nível mínimo registrado.',
   },
   {
@@ -548,7 +552,7 @@ function resolve({ dataDir = resolveDataDir(process.env), env = process.env, fil
   problems.push(...plan.problems);
   warnings.push(...plan.warnings);
   if (mode === 'lan') {
-    warnings.push('Modo LAN: addon e ponte escutam fora do loopback; o acesso exige a credencial de instalação (sem TLS: o token trafega em HTTP na rede local). Use só em rede doméstica confiável e para os seus próprios aparelhos; o painel continua restrito a este computador, salvo a administração pela LAN (opcional, CONFIG_ALLOW_LAN).');
+    warnings.push('Modo LAN: addon e ponte escutam fora do loopback; o acesso exige a credencial de instalação (sem TLS: o token trafega em HTTP na rede local). Use só em rede doméstica confiável e para os seus próprios aparelhos; o painel só abre neste computador, a menos que você ligue a administração pela LAN (com senha): no Windows, painel-lan.cmd (ou "Painel pela rede" no Menu Iniciar); nos demais, npm run admin-painel -- assistente.');
   }
 
   if (values.ALERTS_ENABLED === true) {

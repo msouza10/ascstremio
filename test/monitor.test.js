@@ -22,6 +22,9 @@ test('servidor: estáticos, painel só com sessão confirmada, ação protegida 
     complete: async (hash) => { chamadas.push(hash); return { infoHash: hash }; },
     manageSeed: async (hash, action) => { chamadas.push(action); return { action }; },
     excludeFile: async (hash, file) => { chamadas.push(`excluir:${file}`); return { infoHash: hash, file, message: 'ok' }; },
+    excludeSeason: async (hash, season) => { chamadas.push(`excluir-temporada:${season}`); return { infoHash: hash, message: 'ok' }; },
+    verifyEpisodes: async (hash) => { chamadas.push('verificar'); return { infoHash: hash, ok: 1, failed: 0, message: 'ok' }; },
+    completeFiles: async (hash, scope) => { chamadas.push(`concluir:${JSON.stringify(scope)}`); return { infoHash: hash, message: 'ok' }; },
   });
   try {
     // páginas: todas devolvem o mesmo shell; o roteador do cliente escolhe a view
@@ -87,7 +90,29 @@ test('servidor: estáticos, painel só com sessão confirmada, ação protegida 
     assert.deepEqual(chamadas, [H('a'), 'delete', 'resume'], 'pedidos inválidos não chegam à ponte');
     assert.equal((await exclude(bom, ep)).status, 200);
     assert.deepEqual(chamadas, [H('a'), 'delete', 'resume', 'excluir:1']);
+    // por temporada: o painel manda só o número; quem decide os arquivos é o servidor
+    const temp = { infoHash: H('a'), season: 1 };
+    assert.equal((await exclude({ 'Content-Type': 'application/json' }, temp)).status, 403, 'sem token');
+    for (const ruim of [{ season: -1 }, { season: '1' }, { season: 1.5 }, { season: 100 }, { season: 1, file: 1 }]) {
+      assert.equal((await exclude(bom, { ...temp, ...ruim })).status, 400, JSON.stringify(ruim));
+    }
+    assert.equal((await exclude(bom, temp)).status, 200);
+    // concluir só um episódio ou uma temporada
+    for (const ruim of [{ file: -1 }, { file: '1' }, { season: 100 }, { season: 1, file: 1 }]) {
+      assert.equal((await post(bom, { infoHash: H('a'), ...ruim })).status, 400, JSON.stringify(ruim));
+    }
+    assert.equal((await post(bom, { infoHash: H('a'), season: 2 })).status, 202);
+    assert.equal((await post(bom, { infoHash: H('a'), file: 4 })).status, 202);
+    assert.deepEqual(chamadas.slice(-3), ['excluir-temporada:1', 'concluir:{"season":2}', 'concluir:{"file":4}']);
+    // verificar por peças: mesma proteção; só o infoHash entra
+    const verificar = (headers, body) => fetch(`${BASE}/api/verify-pieces`, { method: 'POST', headers, body: JSON.stringify(body) });
+    assert.equal((await verificar({ 'Content-Type': 'application/json' }, { infoHash: H('a') })).status, 403, 'sem token');
+    assert.equal((await verificar({ ...bom, Origin: 'https://externo.invalid' }, { infoHash: H('a') })).status, 403);
+    assert.equal((await verificar(bom, { infoHash: '../x' })).status, 400);
+    assert.equal((await verificar(bom, { infoHash: H('a') })).status, 200);
+    assert.equal(chamadas.at(-1), 'verificar');
     asc.connected = false;
+    assert.equal((await verificar(bom, { infoHash: H('a') })).status, 401, 'sessão caída');
     assert.equal((await exclude(bom, ep)).status, 401, 'sessão caída');
     assert.equal((await seed(bom, resume)).status, 401);
     assert.equal((await seed(bom, choice)).status, 401);
@@ -352,7 +377,7 @@ test('API de logs: consulta com filtros, cursor, download, arquivos e nível', a
 
     // download filtrado: anexo, formato e conteúdo
     const txt = await fetch(`${base}/api/logs/download?nivel=warn,error`);
-    assert.match(txt.headers.get('content-disposition'), /^attachment; filename="asc-logs-\d{8}-\d{6}\.txt"$/);
+    assert.match(txt.headers.get('content-disposition'), /^attachment; filename="asc-logs-completo\.txt"$/);
     assert.match(txt.headers.get('content-type'), /^text\/plain/);
     const linhas = (await txt.text()).trim().split('\n');
     assert.equal(linhas.length, 2);

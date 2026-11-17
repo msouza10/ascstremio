@@ -10,6 +10,7 @@
 //   npm run admin-painel -- remover                                    (apaga a senha: o acesso remoto fecha, na hora)
 //   npm run admin-painel -- ativar [--https URL | --http-claro] [--ip IPV4] [--sim]
 //   npm run admin-painel -- desativar [--sim]
+//   npm run admin-painel -- assistente [--ip IPV4] [--trocar] [--sim]   (tudo de uma vez: modo LAN, endereço, senha e ativação)
 //
 // definir/gerar/revogar-sessoes/remover funcionam com o aplicativo ligado (o servidor relê o
 // arquivo). ativar/desativar mexem na configuração e exigem o aplicativo parado (trava da instância)
@@ -22,6 +23,7 @@ const settings = require('./settings');
 const configAdmin = require('./config-admin');
 const auth = require('./admin-auth');
 const access = require('./admin-access');
+const network = require('./network');
 
 const USO = `uso: admin-painel <comando>
   status [--json]                           situação da administração pela LAN (nunca mostra a senha)
@@ -31,6 +33,8 @@ const USO = `uso: admin-painel <comando>
   remover                                   apaga a senha e fecha o acesso remoto
   ativar [--https URL | --http-claro] [--ip IPV4] [--sim]   habilita (aplicativo parado)
   desativar [--sim]                         desabilita (aplicativo parado)
+  assistente [--ip IPV4] [--trocar] [--sim] tudo de uma vez: modo LAN, endereço, senha (gerada, mostrada uma vez)
+                                            e ativação em HTTP na rede doméstica (aplicativo parado)
 A senha nunca vai por argumento. Não é a senha do ASC.`;
 
 const EXIT = { ok: 0, fail: 1, usage: 2, instance: 3 };
@@ -178,6 +182,64 @@ async function run(args, { env = process.env, io = defaultIo(), interfaces } = {
       }
       configAdmin.change({ env, changes });
       io.out('Ativado na configuração. Reinicie o aplicativo para valer.');
+      return EXIT.ok;
+    }
+    if (cmd === 'assistente') {
+      const d = describe(env, { interfaces });
+      if (d.snap.container) { io.err('Não há administração pela LAN no contêiner (a porta do painel é publicada só em 127.0.0.1 do host).'); return EXIT.fail; }
+      // Endereço da rede: o único candidato automático, ou o escolhido com --ip (sempre deste computador).
+      const candidatos = network.listCandidates(interfaces ?? undefined).filter((c) => c.family === 'IPv4' && c.usable);
+      const lista = candidatos.map((c) => `${c.address} (${c.interface})`).join(', ') || 'nenhuma';
+      let ip = null;
+      if (flags.ip) {
+        ip = String(flags.ip);
+        if (!candidatos.some((c) => c.address === ip)) { io.err(`${ip} não é um IPv4 utilizável deste computador. Opções: ${lista}.`); return EXIT.fail; }
+      } else {
+        const automaticos = candidatos.filter((c) => c.auto);
+        if (automaticos.length === 0) { io.err(`Nenhuma rede local utilizável encontrada (candidatos: ${lista}). Conecte-se à rede ou informe --ip.`); return EXIT.fail; }
+        if (automaticos.length > 1) { io.err(`Há mais de uma rede neste computador: escolha com --ip. Opções: ${automaticos.map((c) => `${c.address} (${c.interface})`).join(', ')}.`); return EXIT.fail; }
+        ip = automaticos[0].address;
+      }
+      const temSenha = d.credential.configured();
+      const gerarSenha = !temSenha || Boolean(flags.trocar);
+      // CONFIG_BIND_ADDRESS antigo prevalece sobre o endereço anunciado: limpa, para o painel escutar no IP informado.
+      const changes = { ASCSTREMIO_MODE: 'lan', LAN_ADVERTISE_HOST: ip, CONFIG_ALLOW_LAN: true, CONFIG_ADMIN_HTTP_CLEAR: true, CONFIG_PUBLIC_URL: null, CONFIG_BIND_ADDRESS: null };
+      // Confere as pré-condições com EXATAMENTE os valores que serão gravados (prévia sem gravar).
+      const simulado = settings.update({
+        dataDir: d.ctx.dataDir, env: d.ctx.env, changes, expectedRevision: d.snap.revision, interfaces, dryRun: true,
+      }).snapshot;
+      const pre = access.plan({
+        values: simulado.values, mode: simulado.mode, container: simulado.container, net: simulado.derived.network,
+        credentialConfigured: true, interfaces: interfaces ?? null, port: simulado.values.CONFIG_PORT,
+      });
+      if (!pre.enabled) {
+        io.err('Não é possível ativar ainda:');
+        for (const p of pre.problems) io.err(`  - ${p}`);
+        return EXIT.fail;
+      }
+      const url = `http://${ip}:${simulado.values.CONFIG_PORT}/`;
+      io.out('O assistente vai:');
+      io.out(`  - usar o modo LAN, anunciando ${ip}`);
+      io.out(`  - deixar o painel abrir pela rede em ${url}`);
+      io.out(gerarSenha ? '  - gerar uma senha de administração (não é a do ASC) e mostrá-la UMA vez' : '  - manter a sua senha de administração atual');
+      io.out('  - exigir essa senha em TODAS as rotas do painel, inclusive neste computador');
+      io.out('  - manter a ponte e as rotas administrativas (credenciais, token admin) fora desse caminho');
+      io.out('  - RISCO: HTTP sem criptografia; quem observa a rede local lê a senha e a sessão. Use só em rede doméstica confiável.');
+      if (!flags.sim) {
+        if (!io.tty) { io.err('Confirmação necessária: rode com --sim (sem terminal não há como perguntar).'); return EXIT.usage; }
+        if (!await io.confirm('Digite "sim" para continuar: ')) { io.out('Cancelado; nada foi alterado.'); return EXIT.ok; }
+      }
+      // Configuração primeiro (falha se o aplicativo estiver rodando); a senha só depois, para não deixar
+      // uma senha nova sem a ativação correspondente.
+      configAdmin.change({ env, changes, interfaces });
+      let senha = null;
+      if (gerarSenha) {
+        senha = crypto.randomBytes(18).toString('base64url');
+        await setPassword(d.ctx, senha, { replace: temSenha });
+        io.out('Senha de administração gerada (anote agora; ela não é guardada em lugar nenhum e não será mostrada de novo):');
+        io.out(senha);
+      }
+      io.out(`Pronto. Reinicie o aplicativo para valer e abra ${url} em outro computador da rede.`);
       return EXIT.ok;
     }
     if (cmd === 'desativar') {

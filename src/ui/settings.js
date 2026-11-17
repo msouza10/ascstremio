@@ -504,6 +504,7 @@
       c.append(cardHead('Destino dos alertas por webhook'));
       const info = el('p', 'muted', 'Carregando…');
       info.setAttribute('role', 'status'); info.setAttribute('aria-live', 'polite');
+      const privacy = el('p', 'foot', 'Os alertas saem desta máquina para o destino escolhido. Não enviam títulos, hashes, caminhos, ratio ou credenciais. A mensagem pode conter uma contagem. Confira o destino e os dados antes de habilitar os alertas.');
       const msg = el('p', 'muted');
       msg.setAttribute('role', 'status'); msg.setAttribute('aria-live', 'polite');
       const url = el('input', 'input'); url.type = 'password'; url.autocomplete = 'off'; url.placeholder = 'URL do destino (segredo; não é exibida depois)';
@@ -517,9 +518,12 @@
       row.append(save, test, del);
       const labeled = (text, input) => { const l = el('label', 'field'); l.append(el('span', '', text), input); return l; };
       url.placeholder = ''; bearer.placeholder = '';
-      c.append(info, labeled('URL do destino (segredo; não é exibida depois)', url), labeled('Token bearer (opcional)', bearer), row, msg);
+      c.append(info, privacy, labeled('URL do destino (segredo; não é exibida depois)', url), labeled('Token bearer (opcional)', bearer), row, msg);
       const show = (st) => {
         info.textContent = `Alertas ${st.enabled ? 'habilitados' : 'desabilitados'}; destino: ${st.configured ? `configurado (${st.source}${st.host ? `, ${st.host}` : ''})` : 'não configurado'}${st.problem ? ` — ${st.problem.replace(/\.+$/, '')}` : ''}. Último envio: ${st.lastSuccessAt ?? 'nunca'}; último erro: ${st.lastError ?? 'nenhum'}.`;
+        const labels = { schemaVersion: 'versão do formato', eventId: 'identificador do evento', type: 'tipo', severity: 'gravidade', state: 'situação', occurredAt: 'horário', message: 'mensagem', count: 'contagem, quando houver' };
+        const fields = (st.payloadFields ?? []).map((key) => labels[key] ?? key).join(', ');
+        privacy.textContent = `Envio para ${st.host ?? 'um destino ainda não validado'}: ${fields || 'campos ainda não disponíveis'}. A mensagem pode conter uma contagem. Não inclui títulos, hashes, caminhos, ratio ou credenciais. O destino também recebe o IP da conexão. Confira antes de habilitar. Remover o destino não apaga mensagens já recebidas pelo serviço nem o histórico local de alertas.`;
       };
       // Botões travados durante a chamada (evita envio de teste duplicado); a falha é anunciada como alerta.
       const run = async (route, body, ok) => {
@@ -763,6 +767,9 @@
     const head = el('div', 'page-head');
     const hl = el('div');
     hl.append(el('h1', '', 'Assistente de configuração'), el('p', 'page-sub', 'Poucos passos: como você vai usar, seed e disco, e a instalação no Stremio. Dá para mudar tudo depois em Configurações.'));
+    const legal = el('a', '', 'Ler os avisos legais (nova aba)');
+    legal.href = '/avisos-legais'; legal.target = '_blank'; legal.rel = 'noopener noreferrer';
+    hl.append(legal);
     head.append(hl);
     const stepper = el('ol', 'stepper');
     stepper.setAttribute('aria-label', 'Etapas do assistente');

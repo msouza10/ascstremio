@@ -16,6 +16,8 @@ test('publicação aceita guias explícitos e barra notas privadas inclusive no 
   const app = path.join(temp, 'pacote');
   fs.mkdirSync(path.join(app, 'docs'), { recursive: true });
   fs.writeFileSync(path.join(app, 'README.md'), '# Exemplo público\n');
+  fs.writeFileSync(path.join(app, 'LEGAL.md'), '# Avisos legais\n');
+  fs.writeFileSync(path.join(app, 'docs', 'conformidade-juridica.md'), '# Matriz pública\n');
   fs.writeFileSync(path.join(app, 'docs', 'uso.md'), '# Uso\n');
   const scan = (target = app) => spawnSync('bash', [barrier, target], { encoding: 'utf8' });
   const publicResult = scan();
@@ -54,4 +56,72 @@ test('a licença MIT está versionada e entra no pacote, no instalador e na imag
   for (const arquivo of [['scripts', 'build-release.sh'], ['windows', 'build.sh'], ['Dockerfile']]) {
     assert.match(ler(...arquivo), /\bLICENSE\b/, `${arquivo.join('/')} não copia o LICENSE`);
   }
+});
+
+test('avisos legais acompanham os caminhos de distribuição e ficam acessíveis na documentação', () => {
+  const raiz = path.resolve(__dirname, '..');
+  const ler = (...partes) => fs.readFileSync(path.join(raiz, ...partes), 'utf8');
+  const documentos = ler('scripts', 'documentation-files.txt').trim().split(/\r?\n/);
+  assert.ok(documentos.includes('LEGAL.md'));
+  assert.ok(documentos.includes('docs/conformidade-juridica.md'));
+  for (const documento of documentos) assert.ok(fs.statSync(path.join(raiz, documento)).isFile(), documento);
+  for (const arquivo of [['scripts', 'build-release.sh'], ['windows', 'build.sh']]) {
+    assert.match(ler(...arquivo), /done < scripts\/documentation-files\.txt/, `${arquivo.join('/')} não usa a lista pública`);
+  }
+  assert.match(ler('Dockerfile'), /^COPY .*\bLEGAL\.md\b.*\.\/$/m);
+  assert.match(ler('windows', 'build.sh'), /^cp LEGAL\.md "\$STAGE\/app\/"$/m);
+  assert.match(ler('README.md'), /\]\(LEGAL\.md\)/);
+  assert.match(ler('docs', 'README.md'), /\]\(\.\.\/LEGAL\.md\)/);
+});
+
+test('apresentação referencia somente imagens públicas existentes, com tema e texto alternativo', () => {
+  const raiz = path.resolve(__dirname, '..');
+  const readme = fs.readFileSync(path.join(raiz, 'README.md'), 'utf8');
+  const lista = new Set(fs.readFileSync(path.join(raiz, 'scripts', 'documentation-files.txt'), 'utf8').trim().split(/\r?\n/));
+  // O tarball também executa estes testes, mas não distribui o .gitignore do repositório.
+  const arquivoIgnore = path.join(raiz, '.gitignore');
+  const ignore = fs.existsSync(arquivoIgnore) ? fs.readFileSync(arquivoIgnore, 'utf8').split(/\r?\n/) : null;
+  const citadas = new Set();
+  const quadros = [...readme.matchAll(/<picture>([\s\S]*?)<\/picture>/g)];
+  assert.ok(quadros.length > 0, 'a apresentação precisa mostrar a interface');
+  for (const [, quadro] of quadros) {
+    assert.match(quadro, /<source\b[^>]*media="\(prefers-color-scheme: dark\)"/);
+    assert.match(quadro, /<img\b[^>]*alt="[^"\s][^"]*"/);
+    for (const [, arquivo] of quadro.matchAll(/(?:src|srcset)="([^"]+)"/g)) {
+      assert.ok(arquivo.startsWith('docs/imagens/'), arquivo);
+      assert.ok(lista.has(arquivo), `${arquivo} precisa estar na lista pública`);
+      assert.ok(fs.statSync(path.join(raiz, arquivo)).isFile(), arquivo);
+      if (ignore) assert.ok(ignore.lastIndexOf(`!${arquivo}`) > ignore.lastIndexOf('*.png'), `${arquivo} precisa de exceção exata depois de *.png`);
+      citadas.add(path.basename(arquivo));
+    }
+  }
+  const imagens = fs.readdirSync(path.join(raiz, 'docs', 'imagens')).sort();
+  assert.deepEqual([...citadas].sort(), imagens, 'nenhuma imagem pode ficar sem referência ou liberação');
+});
+
+test('capturas públicas respeitam tamanho, dimensões e exclusão de metadados', () => {
+  const pasta = path.resolve(__dirname, '..', 'docs', 'imagens');
+  let total = 0;
+  for (const nome of fs.readdirSync(pasta)) {
+    assert.match(nome, /\.png$/, 'as capturas atuais usam PNG');
+    const bytes = fs.readFileSync(path.join(pasta, nome));
+    total += bytes.length;
+    assert.ok(bytes.length <= 200 * 1024, `${nome} excede 200 KiB`);
+    assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', nome);
+    assert.ok(bytes.readUInt32BE(16) > 0 && bytes.readUInt32BE(16) <= 1280, `${nome}: largura`);
+    assert.ok(bytes.readUInt32BE(20) > 0, `${nome}: altura`);
+    let offset = 8;
+    let fim = false;
+    while (offset < bytes.length) {
+      assert.ok(offset + 12 <= bytes.length, `${nome}: bloco truncado`);
+      const tamanho = bytes.readUInt32BE(offset);
+      const tipo = bytes.toString('ascii', offset + 4, offset + 8);
+      assert.ok(!['tEXt', 'iTXt', 'zTXt', 'eXIf'].includes(tipo), `${nome}: metadados ${tipo}`);
+      offset += tamanho + 12;
+      assert.ok(offset <= bytes.length, `${nome}: tamanho de bloco inválido`);
+      if (tipo === 'IEND') { fim = true; break; }
+    }
+    assert.ok(fim && offset === bytes.length, `${nome}: fim de PNG inválido`);
+  }
+  assert.ok(total <= 2 * 1024 * 1024, 'a pasta de capturas excede 2 MiB');
 });
