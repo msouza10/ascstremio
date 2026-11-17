@@ -124,3 +124,23 @@ test('entradas malformadas ou ambíguas não passam como permissivas nem quebram
   assert.deepEqual(por.codigo.atencao, ['sem-texto-de-licenca']);
   assert.ok(por.quebrado.atencao.includes('manifesto-ilegivel'));
 });
+
+test('o painel embute ícones Lucide e src/ui/assets traz o texto das licenças ISC e MIT (Feather)', () => {
+  const raiz = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(raiz, 'src', 'ui', 'index.html'), 'utf8');
+  assert.ok(/<symbol id="i-/.test(html), 'o painel embute ícones em SVG');
+  const texto = fs.readFileSync(path.join(raiz, 'src', 'ui', 'assets', 'LUCIDE-LICENSE.txt'), 'utf8');
+  assert.match(texto, /ISC License/, 'texto ISC do Lucide ausente');
+  assert.match(texto, /Copyright \(c\) \d{4} Lucide Icons and Contributors/, 'aviso de copyright do Lucide ausente');
+  assert.match(texto, /The MIT License \(MIT\)[\s\S]*Cole Bemis/, 'texto MIT do Feather ausente');
+});
+
+test('docs/terceiros.md cita as versões fixadas de node-datachannel e WinSW', () => {
+  const raiz = path.join(__dirname, '..');
+  const doc = fs.readFileSync(path.join(raiz, 'docs', 'terceiros.md'), 'utf8');
+  const lock = JSON.parse(fs.readFileSync(path.join(raiz, 'package-lock.json'), 'utf8'));
+  const ndc = lock.packages['node_modules/node-datachannel'].version;
+  assert.ok(doc.includes(`node-datachannel ${ndc}`), `docs/terceiros.md deve citar node-datachannel ${ndc}; revise a seção de código-fonte MPL`);
+  const winsw = /^WINSW_VERSION=(\S+)/m.exec(fs.readFileSync(path.join(raiz, 'windows', 'build.sh'), 'utf8'))[1];
+  assert.ok(doc.includes(`WinSW ${winsw}`), `docs/terceiros.md deve citar WinSW ${winsw}`);
+});
