@@ -419,6 +419,26 @@ test('pack: abrir um episódio adiante completa os anteriores depois do atual', 
   assert.deepEqual(selecoes, [['torrent', 20, 29, 0]], 'começa pelo restante do episódio aberto (o 3.º)');
 });
 
+test('pack: sem espaço para o resto, a conclusão não começa nem com o episódio pronto, avisa uma vez e começa com folga', () => {
+  const { b, vault, selecoes } = packAberto({ baixado: [0, 10 * GB, 0], freeSpace: () => 5 * GB });
+  const avisos = [];
+  const warn = console.warn;
+  console.warn = (m) => avisos.push(String(m));
+  try {
+    b.completionTick(1e6);
+    b.completionTick(2e6);
+  } finally { console.warn = warn; }
+  assert.deepEqual(selecoes, [], 'o atalho do episódio pronto não pula a reserva de disco');
+  assert.equal(b.completing.has(HASH), false);
+  assert.ok(!vault.get(HASH).backgroundComplete);
+  assert.equal(avisos.length, 1, 'o aviso de falta de espaço não se repete a cada passada');
+  b.disk.measureFn = () => 100 * GB;
+  const log = console.log; console.log = () => {};
+  try { b.completionTick(3e6); } finally { console.log = log; }
+  assert.equal(selecoes.length, 1, 'com espaço o resto do pack começa');
+  assert.equal(vault.get(HASH).noSpaceWarned, false);
+});
+
 test('pack: o início da conclusão segue o gatilho de sempre; a posição só define a ordem', () => {
   // Player aberto e episódio ainda baixando: com posição conhecida, mesmo assim nada é selecionado.
   const aberto = packAberto({ baixado: [0, 4 * GB, 0] });
