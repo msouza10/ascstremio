@@ -89,6 +89,46 @@ scripts/check-no-secrets.sh .
 git diff --check
 ```
 
+## Suporte por tipo de release
+
+Registro de 17/11/2026 da etapa [#89](https://github.com/msouza10/ascstremio/issues/89). Cada tipo de release da seção 1 da [#83](https://github.com/msouza10/ascstremio/issues/83) tem um comportamento definido quando o Stremio pede um episódio: **toca**, mostra **não suportado** (com mensagem) ou **não oferece** (o release não serve a este pedido). "Não suportado" é **limitação deste projeto**: não é parecer do ASC sobre o release e nada aqui o apresenta como lançamento aprovado pelas regras atuais. O addon não prevê, nesta etapa, confirmação manual de episódio.
+
+A decisão de segurança é a mesma em todos os casos: só toca quando temporada e episódio estão escritos no nome do arquivo (`SxxExx`). Um número solto, como `EP05` ou `05 Título`, **não** é assumido como `S01E05`, porque tocaria o episódio errado sem aviso. Nomes ambíguos (vários identificadores no mesmo nome) continuam sem mapeamento.
+
+| Caso | Exemplo | Comportamento | Teste (`test/series-suporte.test.js`) |
+|---|---|---|---|
+| Temporada simples na raiz | Breaking Bad S01, `S01E01`..`S01E07` | Toca | temporada simples |
+| Pack completo com subpastas por temporada, nomes técnicos | Breaking Bad S01-S05 | Toca | pack completo com subpastas |
+| S02 que continua S02 | The Last of Us S02 | Toca no S02; o S01 nem consulta o release (o nome contradiz) | S02 continua sendo S02 |
+| Título do episódio depois do identificador | `S01E01.System.mkv` | Toca | título do episódio |
+| Raiz `Série (ano)` com `Temporada 01`..`05` | Stranger Things (2016) | Toca (nome da pasta livre) | raiz com pastas |
+| Episódio avulso com um só MKV | Dexter: Resurrection S02E03 | Toca no episódio do nome; outro episódio não é oferecido, sem aviso | episódio avulso |
+| Episódio de quatro dígitos | One Piece S23E1180 | Toca só se o Stremio pedir `23:1180`; o `23:25` do Cinemeta não é oferecido (sem conversão de numeração) | quatro dígitos |
+| Temporada de anime com numeração absoluta | One Piece S34E864..877 | Toca só quando o identificador coincide com o pedido; não oferece o resto | anime S34E864 |
+| Caminhos do Windows e ordem embaralhada | `Show\Temporada 02\...` | Toca | barra invertida e embaralhada |
+| Pack legado `Temporada N/01 Título.mkv`, com filme e imagens | Breaking Bad + El Camino | **Não suportado**, com mensagem | pack legado |
+| Legado `EP01` em subpasta por episódio, com `Legenda/` | Irmãos de Guerra - Completo (id 70) | **Não suportado**, com mensagem | legado EP01 |
+| One Pace por saga/arco | `Saga 1/Arco 1/One Pace - Romance Dawn - 01.mkv` | **Não suportado**, mesma mensagem | One Pace |
+| Full Disc, ISO, BDMV | `Show.S01.BD50.iso`, `BDMV/STREAM/*.m2ts` | **Não suportado**, mensagem de imagem de disco | Full Disc, BDMV |
+| MiXED e nomes ambíguos | `S01E01.S02E01.MiXED.mkv` | **Não suportado**, mesma mensagem dos nomes sem identificação segura | MiXED |
+| Dois arquivos dizem ser o mesmo episódio | `S01E01.1080p` e `S01E01.720p` | Não oferece, sem aviso (não escolhe um deles) | conflito |
+
+### O aviso "Releases não suportados"
+
+Quando a busca por IMDb traz releases cuja lista de arquivos foi lida **por inteiro** e que não têm nenhum episódio identificado (há vídeos, ou estrutura de disco, mas nenhum com temporada e episódio claros), e **nenhum outro release serve ao pedido**, a lista de fontes ganha **um** item informativo e não tocável: quantos releases do título existem no ASC e por que o addon não os toca. Tocá-lo abre o painel (ou o site do ASC, quando o status não está liberado), como o aviso de ASC indisponível. O texto não promete suporte futuro e não traz dado da conta.
+
+Decisões:
+
+- **Só quando não sobra fonte tocável.** Com ao menos uma fonte, o aviso seria ruído repetido em todo episódio. Sem nenhuma, é o único jeito de a pessoa saber que a lista não está vazia por falta de releases. Exemplo real: em Band of Brothers, o release 70 (legado `EP01`) não aparece enquanto o 47552 (`S01Exx`) toca; se só o 70 existisse, o aviso apareceria.
+- **Agregado.** Um item por pedido, não um por release; os motivos distintos viram linhas.
+- **Release de outra temporada ou episódio (o nome contradiz) nunca avisa**, e a página dele nem é lida.
+- **Lista incompleta não prova nada.** O release segue como candidato "a confirmar ao tocar", sem aviso. Um release com ao menos um episódio identificado também não gera aviso: só "não traz este episódio".
+- **Sem custo extra.** O aviso sai dos dados que a listagem já lê (busca por IMDb e lista de arquivos da página do release); não baixa `.torrent`, não anuncia e não faz consulta nova ao ASC.
+
+### Legendas do pack
+
+As legendas SRT/ASS que vêm no pack (por exemplo a pasta `Legenda/`) **não são expostas pelo addon**: nenhuma fonte leva o campo `subtitles`. É uma limitação documentada do projeto; o Stremio usa os addons de legenda dele. Não há associação de legenda ao episódio, idioma ou *forced*.
+
 ## Estado das issues e trabalho restante
 
 O quadro abaixo registra a leitura das issues nesta sessão; os checklists remotos não foram alterados.
