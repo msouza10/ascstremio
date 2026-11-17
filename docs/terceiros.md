@@ -176,8 +176,12 @@ que o upstream não publicou.
   `net461`, o executável funde por ILMerge as bibliotecas `log4net` 2.0.12 (Apache-2.0,
   com `NOTICE` "Apache log4net, Copyright 2004-2017 The Apache Software Foundation",
   tag `rel/2.0.12`) e `YamlDotNet` 8.1.2 (MIT, "Copyright (c) 2008-2014 Antoine Aubry and
-  contributors", tag v8.1.2). Esses dois avisos **não** acompanham o instalador hoje:
-  só o `WinSW-LICENSE.txt` do WinSW. Requer revisão.
+  contributors", tag v8.1.2). O instalador passa a levar esses dois avisos em
+  `THIRD-PARTY-WinSW.txt` (NOTICE e licença do log4net da tag `rel/2.0.12` de
+  `apache/logging-log4net`; `LICENSE.txt` do YamlDotNet da tag `v8.1.2` de
+  `aaubry/YamlDotNet`, obtidos em 17/11/2026). `windows/build.sh` fixa o SHA-256 de cada
+  arquivo e interrompe o build se algum não conferir. Se o texto basta para a obrigação de
+  cada licença, requer revisão.
 - **Node.js**: `windows/build.sh` e `scripts/install.sh` baixam o binário oficial de
   `nodejs.org/dist/latest-v22.x` e conferem o SHA-256 do `SHASUMS256.txt` do mesmo
   servidor. O arquivo `LICENSE` do release é copiado ao lado do `node.exe` no Windows;
@@ -241,9 +245,9 @@ Fatos para a revisão: o texto da MPL-2.0 trata o código-fonte dos arquivos cob
 quando se distribui a forma executável; a interpretação cabe à revisão. O projeto usa o
 binário pré-compilado publicado pelo upstream (não o compila) e não foi verificado se
 esse binário contém alterações além do código das tags acima. A tabela lista onde o
-código-fonte está, mas os artefatos do projeto (instaladores e imagem) **não o oferecem
-nem o citam hoje**, e os avisos de copyright das bibliotecas BSD e MIT também não são
-incluídos neles. SHA-256 dos arquivos baixados em 17/11/2026 (só valem para esses
+código-fonte está e este guia acompanha o tarball Linux, o instalador do Windows
+(`docs/terceiros.md`) e a imagem Docker (`/app/docs/terceiros.md`); os avisos de copyright das
+bibliotecas BSD e MIT aparecem citados na tabela, sem os textos integrais das licenças. SHA-256 dos arquivos baixados em 17/11/2026 (só valem para esses
 downloads):
 
 | Arquivo | SHA-256 |
@@ -306,8 +310,8 @@ scripts de instalação e imagens versionadas em 17/11/2026:
 | Formato | Evidência gerada | Textos e limites |
 |---|---|---|
 | Tarball Linux | `THIRD-PARTY-INVENTORY.json` do lockfile | O pacote contém fontes; `node_modules` é instalado depois. Gerar o modo instalado na instalação para conferir a plataforma efetiva. Node é obtido pelo instalador, não faz parte desse tarball. |
-| Windows | `app/THIRD-PARTY-INVENTORY.json` e `RUNTIMES-INVENTORY.json`, caminhos relativos ao diretório que contém cada JSON | Gerado após instalar e filtrar binários. `node/LICENSE` acompanha `node.exe`; os avisos npm permanecem em `app/node_modules`. `WinSW-LICENSE.txt` vem da tag v2.12.0 e tem SHA-256 conferido; a composição do binário exige revisão própria. |
-| Docker | `/app/THIRD-PARTY-INVENTORY.json` e `/app/DEBIAN-PACKAGES.txt` | Árvore npm da etapa de dependências e nomes/versões/arquiteturas Debian na imagem final. Textos Debian em `/usr/share/doc`; conferir também avisos Node da imagem base. |
+| Windows | `app/THIRD-PARTY-INVENTORY.json` e `RUNTIMES-INVENTORY.json`, caminhos relativos ao diretório que contém cada JSON | Gerado após instalar e filtrar binários. `node/LICENSE` acompanha `node.exe`; os avisos npm permanecem em `app/node_modules`. `WinSW-LICENSE.txt` vem da tag v2.12.0 e `THIRD-PARTY-WinSW.txt` traz log4net e YamlDotNet das tags oficiais, ambos com SHA-256 conferido; `docs/terceiros.md` acompanha o instalador. A composição do binário exige revisão própria. |
+| Docker | `/app/THIRD-PARTY-INVENTORY.json` e `/app/DEBIAN-PACKAGES.txt` | Árvore npm da etapa de dependências e nomes/versões/arquiteturas Debian na imagem final. `/app/LICENSE`, `/app/LEGAL.md` e `/app/docs/terceiros.md` (único arquivo de `docs/` liberado no `.dockerignore`) acompanham a imagem, conferidos pelo teste de fumaça. Textos Debian em `/usr/share/doc`; conferir também avisos Node da imagem base. |
 
 O inventário npm não decompõe bibliotecas incorporadas nos binários de
 `node-datachannel`, `utp-native` ou outros componentes (a seção acima faz isso à mão para
@@ -358,11 +362,14 @@ Fatos das fontes oficiais (consultadas em 17/11/2026):
 2. **Lucide:** versão exata na origem; `trash-2` não foi comparado.
 3. **MPL-2.0 / node-datachannel:** decidir como oferecer o código-fonte e os avisos das
    bibliotecas embutidas (libjuice MPL-2.0; usrsctp, libsrtp, plog, OpenSSL; nlohmann/json
-   se estiver no binário, o que não foi confirmado) nos instaladores Windows e Linux e na
-   imagem Docker; versão do OpenSSL não identificada; se o binário baixado tem alterações
+   se estiver no binário, o que não foi confirmado). A tabela deste guia agora acompanha
+   o tarball, o instalador do Windows e a imagem Docker; falta decidir se isso basta como
+   oferta de código-fonte e se os textos integrais das licenças BSD/MIT devem ir junto; versão do OpenSSL não identificada; se o binário baixado tem alterações
    além das tags citadas.
-4. **WinSW:** avisos de `log4net` (Apache-2.0, com NOTICE) e `YamlDotNet` (MIT) fundidos no
-   executável não acompanham o instalador.
+4. **WinSW:** os avisos de `log4net` (Apache-2.0, com NOTICE) e `YamlDotNet` (MIT) fundidos no
+   executável agora acompanham o instalador (`THIRD-PARTY-WinSW.txt`, SHA-256 fixados, fontes
+   de 17/11/2026). Confirmar a suficiência dos textos e se o ILMerge ou outros componentes do
+   executável exigem aviso próprio.
 5. **15 pacotes sem arquivo de licença:** decidir se o campo `license` e o README bastam.
    **Escolhas de licença** (`expand-template`, `rc`): confirmar as propostas pelo dono.
 6. **Big Buck Bunny:** a URL da amostra responde 403; escolher uma fonte oficial que
