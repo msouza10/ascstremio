@@ -20,6 +20,9 @@ COPY --from=deps /app/THIRD-PARTY-INVENTORY.json ./THIRD-PARTY-INVENTORY.json
 # Os textos dos pacotes Debian permanecem em /usr/share/doc.
 RUN dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\n' > /app/DEBIAN-PACKAGES.txt
 COPY package.json LICENSE LEGAL.md ./
+# Guia de terceiros (ofertas de código-fonte e atribuições) no mesmo caminho do tarball.
+# O .dockerignore exclui docs/ por conter notas privadas: só este nome exato é liberado.
+COPY docs/terceiros.md ./docs/terceiros.md
 COPY src ./src
 RUN mkdir /data && chown node:node /data
 USER node

@@ -17,6 +17,14 @@ NODE_MAJOR=22
 # Variante NET461: 656 KB, usa o .NET Framework que já vem no Windows 10/11. Licença MIT.
 WINSW_VERSION=v2.12.0
 WINSW_LICENSE_SHA256=1cdf703c10a70e5973bf3acf2a5eeabe7746237155b92db2034aeae26fdf7802
+# O executável do WinSW 2.12.0 (NET461) funde por ILMerge log4net 2.0.12 (Apache-2.0, exige a
+# licença e o NOTICE) e YamlDotNet 8.1.2 (MIT, exige o aviso de copyright); ver WinSW.csproj da
+# tag. Os textos vêm das tags oficiais e têm SHA-256 fixado, como a licença do próprio WinSW.
+LOG4NET_TAG=rel/2.0.12
+LOG4NET_LICENSE_SHA256=c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4
+LOG4NET_NOTICE_SHA256=14e0ac5d0b985b12b11ac530b2df91e8a8afec56036189b90ce434f0745a75be
+YAMLDOTNET_TAG=v8.1.2
+YAMLDOTNET_LICENSE_SHA256=daea8b7f1b2bab48ea12ad50b0ce91634669d99d7dd0cb64aed8dffeeef69ed3
 WINSW_SHA256=b5066b7bbdfba1293e5d15cda3caaea88fbeab35bd5b38c41c913d492aadfc4f
 STAGE_ONLY=0; [ "${1:-}" = "--stage-only" ] && STAGE_ONLY=1
 VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' package.json | head -1)"
@@ -41,7 +49,27 @@ winsw="$OUT/cache/WinSW.NET461-$WINSW_VERSION.exe"
 [ "$(sha "$winsw")" = "$WINSW_SHA256" ] || { echo "SHA-256 do WinSW não confere" >&2; exit 1; }
 curl -fsSL -o "$STAGE/WinSW-LICENSE.txt" "https://raw.githubusercontent.com/winsw/winsw/$WINSW_VERSION/LICENSE.txt"
 [ "$(sha "$STAGE/WinSW-LICENSE.txt")" = "$WINSW_LICENSE_SHA256" ] || { echo "SHA-256 da licença WinSW não confere" >&2; exit 1; }
-node -e 'const fs = require("node:fs"); const [destino, zip, winsw] = process.argv.slice(1); fs.writeFileSync(destino, JSON.stringify({componentes: [{nome: "Node.js", versao: zip.match(/node-(v[^-]+)/)[1], origem: `https://nodejs.org/dist/${zip.match(/node-(v[^-]+)/)[1]}/${zip}`, texto: "node/LICENSE"}, {nome: "WinSW", versao: winsw, origem: `https://github.com/winsw/winsw/releases/tag/${winsw}`, texto: "WinSW-LICENSE.txt"}], pendencia: "Revisar componentes incorporados nesses binários e suas obrigações."}, null, 2) + "\n");' "$STAGE/RUNTIMES-INVENTORY.json" "$zip" "$WINSW_VERSION"
+# Baixa para o cache, confere e só então agrega: um hash que não bate interrompe o build.
+curl -fsSL -o "$OUT/cache/log4net-LICENSE" "https://raw.githubusercontent.com/apache/logging-log4net/$LOG4NET_TAG/LICENSE"
+[ "$(sha "$OUT/cache/log4net-LICENSE")" = "$LOG4NET_LICENSE_SHA256" ] || { echo "SHA-256 da licença do log4net não confere" >&2; exit 1; }
+curl -fsSL -o "$OUT/cache/log4net-NOTICE" "https://raw.githubusercontent.com/apache/logging-log4net/$LOG4NET_TAG/NOTICE"
+[ "$(sha "$OUT/cache/log4net-NOTICE")" = "$LOG4NET_NOTICE_SHA256" ] || { echo "SHA-256 do NOTICE do log4net não confere" >&2; exit 1; }
+curl -fsSL -o "$OUT/cache/YamlDotNet-LICENSE.txt" "https://raw.githubusercontent.com/aaubry/YamlDotNet/$YAMLDOTNET_TAG/LICENSE.txt"
+[ "$(sha "$OUT/cache/YamlDotNet-LICENSE.txt")" = "$YAMLDOTNET_LICENSE_SHA256" ] || { echo "SHA-256 da licença do YamlDotNet não confere" >&2; exit 1; }
+{
+  echo "Avisos de componentes incorporados ao executável AscStremioServico.exe (WinSW $WINSW_VERSION, NET461)."
+  echo "A licença do próprio WinSW está em WinSW-LICENSE.txt. Textos obtidos das tags oficiais abaixo."
+  echo
+  echo "=== log4net 2.0.12 (Apache-2.0) - https://github.com/apache/logging-log4net/tree/$LOG4NET_TAG - NOTICE ==="
+  cat "$OUT/cache/log4net-NOTICE"
+  echo
+  echo "=== log4net 2.0.12 (Apache-2.0) - LICENSE ==="
+  cat "$OUT/cache/log4net-LICENSE"
+  echo
+  echo "=== YamlDotNet 8.1.2 (MIT) - https://github.com/aaubry/YamlDotNet/tree/$YAMLDOTNET_TAG - LICENSE.txt ==="
+  cat "$OUT/cache/YamlDotNet-LICENSE.txt"
+} > "$STAGE/THIRD-PARTY-WinSW.txt"
+node -e 'const fs = require("node:fs"); const [destino, zip, winsw] = process.argv.slice(1); fs.writeFileSync(destino, JSON.stringify({componentes: [{nome: "Node.js", versao: zip.match(/node-(v[^-]+)/)[1], origem: `https://nodejs.org/dist/${zip.match(/node-(v[^-]+)/)[1]}/${zip}`, texto: "node/LICENSE"}, {nome: "WinSW", versao: winsw, origem: `https://github.com/winsw/winsw/releases/tag/${winsw}`, texto: "WinSW-LICENSE.txt", textosIncorporados: "THIRD-PARTY-WinSW.txt"}], pendencia: "Revisar componentes incorporados nesses binários e suas obrigações."}, null, 2) + "\n");' "$STAGE/RUNTIMES-INVENTORY.json" "$zip" "$WINSW_VERSION"
 # O WinSW exige o mesmo nome base para o executável e o XML.
 cp "$winsw" "$STAGE/AscStremioServico.exe"
 cp windows/servico.xml "$STAGE/AscStremioServico.xml"

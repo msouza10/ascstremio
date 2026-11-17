@@ -169,6 +169,11 @@ jobs:
           foreach ($f in 'node\node.exe','app\src\index.js','app\LEGAL.md','LEGAL.md','start.cmd','stop.cmd','AscStremioServico.exe','AscStremioServico.xml','bandeja.ps1','bandeja.vbs','parar-bandeja.cmd','desinstalar.exe') {
             if (-not (Test-Path (Join-Path $dir $f))) { throw "faltou $f na instalação" }
           }
+          # Avisos de terceiros: precisam existir e não podem estar vazios.
+          foreach ($f in 'LICENSE','docs\terceiros.md','app\THIRD-PARTY-INVENTORY.json','WinSW-LICENSE.txt','THIRD-PARTY-WinSW.txt','node\LICENSE') {
+            $p = Join-Path $dir $f
+            if (-not (Test-Path $p) -or (Get-Item $p).Length -eq 0) { throw "aviso de terceiros ausente ou vazio na instalação: $f" }
+          }
           $dados = Join-Path $env:ProgramData 'AscStremio\data'
           if (-not (Test-Path (Join-Path $dados 'marcador-migracao.txt'))) {
             Write-Host "antigo existe: $(Test-Path $antigo) ($antigo)"
