@@ -16,7 +16,7 @@ Evidências privadas permanecem sob acesso restrito; não devem ser anexadas às
 
 | Decisão | Evidência a obter | Estado |
 |---|---|---|
-| Automação, cliente e distribuição da integração | Regras atuais obtidas legitimamente, versão/data e alcance da permissão do ASC | Não verificado |
+| Automação, cliente e distribuição da integração | Regras atuais obtidas legitimamente, versão/data e alcance da permissão do ASC | Orientação informal recebida, sem autorização formal; ver a seção Orientação informal da staff (nov/2026), abaixo |
 | Reprodução e compartilhamento das obras | Base aplicável a cada uso pretendido; a permissão do tracker não substitui a dos titulares | Não verificado |
 | Distribuição e suporte | Países atendidos, receita/doações, canais de suporte e limites do modelo de uma pessoa por instalação | Decisão do mantenedor pendente |
 | Nomes, metadados, exemplos e demonstrações | Origem e permissão dos materiais efetivamente utilizados; inventário complementar na [#103](https://github.com/msouza10/ascstremio/issues/103) | Verificação pendente |
@@ -26,6 +26,46 @@ Para cada conclusão, anotar também quais usos ela cobre, quais ficam excluído
 exige nova revisão. Ausência de resposta não comprova autorização. Se faltar base para
 um uso pretendido, registrar o ajuste ou a suspensão desse uso específico. Não declarar
 a #94 concluída somente porque este roteiro ou um aviso foi publicado.
+
+## Orientação informal da staff (nov/2026)
+
+Entre 14 e 16/11/2026, o mantenedor conversou de modo informal e privado com a staff do ASC.
+Esta seção é um resumo em palavras próprias do que foi informado. **Não é autorização,
+aprovação nem permissão formal**, e a staff pediu que se aguardasse. Nada aqui indica que o
+ASC considere a ferramenta oficial, liberada ou suportada.
+
+- **Proposta:** a staff achou a proposta interessante, mas pediu que o mantenedor aguarde
+  antes de divulgar o projeto ou incentivar o uso por outros membros.
+- **API de integração:** em conversa com a staff, foi informado que o ASC testa uma API de
+  integração voltada ao Prowlarr. Com ela, o usuário precisaria apenas de uma chave de API,
+  sem login, senha e passkey do site. Quando a API estiver estável, a staff pode liberar o
+  projeto para integrá-la. Hoje o projeto lê o site com a sessão do próprio membro (consulta
+  as páginas e lê os dados estruturados embutidos no HTML). O mantenedor informou que adaptará
+  a integração à API e respeitará os limites quando ela for liberada.
+- **Uso da chave e limites:** o usuário poderá usar a chave como quiser, e a API terá limites
+  de uso. A staff não espera que o uso normal do addon entre em conflito com esses limites.
+- **Hit-and-run:** a staff pode rever os dias e as regras; por isso devem ser parametrizados
+  ou atualizados pelo projeto. Depois, a staff acrescentou que a própria API informará os
+  critérios de hit-and-run de cada usuário, de modo que o addon não precisaria calcular nada
+  localmente.
+- **Reprodução durante o download:** a staff disse não saber se isso seria possível, pela
+  forma como o torrent funciona. O mantenedor respondeu que o programa consegue, priorizando
+  os trechos do arquivo necessários para começar a tocar. Reproduzir pela rede doméstica foi
+  descrito como algo que os usuários em geral já fazem.
+- **Divulgação e canal:** a staff disse que vai conversar internamente sobre o assunto; ainda
+  não há resposta nem canal definido.
+
+**Continua sem resposta:**
+
+- permissão formal para a consulta automatizada (scraping) do site;
+- permissão formal para baixar o `.torrent` com o cliente integrado;
+- condições de divulgação do projeto;
+- o que o tracker faz com um snatch parcial vencido ([#109](https://github.com/msouza10/ascstremio/issues/109)),
+  pergunta que nunca foi feita à staff.
+
+Este registro é um resumo sem valor de autorização. Ele muda quando a staff publicar a API ou
+responder formalmente, e a [#94](https://github.com/msouza10/ascstremio/issues/94) segue aberta
+até lá.
 
 ## Canal de contato: issues públicas
 
