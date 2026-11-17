@@ -38,6 +38,7 @@ tools/
 !AGENTS.md
 !.github/*.md
 !CLAUDE.md
+!TESTS.md
 !docs/README.md
 !docs/terceiros.md
 !docs/instalacao.md

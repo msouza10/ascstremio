@@ -31,3 +31,4 @@ docs/imagens/wizard-seed-claro.png
 docs/imagens/wizard-seed-escuro.png
 docs/imagens/wizard-uso-claro.png
 docs/imagens/wizard-uso-escuro.png
+TESTS.md

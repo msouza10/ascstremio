@@ -72,3 +72,10 @@ A CI testa Ubuntu e Windows com Node 22 e 24, scripts e workflows, segredos, aud
 Os títulos seguem o [padrão de commits](../.github/COMMIT_CONVENTION.md) em português. `feat` sobe a versão menor em 0.x; `fix`, `perf` e `security` sobem a correção. Consulte AGENTS para os demais tipos e quebras de compatibilidade.
 
 Pushes na main alimentam o PR do release-please. Mesclar esse PR cria um release rascunho; a esteira monta/verifica os artefatos, publica a imagem e só então publica o release. Não edite à mão `CHANGELOG.md`, `.release-please-manifest.json` ou `version` em `package.json`, nem crie tags manualmente. A existência do workflow não comprova que uma execução específica passou: confira a execução no GitHub.
+
+### Integração com Stremio real
+
+`npm test`/`npm run check` incluem o cliente Linux Flatpak em perfil convidado, sem conta.
+Feche o Stremio antes e tenha sessão gráfica disponível. `npm run check:unit` executa
+a parte sem cliente gráfico. CI e release usam `stremio-tests.yml` com Xvfb/D-Bus isolados.
+O mapa dos cenários está em [`TESTS.md`](../TESTS.md).

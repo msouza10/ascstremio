@@ -54,7 +54,8 @@ privadas em código, testes ou CI. O índice público é [`docs/README.md`](docs
 npm ci                    # dependências
 npm start                 # roda (usa --max-http-header-size=65536, obrigatório: o ASC responde com cabeçalhos grandes)
 npm run dev               # com --watch
-npm run check             # sintaxe da UI + todos os testes (é o que o CI roda). Também: npm test
+npm run check             # sintaxe + testes; no Linux inclui Stremio real (Flatpak e sessão gráfica). Também: npm test
+npm run check:unit        # testes compartilhados sem aplicativo ou sessão gráfica
 node --test test/seed-policy.test.js          # um arquivo só
 DATA_DIR=/tmp/x PORT=18000 BRIDGE_PORT=18010 CONFIG_PORT=18020 npm start   # instância de teste sem tocar nos seus dados
 scripts/install.sh [--check|--no-service|--uninstall]    # instalador Linux
@@ -239,7 +240,8 @@ PRs do Dependabot e do release-please), leia tudo o que foi escrito e decida sob
 
 ## CI (`.github/workflows/ci.yml`)
 
-Em push e pull request: testes (Ubuntu e Windows × Node 22 e 24), `shellcheck`, `actionlint`,
+Em push e pull request: testes compartilhados (Ubuntu e Windows × Node 22 e 24), Stremio real
+no Linux (LAN e UI oficial, em Xvfb/D-Bus isolados, sem conta), `shellcheck`, `actionlint`,
 barreira de segredos, auditoria de dependências, pacote Linux instalado sem Node no PATH, imagem
 Docker com teste de fumaça, instalador Windows compilado e **instalado de verdade** num Windows. Nos
 pull requests também confere os títulos dos commits. Todos precisam passar. Dependabot abre PRs de

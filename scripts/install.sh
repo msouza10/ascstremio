@@ -173,11 +173,12 @@ else
 fi
 
 # ----------------------------------------------------------------------- testes
-step "Testes e verificação de sintaxe"
-if npm run --silent check 2>&1 | tail -n 8; then
-  ok "npm run check passou"
+step "Testes sem interface gráfica e verificação de sintaxe"
+# Instalar o serviço também precisa funcionar em servidores sem Stremio ou sessão gráfica.
+if npm run --silent check:unit 2>&1 | tail -n 8; then
+  ok "npm run check:unit passou"
 else
-  fail "npm run check falhou: não instalo o serviço com testes quebrados"
+  fail "npm run check:unit falhou: não instalo o serviço com testes quebrados"
 fi
 [ "$BLOCKERS" -eq 0 ] || die "Os testes falharam."
 

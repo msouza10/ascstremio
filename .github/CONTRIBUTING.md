@@ -82,3 +82,10 @@ esteira publica o pacote Linux, o instalador Windows e a imagem no GitHub Packag
 ## Licença
 
 Ao contribuir, você concorda que sua contribuição é licenciada sob a [licença MIT](../LICENSE) do projeto.
+
+### Integração com Stremio real
+
+`npm test`/`npm run check` incluem o cliente Linux Flatpak em perfil convidado, sem conta.
+Feche o Stremio antes e tenha sessão gráfica disponível. `npm run check:unit` executa
+a parte sem cliente gráfico. CI e release usam `stremio-tests.yml` com Xvfb/D-Bus isolados.
+O mapa dos cenários está em [`TESTS.md`](../TESTS.md).

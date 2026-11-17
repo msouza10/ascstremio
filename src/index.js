@@ -1,8 +1,7 @@
 const fs = require('fs');
-const http = require('http');
 const path = require('path');
 
-const { getRouter } = require('stremio-addon-sdk');
+const { createAddonServer } = require('./addon-server');
 const { createAddon } = require('./addon');
 const { loadLibrary, describeEntry } = require('./library');
 const { MetaCache } = require('./meta-cache');
@@ -14,12 +13,10 @@ const { createAscProvider } = require('./asc-provider');
 const { readPasskey, DEFAULT_ANNOUNCE_BASE } = require('./passkey');
 const { SeedVault } = require('./seedvault');
 const crypto = require('crypto');
-const { hostAllowed } = require('./safety');
 const network = require('./network');
 const settings = require('./settings');
 const hnr = require('./hnr-guard');
 const { CredentialStore, currentCredential, currentToken } = require('./credentials');
-const { createAddonHandler } = require('./addon-auth');
 const { KeepAwake } = require('./keepawake');
 const { logger, initFiles } = require('./logger');
 const { acquireInstance }  = require('./instance-lock');
@@ -271,13 +268,7 @@ async function main() {
 
   // serveHTTP do SDK escuta em todas as interfaces e não aceita host: monta o
   // roteador do SDK num servidor próprio, preso ao mesmo host da ponte.
-  const router = getRouter(addon);
-  const handleAddon = createAddonHandler({ addon, router, store: credentials, status, activity: addonActivity });
-  // Anti DNS rebinding: só IP literal/localhost/hosts autorizados (ver safety.hostAllowed).
-  const server = http.createServer((req, res) => {
-    if (!hostAllowed(req.headers.host)) { res.writeHead(403); res.end(); return; }
-    handleAddon(req, res);
-  });
+  const server = createAddonServer({ addon, credentials, status, activity: addonActivity });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(addonPort, host, resolve);
