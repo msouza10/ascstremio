@@ -121,7 +121,7 @@ const { token: TOKEN } = store.create({ name: 'teste' });
 
 function ponte(over = {}) {
   const dir = tmpdir('series-valid-store-');
-  const b = new Bridge({ torrentDir: '/tmp', storeDir: dir, port: 7097, publicUrl: 'http://127.0.0.1:7010/', credentials: store,
+  const b = new Bridge({ torrentDir: dir, storeDir: dir, port: 7097, publicUrl: 'http://127.0.0.1:7010/', credentials: store,
     vault: new SeedVault({ file: path.join(tmpdir('series-valid-v-'), 'v.json') }), minFreeBytes: 1000, freeSpace: () => 1e12, ...over });
   b.client = { torrents: [] };
   return b;
@@ -151,12 +151,13 @@ const esperar = async (cond, ms = 2000) => {
 // ponte também não pode depender disso para não pôr a credencial na mensagem.
 function espiarLog(t) {
   const vistos = [];
+  const propria = Object.hasOwn(logger, 'write'); // `write` é do protótipo: restaurar removendo a espia
   const original = logger.write;
   logger.write = function espia(level, src, msg, data, opts) {
     vistos.push(`${msg} ${data === undefined ? '' : JSON.stringify(data)}`);
     return original.call(this, level, src, msg, data, opts);
   };
-  t.after(() => { logger.write = original; });
+  t.after(() => { if (propria) logger.write = original; else delete logger.write; });
   return vistos;
 }
 
@@ -233,6 +234,7 @@ test('episódio ausente recusa só ele: o seguinte do mesmo torrent toca, e o er
   await b.handle(pedido('GET', '/e/12/1/1'), presente);
   assert.equal(presente.statusCode, 200);
   assert.equal(corpo(presente), 'ok!');
+  assert.ok(logs.length > 0, 'a espia viu o log da recusa');
   assert.ok(!logs.join('\n').includes(TOKEN));
 });
 
@@ -247,6 +249,5 @@ test('HEAD em /e/ de dois episódios não resolve, não abre o motor e não anun
     await b.handle(pedido('HEAD', url), res);
     assert.equal(res.statusCode, 200, url);
   }
-  assert.equal(chamadas, 0, 'nem .torrent, nem torrent no motor, nem consulta de freeleech');
-  assert.deepEqual(b.client.torrents, [], 'nada entrou no motor (sem announce)');
+  assert.equal(chamadas, 0, 'nem .torrent, nem torrent no motor (sem announce), nem consulta de freeleech');
 });
