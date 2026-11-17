@@ -104,6 +104,12 @@ function createAddon({ provider = amigosShare, demo = false, library = [], local
       externalUrl: showStatus() && status.panelUrl ? `${status.panelUrl}/` : 'https://amigos-share.club/',
     }];
   };
+  // Releases da série que o addon não toca (formato legado, disco...): item informativo, sem URL de
+  // vídeo. Abre o painel ou o site, como o aviso de ASC indisponível.
+  const unsupportedNotice = (notice) => ({
+    ...notice,
+    externalUrl: showStatus() && status.panelUrl ? `${status.panelUrl}/` : 'https://amigos-share.club/',
+  });
   // Aviso de risco crítico no topo das fontes de filmes ASC.
   const withAlert = (streams) => {
     if (!showStatus() || !Array.isArray(streams)) return streams;
@@ -207,8 +213,8 @@ function createAddon({ provider = amigosShare, demo = false, library = [], local
       try {
         if (remote?.lookup) {
           // Com o ASC indisponível, `lookup` cai para os arquivos locais completos e diz por quê.
-          const { streams, offline } = await remote.lookup(video);
-          const shown = offline ? [...offlineNotice(offline, streams.length), ...streams] : streams;
+          const { streams, offline, notice } = await remote.lookup(video);
+          const shown = offline ? [...offlineNotice(offline, streams.length), ...streams] : notice ? [unsupportedNotice(notice), ...streams] : streams;
           return { streams: withAlert(shown), cacheMaxAge: 0 };
         }
         const streams = remote ? await remote.findStreams(video) : await provider.findStreams(video, { library: currentLibrary(), urlFor, humanSize });

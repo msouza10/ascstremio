@@ -26,6 +26,8 @@ function httpError(status, message) {
 
 // Release em imagem/estrutura de disco: o player não toca (e não há vídeo para a ponte servir).
 const DISC = /\b(iso|bdmv|bd25|bd50|bd66|bd100|dvd5|dvd9|video_ts)\b/i;
+// Arquivo que denuncia disco na lista do release (imagem ou pasta BDMV/VIDEO_TS), já com barras normais.
+const DISC_FILE = /\.(iso|img)$|(^|\/)(bdmv|video_ts)(\/|$)/i;
 
 // Motivo claro quando um torrent não tem filme tocável (usado no play).
 function whyNoMain(entry) {
@@ -478,6 +480,17 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     return { result, fetched: true };
   }
 
+  // Por que um release de série lido por inteiro não serve a NENHUM episódio: nenhum vídeo tem
+  // temporada e episódio seguros. Devolve o motivo (chave de UNSUPPORTED_REASONS) ou null quando o
+  // release tem ao menos um episódio identificado (aí é só "não traz este episódio"). Usa apenas a
+  // lista que a listagem já leu; nunca o .torrent. Fail-closed: não promove "EP05" a S01E05.
+  function whyUnsupported(row, files, index) {
+    if (index.episodes.length > 0) return null;
+    const disc = isDisc(row) || files.some((f) => DISC_FILE.test(String(f.path).replace(/\\/g, '/')));
+    if (disc) return 'disco';
+    return index.unmatched.length > 0 ? 'nome' : null;
+  }
+
   // status: 'tem' (o episódio está na lista), 'nao-visto' (lista não lida ou incompleta: segue como
   // candidato, o play confirma). Fora: nome que contradiz, lista completa sem o episódio, ambíguo.
   async function seriesCandidates(video) {
@@ -485,6 +498,7 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
     const { rows, truncated } = await asc.searchSeries(video.imdbId);
     const plausible = byPreference(rows.filter((row) => !nameExcludes(row.name, season, episode)));
     const candidates = [];
+    const unsupportedReleases = []; // [{ id, reason }]: releases lidos que nenhum episódio identifica
     let lookups = 0;
     let failures = 0; // seguidas: site instável não deve gastar o orçamento inteiro esperando timeout
     const fresh = (id) => { const hit = filesCache.get(id); return Boolean(hit) && now() - hit.at < FILES_TTL_MS; };
@@ -506,7 +520,12 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
             status = 'tem';
             file = { path: found.file.path, length: found.file.length, confidence: found.file.confidence };
           } else if (result.complete) {
-            continue; // lista inteira lida e sem o episódio: este release não serve a este pedido
+            // Lista inteira lida e sem o episódio: este release não serve a este pedido. Se também não
+            // identifica episódio nenhum, é um formato que o addon não suporta (legado, disco...) e
+            // some em silêncio, a menos que o lookup avise (só quando não sobra fonte tocável).
+            const reason = whyUnsupported(row, result.files, index);
+            if (reason) unsupportedReleases.push({ id, reason });
+            continue;
           }
         } catch (error) {
           failures += 1;
@@ -523,7 +542,27 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
       seriesRows.set(id, record);
       if (seriesRows.size > SERIES_ROWS_MAX) seriesRows.delete(seriesRows.keys().next().value);
     }
-    return { candidates, truncated, total: rows.length };
+    return { candidates, truncated, total: rows.length, unsupported: unsupportedReleases };
+  }
+
+  // Item informativo e não tocável (o addon lhe dá o `externalUrl`): quantos releases do título
+  // existem no ASC mas o projeto não toca, e por quê. Agregado, sem dado da conta e sem prometer
+  // suporte futuro; "não suportado" é limitação do addon, não parecer do ASC sobre o release.
+  const UNSUPPORTED_REASONS = {
+    nome: 'nomes dos arquivos sem temporada e episódio claros (como EP01 ou vários SxxExx)',
+    disco: 'imagem ou estrutura de disco (ISO, BDMV)',
+  };
+  function unsupportedNotice(list) {
+    const reasons = [...new Set(list.map((item) => item.reason))];
+    const n = list.length;
+    return {
+      name: `⚠ ${n === 1 ? 'Release não suportado' : 'Releases não suportados'}`,
+      description: [
+        `${n} ${n === 1 ? 'release' : 'releases'} deste título ${n === 1 ? 'existe' : 'existem'} no ASC, mas o addon não toca:`,
+        ...reasons.map((reason) => `• ${UNSUPPORTED_REASONS[reason]}`),
+        'Limitação deste addon.',
+      ].join('\n'),
+    };
   }
 
   const pad2 = (n) => String(n).padStart(2, '0');
@@ -617,7 +656,10 @@ function createAscProvider(asc, bridge, torrentDir, { readTorrentImpl = readTorr
       // O filtro por episódio já rodou sobre TODOS os releases; só agora corta nas opções.
       const streams = found.candidates.slice(0, MAX_OPTIONS).map((candidate) => streamFromCandidate(candidate, video));
       console.log(`[asc] ${video.imdbId} S${pad2(video.season)}E${pad2(video.episode)}: ${found.total} release(s), ${streams.length} fonte(s)${found.truncated ? ', busca truncada' : ''}, nenhum .torrent baixado`);
-      return { streams, offline: null };
+      // Com fonte tocável o aviso seria ruído em todo episódio; sem nenhuma, é o único jeito de a
+      // pessoa saber que há releases que o addon não toca (em vez de a lista vir vazia sem motivo).
+      const notice = streams.length === 0 && found.unsupported.length > 0 ? unsupportedNotice(found.unsupported) : null;
+      return { streams, offline: null, ...(notice ? { notice } : {}) };
     }
     const ordered = byPreference(rows);
     await loadOriginal(video.imdbId, rows);
