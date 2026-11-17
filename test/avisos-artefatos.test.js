@@ -95,11 +95,13 @@ test('WinSW: avisos de log4net e YamlDotNet vêm da tag oficial, com SHA-256 fix
   assert.ok(guia.includes('`rel/2.0.12`') && guia.includes('`v8.1.2`'), 'docs/terceiros.md cita as tags');
 });
 
-test('fumaça confere os avisos no artefato real (imagem e instalador)', () => {
+test('fumaça confere os avisos no artefato real (imagem e instalador)', (t) => {
   assert.match(ler('scripts', 'smoke-container.sh'), /\/app\/docs\/terceiros\.md/);
   for (const arquivo of ['/app/LICENSE', '/app/LEGAL.md', '/app/THIRD-PARTY-INVENTORY.json']) {
     assert.ok(ler('scripts', 'smoke-container.sh').includes(arquivo), arquivo);
   }
+  // O tarball não leva .github/: o passo do CI só pode ser conferido no repositório.
+  if (!fs.existsSync(path.join(raiz, '.github', 'workflows', 'ci.yml'))) return t.skip('sem .github/workflows/ci.yml (pacote)');
   // Âncora no laço de avisos do passo de instalação, não em qualquer menção no arquivo.
   const ci = ler('.github', 'workflows', 'ci.yml');
   const laco = linhas(ci).find((l) => l.includes('foreach ($f in') && l.includes('THIRD-PARTY-WinSW.txt'));
