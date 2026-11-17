@@ -69,6 +69,9 @@ node scripts/demo-stremio.js --status   # inclui o catálogo "ASC — status" co
 DEMO_STREMIO_PORT=18030 node scripts/demo-stremio.js   # porta fixa (padrão: efêmera)
 ```
 
+Aviso: o demo tem `id` próprio (`local.amigosshare.stremio.demo`) e o nome "ASC — demonstração" para
+não substituir o addon real ao ser instalado: o Stremio atualiza addons pelo `id`.
+
 Instale a URL impressa no Stremio (Addons > instalar por URL), abra o filme e a série (S01E01 mostra
 as fontes; S01E06, o aviso de release não suportado) e fotografe. Desinstale o addon depois; Ctrl+C
 apaga a pasta temporária.

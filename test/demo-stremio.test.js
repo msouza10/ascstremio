@@ -35,7 +35,12 @@ test('escuta só em 127.0.0.1, com manifesto válido sob credencial efêmera', a
   assert.equal(demo.server.address().address, '127.0.0.1');
   assert.match(demo.manifestUrl, /^http:\/\/127\.0\.0\.1:\d+\/ascc_[A-Za-z0-9_-]{43}\/manifest\.json$/);
   const manifest = await json(demo.manifestUrl);
-  assert.equal(manifest.id, 'local.amigosshare.stremio');
+  // O Stremio substitui por id: o demo nunca pode ter o id (nem o nome) do addon real do dono.
+  const real = require('../src/addon').createAddon().manifest;
+  assert.notEqual(manifest.id, real.id);
+  assert.equal(manifest.id, 'local.amigosshare.stremio.demo');
+  assert.notEqual(manifest.name, real.name);
+  assert.match(manifest.name, /demonstração/);
   assert.ok(manifest.resources.includes('stream'));
   // Sem credencial, o addon real recusa: a demonstração mantém a mesma porta autenticada.
   assert.equal((await get(`http://127.0.0.1:${demo.port}/manifest.json`)).status, 403);

@@ -22,6 +22,8 @@ const { snapshot: snapshotDoPainel } = require('./demo-capturas');
 const MOVIE_ID = 'tt0063350'; // Night of the Living Dead (1968), domínio público
 const SERIES_ID = 'tt1748166'; // Pioneer One (2010), Creative Commons
 
+const DEMO_ADDON_ID = 'local.amigosshare.stremio.demo';
+
 const GB = 1024 ** 3;
 // Porta 1 do loopback: nada escuta ali, então nenhuma URL de vídeo da demonstração toca em algo.
 const VIDEO_BASE = 'http://127.0.0.1:1';
@@ -126,6 +128,9 @@ async function montar(dataDir, { port, comStatus }) {
     panelUrl: PANEL_URL,
   } : null;
   const addon = createAddon({ remote: provider, status, statusAllowed: () => currentCredential()?.status === true });
+  // O Stremio instala por `id`: com o id do addon real, instalar o demo SUBSTITUIRIA o addon do dono.
+  // Só o demo sobrescreve id e nome (o addon de produção não muda).
+  addon.manifest = { ...addon.manifest, id: DEMO_ADDON_ID, name: 'ASC — demonstração' };
   const handle = createAddonHandler({ addon, router: getRouter(addon), store, status });
   const server = http.createServer((req, res) => {
     if (!hostAllowed(req.headers.host)) { res.writeHead(403); res.end(); return; }
